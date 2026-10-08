@@ -1,3 +1,4 @@
+import { isApplication, isPlatform } from "./classify";
 import type { Env, PublicApplication, PublicSummary, Task } from "./types";
 
 /** "Company — Role" -> { company, role }. Falls back to the whole name as the role. */
@@ -18,8 +19,8 @@ function bump(map: Record<string, number>, key: string | null | undefined, fallb
  * URLs, notes, contact details and form answers are never included.
  */
 export function toPublicSummary(tasks: Task[], env: Env, demo = false): PublicSummary {
-  const apps = tasks.filter((t) => t.parentId === env.PARENT_TASK_ID);
-  const platforms = tasks.filter((t) => t.parentId === null && t.id !== env.PARENT_TASK_ID);
+  const apps = tasks.filter((t) => isApplication(t, env));
+  const platforms = tasks.filter((t) => isPlatform(t, env));
 
   const byStatus: Record<string, number> = {};
   const byPlatform: Record<string, number> = {};

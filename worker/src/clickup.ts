@@ -224,8 +224,8 @@ export async function createApplication(env: Env, a: NewApplication): Promise<st
   const created = (await cu(env, `/list/${env.CLICKUP_LIST_ID}/task`, {
     method: "POST",
     body: JSON.stringify({
+      // Top-level task named "Company — Role" (applications are no longer subtasks of a parent).
       name: `${a.company} — ${a.role}`,
-      parent: env.PARENT_TASK_ID,
       status,
       markdown_description: details.filter(Boolean).join("\n"),
       custom_fields,

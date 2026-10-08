@@ -1,5 +1,6 @@
 import { adminUser, agentName, agentNames, clearedCookie, isAdminToken, sessionCookie } from "./auth";
 import { HttpError, addComment, setStatus } from "./clickup";
+import { isApplication } from "./classify";
 import { heartbeat, listEvents, listHeartbeats } from "./db";
 import { agentInstructions } from "./instructions";
 import {
@@ -174,7 +175,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       const [tasks, q, events, heartbeats] = await Promise.all([loadTasks(env), queue(env), listEvents(env, 150), listHeartbeats(env)]);
       const applied: Record<string, number> = {};
       for (const t of tasks) {
-        if (t.parentId === env.PARENT_TASK_ID && t.status !== "not started" && t.status !== "rejected / paused") {
+        if (isApplication(t, env) && t.status !== "not started" && t.status !== "rejected / paused") {
           const k = (t.appliedBy ?? "unknown").toLowerCase();
           applied[k] = (applied[k] ?? 0) + 1;
         }

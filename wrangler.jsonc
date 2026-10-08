@@ -20,6 +20,7 @@
     "MOCK": "false",
     "CLICKUP_WORKSPACE_ID": "20570259",
     "CLICKUP_LIST_ID": "901115501535",
+    // Former parent of all applications; applications are now top-level tasks. Excluded from the queue.
     "PARENT_TASK_ID": "868mehfh7",
     "FIELD_APPLIED_BY": "051b2bae-f334-4927-a0c4-c70f9f3cc377",
     "FIELD_PLATFORM": "ded5bdeb-290d-431b-9de3-c99ccd3854a4",

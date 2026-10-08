@@ -30,7 +30,7 @@ export function mockTasks(env: Env): Task[] {
   });
   const posting = (url: string, fit: string, ats: string) =>
     `Apply: ${url}\nPay: $180k–$220k | Travel: ~5% | Fit: ${fit} | ATS: ${ats}`;
-  const p = env.PARENT_TASK_ID;
+  const p = null; // applications are top-level tasks
   return [
     mk("d1", "Acme AI — Senior LLM Engineer", "applied", "Claude", "Ashby", "2026-10-07", p),
     mk("d2", "Northwind Labs — Applied AI Engineer", "applied", "Claude", "Greenhouse", "2026-10-07", p),
@@ -44,8 +44,9 @@ export function mockTasks(env: Env): Task[] {
       posting("https://jobs.ashbyhq.com/example/2", "5/5 (voice agents)", "Ashby")),
     mk("d9", "Cyberdyne — Agent Platform Engineer", "not started", null, null, null, p,
       posting("https://jobs.lever.co/example/3", "3/5", "Lever"), "low"),
-    mk("pl1", "Example Expert Network", "applied", null, null, null, null),
-    mk("pl2", "Example Freelance Marketplace", "rejected / paused", null, null, null, null),
+    { ...mk("pl1", "Example Expert Network", "applied", null, null, null, null), tags: ["ai-expert"] },
+    { ...mk("pl2", "Example Freelance Marketplace", "rejected / paused", null, null, null, null), tags: ["freelance"] },
+    mk(env.PARENT_TASK_ID, "AI Dev Job Applications — Oct 2026", "not started", null, null, null, null),
   ];
 }
 

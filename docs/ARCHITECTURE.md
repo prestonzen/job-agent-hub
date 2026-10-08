@@ -34,7 +34,7 @@ flowchart LR
 
 ## Queue and claims
 
-- **Queue** = ClickUp subtasks of `PARENT_TASK_ID` with status *not started*. The description's `Apply: <url>` / `Pay | Travel | Fit | ATS` line is parsed for the posting details. Order: fit (x/5) desc, then ClickUp priority.
+- **Queue** = application tasks in the ClickUp list with status *not started*. An application is a top-level task named "Company — Role" without a platform tag (`job-board`, `freelance`, `ai-expert`, `bounty`); see `worker/src/classify.ts`. Older subtasks of `PARENT_TASK_ID` still count. The description's `Apply: <url>` / `Pay | Travel | Fit | ATS` line is parsed for the posting details. Order: fit (x/5) desc, then ClickUp priority.
 - **Claim** = a row in D1 `claims` taken with a single `INSERT … ON CONFLICT DO UPDATE … WHERE expired OR same agent` statement. The statement either changes one row (you won) or none (someone else holds it). No locks, no races.
 - **Mirror**: a successful claim writes `Claimed by <agent> until <time>` to ClickUp *Next Action*. The queue also honours such notes written by agents that bypass the hub.
 - **Leases expire** (`LEASE_MINUTES`, default 60), so a crashed agent's jobs return to the queue automatically. `claim_jobs` hands an agent the jobs it already holds first.

@@ -10,6 +10,7 @@ import {
   setStatus,
   stampApplied,
 } from "./clickup";
+import { isApplication } from "./classify";
 import { activeClaims, deleteClaim, getClaim, logEvent, tryClaim, type Claim } from "./db";
 import { mockPlaybook, mockTasks } from "./mock";
 import { splitName } from "./sanitize";
@@ -19,7 +20,7 @@ import type { Env, Job, Task } from "./types";
  * The job queue and its rules. Both front doors (REST /api/agent/* and MCP /mcp) call these
  * functions, so every agent gets identical behaviour.
  *
- * Queue = subtasks of PARENT_TASK_ID with status "not started".
+ * Queue = application tasks in the list (see classify.ts) with status "not started".
  * A job is unavailable while it has an unexpired claim, either a hub claim (D1) or a ClickUp
  * "Next Action" note "Claimed by <agent> until <ISO time>" (so ClickUp-only agents can take part).
  */
@@ -128,7 +129,7 @@ function byBestFirst(a: Job, b: Job): number {
 export async function queue(env: Env): Promise<Job[]> {
   const [tasks, claims] = await Promise.all([loadTasks(env), activeClaims(env)]);
   return tasks
-    .filter((t) => t.parentId === env.PARENT_TASK_ID && t.status === "not started")
+    .filter((t) => isApplication(t, env) && t.status === "not started")
     .map((t) => toJob(t, claims.get(t.id)))
     .sort(byBestFirst);
 }
@@ -274,7 +275,7 @@ const norm = (s: string) => s.toLowerCase().replace(/[—–-]/g, " ").replace(/
 
 async function findExisting(env: Env, company: string, role: string, url?: string): Promise<Task | null> {
   const key = norm(`${company} ${role}`);
-  const tasks = (await loadTasks(env)).filter((t) => t.parentId === env.PARENT_TASK_ID);
+  const tasks = (await loadTasks(env)).filter((t) => isApplication(t, env));
   return (
     tasks.find((t) => norm(t.name) === key) ??
     (url ? tasks.find((t) => parseDetails(t.description).applyUrl === url) : undefined) ??
