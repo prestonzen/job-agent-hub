@@ -120,7 +120,9 @@ Secrets take effect on the next deployment (push to `main`, or `git commit --all
 
 **Reply tracking**: paste `integrations/gmail-reply-tracker.gs` into a new project at script.google.com, set the script properties `HUB_URL`, `INBOUND_TOKEN` and `INBOX_ADDRESS`, then run `install` once. It runs every 10 minutes inside your own Google account.
 
-**Monitoring**: in Uptime Kuma (on coolify), add an HTTP monitor for `https://jobhunter.prestonzen.com/api/health/runner`. It returns 503 when no runner has checked in for 3 minutes. Attach Kuma's Telegram notification, and a monitor for `/api/health` too.
+**Monitoring**: Uptime Kuma on `coolify` watches `https://jobhunter.prestonzen.com/api/health/runner` every 2 min ("Job Agent Hub · Runner (kloud)"; 503 when no runner has checked in for 3 min) and `/api/health` every 5 min ("Job Agent Hub · API"). Both alert to ntfy (Kaizen Apps Production) and Telegram (Kaizen Apps Operations).
+
+**Admin login**: `/admin` takes the `ADMIN_TOKEN` value as its password.
 
 **Database**: D1 `job-agent-hub`. Tables are created on first use; `npm run db:migrate` applies `migrations/` explicitly.
 
