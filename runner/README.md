@@ -49,7 +49,7 @@ claude            # then /login
 codex login --device-auth
 gemini            # choose "Login with Google"
 qwen              # choose "Qwen OAuth"
-kimi              # then /login
+kimi login        # device-code flow (Kimi Code CLI)
 vibe              # first run asks for a Mistral API key
 ```
 
