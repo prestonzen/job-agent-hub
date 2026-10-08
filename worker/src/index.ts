@@ -1,7 +1,7 @@
 import { adminUser, agentName, agentNames, clearedCookie, isAdminToken, sessionCookie } from "./auth";
 import { HttpError, addComment, setStatus } from "./clickup";
 import { isApplication } from "./classify";
-import { heartbeat, listEvents, listHeartbeats, loadSnapshot, saveSnapshot } from "./db";
+import { activeClaims, heartbeat, lastEventAt, listEvents, listHeartbeats, loadSnapshot, saveSnapshot } from "./db";
 import { agentInstructions } from "./instructions";
 import {
   addJob,
@@ -72,18 +72,26 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     const cacheKey = new Request(`${url.origin}/__cache/public-summary`);
     const hit = await cache.match(cacheKey);
     if (hit) return hit;
+
+    // Stale-while-revalidate from the D1 snapshot: visitors never wait on ClickUp (~2 s) unless
+    // there's no recent snapshot; a snapshot older than a minute is refreshed in the background.
+    const snap = await loadSnapshot(env, "public-summary-v2").catch(() => null);
+    const age = snap ? Date.now() - snap.at : Infinity;
     let body: string;
-    try {
-      body = JSON.stringify(toPublicSummary(await loadTasks(env), env, env.MOCK === "true"));
-      ctx.waitUntil(saveSnapshot(env, "public-summary", body).catch(() => {}));
-    } catch (err) {
-      // ClickUp down, slow or rate-limited: show the last good snapshot instead of an error.
-      const last = await loadSnapshot(env, "public-summary").catch(() => null);
-      if (!last) throw err;
-      console.error("public summary from snapshot:", err);
-      return json({ ...JSON.parse(last), stale: true }, 200, { "Cache-Control": "public, max-age=30" });
+    if (snap && age < 10 * 60_000) {
+      body = snap.body;
+      if (age > 60_000) ctx.waitUntil(buildPublicSummary(env).catch((e) => console.error("summary refresh:", e)));
+    } else {
+      try {
+        body = await buildPublicSummary(env);
+      } catch (err) {
+        // ClickUp down, slow or rate-limited: show the last good snapshot instead of an error.
+        if (!snap) throw err;
+        console.error("public summary from old snapshot:", err);
+        return json({ ...JSON.parse(snap.body), stale: true }, 200, { "Cache-Control": "public, max-age=30" });
+      }
     }
-    const res = new Response(body, { headers: { ...JSON_HEADERS, "Cache-Control": "public, max-age=60" } });
+    const res = new Response(body, { headers: { ...JSON_HEADERS, "Cache-Control": "public, max-age=30" } });
     ctx.waitUntil(cache.put(cacheKey, res.clone()));
     return res;
   }
@@ -251,6 +259,27 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
 
   // ---------- Static app (only reached when running as a plain Worker) ----------
   return env.ASSETS ? env.ASSETS.fetch(request) : json({ error: "not found" }, 404);
+}
+
+const ONLINE_MS = 15 * 60_000;
+
+/** Compute the public summary from ClickUp + hub activity, and save it as the latest snapshot. */
+async function buildPublicSummary(env: Env): Promise<string> {
+  const [tasks, beats, claims, last] = await Promise.all([
+    loadTasks(env),
+    listHeartbeats(env).catch(() => []),
+    activeClaims(env).catch(() => new Map()),
+    lastEventAt(env).catch(() => null),
+  ]);
+  const summary = toPublicSummary(tasks, env, env.MOCK === "true");
+  summary.live = {
+    agentsOnline: beats.filter((b) => Date.now() - Date.parse(b.lastSeen) < ONLINE_MS).map((b) => b.agent),
+    inProgress: claims.size,
+    lastActivityAt: last,
+  };
+  const body = JSON.stringify(summary);
+  await saveSnapshot(env, "public-summary-v2", body);
+  return body;
 }
 
 /** Shared entry point for Pages Functions (functions/) and a plain Worker. */

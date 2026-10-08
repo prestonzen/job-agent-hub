@@ -25,7 +25,7 @@ export function toPublicSummary(tasks: Task[], env: Env, demo = false): PublicSu
   const byStatus: Record<string, number> = {};
   const byPlatform: Record<string, number> = {};
   const byAgent: Record<string, number> = {};
-  const byDayMap: Record<string, number> = {};
+  const byDayMap: Record<string, Record<string, number>> = {};
 
   // Queued postings are counted but not listed: the public view shows what was done, not targets.
   const queued = apps.filter((t) => t.status === "not started").length;
@@ -46,7 +46,7 @@ export function toPublicSummary(tasks: Task[], env: Env, demo = false): PublicSu
     bump(byStatus, a.status);
     bump(byPlatform, a.platform, "Other");
     bump(byAgent, a.appliedBy, "Unknown");
-    if (a.appliedOn) byDayMap[a.appliedOn] = (byDayMap[a.appliedOn] ?? 0) + 1;
+    if (a.appliedOn) bump((byDayMap[a.appliedOn] ??= {}), a.appliedBy, "Unknown");
   }
 
   recent.sort((a, b) => (b.appliedOn ?? "").localeCompare(a.appliedOn ?? ""));
@@ -59,8 +59,9 @@ export function toPublicSummary(tasks: Task[], env: Env, demo = false): PublicSu
     byPlatform,
     byAgent,
     byDay: Object.entries(byDayMap)
-      .map(([date, count]) => ({ date, count }))
+      .map(([date, byAgent]) => ({ date, count: Object.values(byAgent).reduce((s, n) => s + n, 0), byAgent }))
       .sort((a, b) => a.date.localeCompare(b.date)),
+    live: { agentsOnline: [], inProgress: 0, lastActivityAt: null },
     recent: recent.slice(0, 60),
     platforms: platforms.map((p) => ({ name: p.name, status: p.status })),
   };

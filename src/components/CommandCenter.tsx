@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getHub, releaseJob, reportJob } from "../api";
 import type { HubState, Job } from "../types";
-import { AGENT_COLORS } from "./Panels";
+import { agentColor } from "../agents";
 
 const ONLINE_MS = 15 * 60_000;
 const REFRESH_MS = 20_000;
@@ -17,7 +17,7 @@ function ago(iso: string): string {
 }
 
 function AgentDot({ name }: { name: string }) {
-  return <i className="dot" style={{ background: AGENT_COLORS[cap(name)] ?? "#94a3b8" }} aria-hidden="true" />;
+  return <i className="dot" style={{ background: agentColor(name) }} aria-hidden="true" />;
 }
 
 const EVENT_LABEL: Record<string, string> = {

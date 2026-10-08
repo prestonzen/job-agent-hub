@@ -145,7 +145,16 @@ export async function saveSnapshot(env: Env, key: string, body: string): Promise
     .run();
 }
 
-export async function loadSnapshot(env: Env, key: string): Promise<string | null> {
-  const r = await (await db(env)).prepare("SELECT body FROM snapshots WHERE key = ?").bind(key).first<{ body: string }>();
-  return r?.body ?? null;
+export async function loadSnapshot(env: Env, key: string): Promise<{ body: string; at: number } | null> {
+  const r = await (await db(env))
+    .prepare("SELECT body, at FROM snapshots WHERE key = ?")
+    .bind(key)
+    .first<{ body: string; at: number }>();
+  return r ?? null;
+}
+
+/** Last time any agent did something (claim, report, add). */
+export async function lastEventAt(env: Env): Promise<string | null> {
+  const r = await (await db(env)).prepare("SELECT MAX(at) AS at FROM events").first<{ at: number | null }>();
+  return r?.at ? new Date(r.at).toISOString() : null;
 }

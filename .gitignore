@@ -12,3 +12,4 @@ dist
 # Local copy of production agent tokens (never commit)
 .agent-tokens.local.json
 .admin-token.local.txt
+vite.preview-prod.config.ts

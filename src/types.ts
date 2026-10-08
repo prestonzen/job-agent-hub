@@ -16,7 +16,8 @@ export interface PublicSummary {
   byStatus: Record<string, number>;
   byPlatform: Record<string, number>;
   byAgent: Record<string, number>;
-  byDay: { date: string; count: number }[];
+  byDay: { date: string; count: number; byAgent: Record<string, number> }[];
+  live: { agentsOnline: string[]; inProgress: number; lastActivityAt: string | null };
   recent: PublicApplication[];
   platforms: { name: string; status: string }[];
 }
