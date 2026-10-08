@@ -1,0 +1,4 @@
+# Runner scripts execute on Linux: keep LF endings regardless of core.autocrlf.
+*.sh text eol=lf
+*.mjs text eol=lf
+runner/** text eol=lf
