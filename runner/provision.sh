@@ -4,6 +4,7 @@
 # and the agent CLIs. Logins and tokens are configured separately (see runner/README.md).
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
+export PATH="/usr/local/bin:$PATH"  # pct exec gives a minimal PATH; uv installs here
 
 log() { printf '\n==> %s\n' "$*"; }
 

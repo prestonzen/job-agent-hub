@@ -3,9 +3,9 @@
 // streams its output back, and stops it when the run is cancelled or times out.
 // Zero dependencies (Node 22+). Config: /etc/job-agent-runner/config.json (see config.example.json).
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { hostname, homedir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 const VERSION = "0.1.0";
 const CONFIG_PATH = process.env.RUNNER_CONFIG ?? "/etc/job-agent-runner/config.json";
@@ -67,6 +67,10 @@ function startRun(run) {
   const args = rest.map((x) => (x === "{PROMPT}" ? prompt : x));
   const cwd = join(WORK, String(run.id));
   mkdirSync(cwd, { recursive: true });
+  // Only these files (e.g. the resume) are put where the agent's browser may upload from.
+  for (const f of cfg.files ?? []) {
+    try { copyFileSync(expand(f), join(cwd, basename(f))); } catch (e) { log(`copy ${f} failed:`, e.message); }
+  }
 
   const child = spawn(bin, args, {
     cwd,

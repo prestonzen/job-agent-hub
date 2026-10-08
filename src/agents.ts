@@ -4,7 +4,7 @@
  * stacking order in charts. That order is what keeps adjacent segments distinguishable.
  * Color follows the agent, never its rank.
  */
-export const AGENT_ORDER = ["gemini", "claude", "codex", "mistral", "ollama", "human", "kimi"] as const;
+export const AGENT_ORDER = ["gemini", "claude", "codex", "mistral", "ollama", "human", "kimi", "qwen"] as const;
 
 export const agentKey = (name: string | null | undefined) => (name ?? "unknown").trim().toLowerCase() || "unknown";
 
