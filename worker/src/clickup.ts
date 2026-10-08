@@ -261,8 +261,10 @@ export async function getPlaybook(env: Env): Promise<string> {
   const out: string[] = [];
   const walk = (ps: DocPage[]) => {
     for (const p of ps) {
-      if (p.name) out.push(`# ${p.name}`);
-      if (p.content) out.push(p.content.trim());
+      const content = p.content?.trim() ?? "";
+      // Pages usually open with their own "# <name>" heading; don't print the title twice.
+      if (p.name && !content.startsWith(`# ${p.name}`)) out.push(`# ${p.name}`);
+      if (content) out.push(content);
       if (p.pages?.length) walk(p.pages);
     }
   };

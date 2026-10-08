@@ -1,10 +1,11 @@
+import { HttpError } from "./clickup";
 import type { Env } from "./types";
 
 /**
  * EXPERIMENTAL Zadarma API client (call statistics for the burner number).
  *
  * Signing per Zadarma docs: sign = base64( hex( HMAC-SHA1( secret, method + params + md5(params) ) ) )
- * where params is the url-encoded, key-sorted query string. Header: Authorization: "<key>:<sign>".
+ * where params is the key-sorted query string encoded like PHP's http_build_query (RFC 1738: spaces as "+"). Header: Authorization: "<key>:<sign>".
  * Credentials come from the ZADARMA_KEY / ZADARMA_SECRET Worker secrets only.
  * Verify against your account before relying on it; endpoints/fields may change.
  */
@@ -28,23 +29,29 @@ async function hmacSha1Hex(secret: string, data: string): Promise<string> {
   return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+/** PHP http_build_query encoding (what Zadarma signs): RFC 3986 escapes plus "+" for spaces. */
+const phpEncode = (v: string) =>
+  encodeURIComponent(v)
+    .replace(/[!'()*~]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
+    .replace(/%20/g, "+");
+
 export async function zadarmaGet(env: Env, method: string, params: Record<string, string> = {}): Promise<unknown> {
-  if (!env.ZADARMA_KEY || !env.ZADARMA_SECRET) throw new Error("ZADARMA_KEY / ZADARMA_SECRET secrets are not set");
+  if (!env.ZADARMA_KEY || !env.ZADARMA_SECRET) throw new HttpError(503, "ZADARMA_KEY / ZADARMA_SECRET secrets are not set");
   const query = Object.keys(params)
     .sort()
-    .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`)
+    .map((k) => `${phpEncode(k)}=${phpEncode(params[k])}`)
     .join("&");
   const hex = await hmacSha1Hex(env.ZADARMA_SECRET, method + query + md5hex(query));
   const sign = btoa(hex);
   const res = await fetch(`${BASE}${method}${query ? `?${query}` : ""}`, {
     headers: { Authorization: `${env.ZADARMA_KEY}:${sign}` },
   });
-  if (!res.ok) throw new Error(`Zadarma ${res.status}`);
+  if (!res.ok) throw new HttpError(502, `Zadarma ${res.status}: ${(await res.text()).slice(0, 200)}`);
   return res.json();
 }
 
 // --- minimal MD5 (RFC 1321) ---
-function md5(str: string): string {
+export function md5(str: string): string {
   const bytes = new TextEncoder().encode(str);
   const n = bytes.length;
   const words: number[] = [];
