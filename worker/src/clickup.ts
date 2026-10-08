@@ -1,32 +1,19 @@
 import type { Env, Task } from "./types";
 
 const API = "https://api.clickup.com/api/v2";
+const API_V3 = "https://api.clickup.com/api/v3";
 
-/** Option ids for the "Applied By" / "Platform Applied" dropdowns (non-secret). */
-export const APPLIED_BY_OPTIONS: Record<string, string> = {
-  human: "0601dc66-bddb-48c4-a259-3d7996791d5a",
-  claude: "a7a4cf00-13b4-4f58-aa27-aa4301a68bcc",
-  codex: "54287086-b101-4729-be39-03e7bbe456e3",
-  kimi: "d5f4aeb7-3902-40b6-bc63-ff5e3a39f7d9",
-  gemini: "18a5415b-f769-4ca7-a75a-ad75402c75e6",
-  ollama: "72731baf-2d9c-4ca9-8f4a-6e696c57faca",
-};
-
-export const PLATFORM_OPTIONS: Record<string, string> = {
-  greenhouse: "1b66d78e-5671-442c-a2a6-14c32cf01ad9",
-  ashby: "883d90fa-bc26-4994-8577-f0cccdc98a05",
-  lever: "ad3c756b-2a09-4374-b256-5811497ba472",
-  "company site": "7f4052c3-596e-477d-9bba-48699ad66282",
-  linkedin: "5581edb1-da56-4c81-963a-93be27c956e2",
-  wellfound: "bc753c44-5856-4b64-8313-4d5048d3b52d",
-  upwork: "c2ed080f-6deb-4fa9-8013-b104fc398673",
-  other: "fd27c2f7-c13a-452f-b210-3b70e19cd8f7",
-};
+interface CuOption {
+  id: string;
+  name: string;
+  orderindex: number;
+}
 
 interface CuField {
   id: string;
+  name?: string;
   type: string;
-  type_config?: { options?: { id: string; name: string; orderindex: number }[] };
+  type_config?: { options?: CuOption[] };
   value?: unknown;
 }
 
@@ -36,6 +23,7 @@ interface CuTask {
   description?: string;
   status: { status: string };
   parent?: string | null;
+  priority?: { priority: string } | null;
   url: string;
   tags?: { name: string }[];
   date_created: string;
@@ -44,7 +32,7 @@ interface CuTask {
 }
 
 function token(env: Env): string {
-  if (!env.CLICKUP_TOKEN) throw new HttpError(500, "CLICKUP_TOKEN secret is not set");
+  if (!env.CLICKUP_TOKEN) throw new HttpError(503, "CLICKUP_TOKEN secret is not set on the hub");
   return env.CLICKUP_TOKEN;
 }
 
@@ -54,8 +42,8 @@ export class HttpError extends Error {
   }
 }
 
-async function cu(env: Env, path: string, init: RequestInit = {}): Promise<unknown> {
-  const res = await fetch(`${API}${path}`, {
+async function cu(env: Env, path: string, init: RequestInit = {}, base = API): Promise<unknown> {
+  const res = await fetch(`${base}${path}`, {
     ...init,
     headers: {
       Authorization: token(env),
@@ -66,7 +54,8 @@ async function cu(env: Env, path: string, init: RequestInit = {}): Promise<unkno
   if (!res.ok) {
     throw new HttpError(502, `ClickUp ${res.status}: ${(await res.text()).slice(0, 200)}`);
   }
-  return res.json();
+  const text = await res.text();
+  return text ? JSON.parse(text) : {};
 }
 
 /** Resolve a dropdown custom field to its option name (ClickUp returns the option's orderindex). */
@@ -86,6 +75,10 @@ function dateField(field: CuField | undefined): string | null {
   return Number.isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : null;
 }
 
+function textField(field: CuField | undefined): string | null {
+  return typeof field?.value === "string" && field.value.trim() ? field.value.trim() : null;
+}
+
 function normalize(t: CuTask, env: Env): Task {
   const f = (id: string) => t.custom_fields?.find((c) => c.id === id);
   return {
@@ -96,6 +89,8 @@ function normalize(t: CuTask, env: Env): Task {
     appliedBy: dropdownName(f(env.FIELD_APPLIED_BY)),
     platform: dropdownName(f(env.FIELD_PLATFORM)),
     appliedOn: dateField(f(env.FIELD_APPLIED_ON)),
+    nextAction: textField(f(env.FIELD_NEXT_ACTION)),
+    priority: t.priority?.priority ?? null,
     tags: (t.tags ?? []).map((x) => x.name),
     url: t.url,
     description: t.description ?? "",
@@ -117,6 +112,10 @@ export async function listTasks(env: Env): Promise<Task[]> {
   return out;
 }
 
+export async function getTask(env: Env, taskId: string): Promise<Task> {
+  return normalize((await cu(env, `/task/${encodeURIComponent(taskId)}`)) as CuTask, env);
+}
+
 export async function setStatus(env: Env, taskId: string, status: string): Promise<void> {
   await cu(env, `/task/${encodeURIComponent(taskId)}`, {
     method: "PUT",
@@ -131,6 +130,57 @@ export async function addComment(env: Env, taskId: string, text: string): Promis
   });
 }
 
+export async function setField(env: Env, taskId: string, fieldId: string, value: string | number): Promise<void> {
+  await cu(env, `/task/${encodeURIComponent(taskId)}/field/${fieldId}`, {
+    method: "POST",
+    body: JSON.stringify({ value }),
+  });
+}
+
+export async function clearField(env: Env, taskId: string, fieldId: string): Promise<void> {
+  await cu(env, `/task/${encodeURIComponent(taskId)}/field/${fieldId}`, { method: "DELETE" });
+}
+
+// ---------- Dropdown options (read live, so new options like "Mistral" work without a deploy) ----------
+
+let fieldCache: { at: number; fields: CuField[] } | null = null;
+
+async function listFields(env: Env): Promise<CuField[]> {
+  if (fieldCache && Date.now() - fieldCache.at < 600_000) return fieldCache.fields;
+  const { fields } = (await cu(env, `/list/${env.CLICKUP_LIST_ID}/field`)) as { fields: CuField[] };
+  fieldCache = { at: Date.now(), fields };
+  return fields;
+}
+
+/** Option id for a dropdown value by (case-insensitive) name, or null if the option doesn't exist. */
+export async function optionId(env: Env, fieldId: string, name: string): Promise<string | null> {
+  const field = (await listFields(env)).find((f) => f.id === fieldId);
+  const opt = field?.type_config?.options?.find((o) => o.name.toLowerCase() === name.trim().toLowerCase());
+  return opt?.id ?? null;
+}
+
+export async function optionNames(env: Env, fieldId: string): Promise<string[]> {
+  const field = (await listFields(env)).find((f) => f.id === fieldId);
+  return (field?.type_config?.options ?? []).map((o) => o.name);
+}
+
+/** Stamp Applied By / Platform Applied / Applied On. Unknown dropdown values are skipped, not guessed. */
+export async function stampApplied(
+  env: Env,
+  taskId: string,
+  a: { agent: string; platform?: string | null; on?: string },
+): Promise<{ appliedBy: boolean; platform: boolean }> {
+  const by = await optionId(env, env.FIELD_APPLIED_BY, a.agent);
+  const plat = (a.platform && (await optionId(env, env.FIELD_PLATFORM, a.platform))) || (await optionId(env, env.FIELD_PLATFORM, "Other"));
+  const on = a.on ?? new Date().toISOString().slice(0, 10);
+  await Promise.all([
+    by ? setField(env, taskId, env.FIELD_APPLIED_BY, by) : Promise.resolve(),
+    plat ? setField(env, taskId, env.FIELD_PLATFORM, plat) : Promise.resolve(),
+    setField(env, taskId, env.FIELD_APPLIED_ON, Date.parse(`${on}T12:00:00Z`)),
+  ]);
+  return { appliedBy: !!by, platform: !!plat };
+}
+
 export interface NewApplication {
   company: string;
   role: string;
@@ -140,26 +190,84 @@ export interface NewApplication {
   notes?: string;
   url?: string;
   appliedOn?: string; // YYYY-MM-DD
+  /** Queue-format posting details (for status "not started"). */
+  pay?: string;
+  travel?: string;
+  fit?: string;
 }
 
 export async function createApplication(env: Env, a: NewApplication): Promise<string> {
+  const status = a.status ?? "applied";
   const custom_fields: { id: string; value: string | number }[] = [];
-  const by = APPLIED_BY_OPTIONS[a.appliedBy.toLowerCase()];
-  if (by) custom_fields.push({ id: env.FIELD_APPLIED_BY, value: by });
-  const plat = PLATFORM_OPTIONS[(a.platform ?? "other").toLowerCase()] ?? PLATFORM_OPTIONS.other;
-  custom_fields.push({ id: env.FIELD_PLATFORM, value: plat });
-  const on = a.appliedOn ?? new Date().toISOString().slice(0, 10);
-  custom_fields.push({ id: env.FIELD_APPLIED_ON, value: Date.parse(`${on}T12:00:00Z`) });
+  if (status !== "not started") {
+    const by = await optionId(env, env.FIELD_APPLIED_BY, a.appliedBy);
+    if (by) custom_fields.push({ id: env.FIELD_APPLIED_BY, value: by });
+    const plat = (await optionId(env, env.FIELD_PLATFORM, a.platform ?? "Other")) ?? (await optionId(env, env.FIELD_PLATFORM, "Other"));
+    if (plat) custom_fields.push({ id: env.FIELD_PLATFORM, value: plat });
+    const on = a.appliedOn ?? new Date().toISOString().slice(0, 10);
+    custom_fields.push({ id: env.FIELD_APPLIED_ON, value: Date.parse(`${on}T12:00:00Z`) });
+  }
+
+  // Same shape as the hand-made queue tasks, so the queue parser reads both.
+  const details = [
+    a.url ? `Apply: ${a.url}` : "",
+    [
+      `Pay: ${a.pay ?? "not posted"}`,
+      `Travel: ${a.travel ?? "unknown"}`,
+      `Fit: ${a.fit ?? "unrated"}`,
+      `ATS: ${a.platform ?? "unknown"}`,
+    ].join(" | "),
+    a.notes ? `\n${a.notes}` : "",
+    `\nAdded by ${a.appliedBy} via Job Agent Hub.`,
+  ];
 
   const created = (await cu(env, `/list/${env.CLICKUP_LIST_ID}/task`, {
     method: "POST",
     body: JSON.stringify({
       name: `${a.company} — ${a.role}`,
       parent: env.PARENT_TASK_ID,
-      status: a.status ?? "applied",
-      markdown_description: [a.url ? `Posting: ${a.url}` : "", a.notes ?? ""].filter(Boolean).join("\n\n"),
+      status,
+      markdown_description: details.filter(Boolean).join("\n"),
       custom_fields,
     }),
   })) as { id: string };
   return created.id;
+}
+
+// ---------- Playbook (ClickUp Doc → markdown) ----------
+
+interface DocPage {
+  id: string;
+  name?: string;
+  content?: string;
+  pages?: DocPage[];
+}
+
+let playbookCache: { at: number; text: string } | null = null;
+
+/**
+ * The playbook lives in a ClickUp Doc (standard answers, EEO, salary, rules). It holds personal
+ * data, so it is only ever returned to authenticated agents and admins, and cached in memory only.
+ */
+export async function getPlaybook(env: Env): Promise<string> {
+  if (playbookCache && Date.now() - playbookCache.at < 300_000) return playbookCache.text;
+  const data = (await cu(
+    env,
+    `/workspaces/${env.CLICKUP_WORKSPACE_ID}/docs/${encodeURIComponent(env.PLAYBOOK_DOC_ID)}/pages?max_page_depth=-1&content_format=text%2Fmd`,
+    {},
+    API_V3,
+  )) as DocPage[] | { pages?: DocPage[] };
+  const pages = Array.isArray(data) ? data : (data.pages ?? []);
+  const out: string[] = [];
+  const walk = (ps: DocPage[]) => {
+    for (const p of ps) {
+      if (p.name) out.push(`# ${p.name}`);
+      if (p.content) out.push(p.content.trim());
+      if (p.pages?.length) walk(p.pages);
+    }
+  };
+  walk(pages);
+  const text = out.join("\n\n");
+  playbookCache = { at: Date.now(), text };
+  return text;
 }

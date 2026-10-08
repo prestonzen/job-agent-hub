@@ -1,30 +1,32 @@
 {
-  // One Worker serves the React app (static assets) and the /api/* routes.
+  // Cloudflare Pages project: static app from dist/, API + MCP from functions/ (which call worker/src).
+  // Git-connected: every push to main builds (`npm run build`) and deploys jobhunter.prestonzen.com.
   "name": "job-agent-hub",
-  "main": "worker/src/index.ts",
-  "compatibility_date": "2025-01-01",
-  // Custom domain (the zone prestonzen.com must be on this Cloudflare account; DNS record is created automatically).
-  "routes": [{ "pattern": "jobhunter.prestonzen.com", "custom_domain": true }],
-  "assets": {
-    "directory": "./dist",
-    "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
-    // Let the Worker handle API routes before static assets.
-    "run_worker_first": ["/api/*"]
-  },
-  // Non-secret configuration. Secrets (tokens/keys) are NEVER put here:
-  //   npx wrangler secret put CLICKUP_TOKEN   (and AGENT_TOKENS, ZADARMA_KEY, ZADARMA_SECRET)
+  "pages_build_output_dir": "./dist",
+  "compatibility_date": "2026-10-01",
+  // Coordination state only (claims, agent activity, check-ins). ClickUp stays the system of record.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "job-agent-hub",
+      "database_id": "44681369-6ab4-431a-a3a2-fd723b745c46",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Non-secret configuration (ClickUp ids are not credentials).
+  // Secrets, set with `npx wrangler pages secret put <NAME> --project-name job-agent-hub`:
+  //   CLICKUP_TOKEN, AGENT_TOKENS, ACCESS_TEAM_DOMAIN, ACCESS_AUD, ADMIN_EMAILS (kept out of this public repo),
+  //   ZADARMA_KEY, ZADARMA_SECRET (optional).
   "vars": {
     "MOCK": "false",
+    "CLICKUP_WORKSPACE_ID": "20570259",
     "CLICKUP_LIST_ID": "901115501535",
     "PARENT_TASK_ID": "868mehfh7",
     "FIELD_APPLIED_BY": "051b2bae-f334-4927-a0c4-c70f9f3cc377",
     "FIELD_PLATFORM": "ded5bdeb-290d-431b-9de3-c99ccd3854a4",
     "FIELD_APPLIED_ON": "a750f70b-fff3-4bb9-b2e9-e54b09d33600",
-    // Cloudflare Access (Zero Trust) protects /admin* and /api/admin/*.
-    "ACCESS_TEAM_DOMAIN": "YOUR-TEAM.cloudflareaccess.com",
-    "ACCESS_AUD": "REPLACE_WITH_ACCESS_APPLICATION_AUD_TAG",
-    "ADMIN_EMAILS": "you@example.com"
-  },
-  "observability": { "enabled": true }
+    "FIELD_NEXT_ACTION": "53dcff41-989e-472c-b18f-4adb76acfef7",
+    "PLAYBOOK_DOC_ID": "kkr4k-6751",
+    "LEASE_MINUTES": "60"
+  }
 }

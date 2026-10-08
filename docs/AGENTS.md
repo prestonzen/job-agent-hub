@@ -1,42 +1,74 @@
 # Connecting an agent
 
-Any agent (an AI client, a script, an n8n workflow) can log what it did through one endpoint.
+Every agent works the same queue with its own token. The admin page **Connect agents** (`/admin#connect`) has copy-paste setup for each client; this is the reference.
 
-## 1. Issue a token
+## 1. Give the agent a token
 
-Add a name → token pair to the `AGENT_TOKENS` secret (JSON). The name must match an **Applied By** option
-(`claude`, `codex`, `kimi`, `gemini`, `ollama`, `human`):
-
-```json
-{"claude":"<long-random-token>","codex":"<long-random-token>"}
-```
-
-Generate tokens with e.g. `openssl rand -hex 32`. Store them as a GitHub Actions secret named `AGENT_TOKENS`; the deploy workflow syncs it to the Worker.
-
-## 2. Log an application
+Add a `name → token` pair to the `AGENT_TOKENS` Pages secret (JSON, tokens 24+ chars, e.g. `openssl rand -hex 32`):
 
 ```bash
-curl -X POST https://<your-worker-domain>/api/agent/applications \
-  -H "Authorization: Bearer $CLAUDE_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-        "company": "Acme AI",
-        "role": "Senior LLM Engineer",
-        "platform": "Ashby",
-        "url": "https://jobs.example.com/acme/123",
-        "notes": "Applied with the AI resume; answered 6 screening questions.",
-        "status": "applied"
-      }'
+npx wrangler pages secret put AGENT_TOKENS --project-name job-agent-hub
+# paste: {"claude":"…","codex":"…","gemini":"…","kimi":"…","mistral":"…"}
 ```
 
-Response: `201 {"ok":true,"id":"<clickup task id>","agent":"claude"}`.
+The name is the agent's identity in comments, activity and the ClickUp **Applied By** field. If ClickUp has no option with that name (e.g. *Mistral*), add the option in ClickUp; until then the application is still recorded, just untagged.
 
-Fields: `company` and `role` are required. `platform` is one of Greenhouse, Ashby, Lever, Company site, LinkedIn, Wellfound, Upwork, Other.
-`appliedOn` (YYYY-MM-DD) defaults to today. The agent's name always comes from the token.
+## 2. Connect
 
-## Rules for agents (house style)
+**MCP** (Claude Code, Codex, Gemini CLI, Kimi CLI, Cursor…): remote server at `https://jobhunter.prestonzen.com/mcp`, Streamable HTTP, header `Authorization: Bearer <token>`.
 
-1. **Check before applying**: search the tracker so two agents don't apply to the same role.
-2. **Never complete bot checks** (CAPTCHAs, emailed human-check codes). Log the task as `not started` with a note and hand it to the human.
-3. **Don't sign legal agreements** on the user's behalf; ticking routine privacy consents is a per-user setting.
-4. **No secrets or personal data in notes** — notes are private in ClickUp, but treat them as sensitive.
+```bash
+claude mcp add --transport http jobhunter https://jobhunter.prestonzen.com/mcp --header "Authorization: Bearer <token>"
+```
+
+```toml
+# ~/.codex/config.toml
+[mcp_servers.jobhunter]
+url = "https://jobhunter.prestonzen.com/mcp"
+bearer_token_env_var = "JOBHUNTER_TOKEN"
+```
+
+```json
+// ~/.gemini/settings.json
+{ "mcpServers": { "jobhunter": { "httpUrl": "https://jobhunter.prestonzen.com/mcp", "headers": { "Authorization": "Bearer <token>" } } } }
+```
+
+**REST** (browser agents, chat apps without MCP): same operations under `/api/agent/*`. Paste the REST runner prompt from the admin page (or `GET /api/agent/instructions`).
+
+## 3. The loop
+
+| Step | MCP tool | REST |
+|---|---|---|
+| Read the playbook (answers + rules) | `get_playbook` | `GET /api/agent/playbook` |
+| Queue overview | `list_queue` | `GET /api/agent/queue` |
+| Claim jobs (atomic, ~60 min lease) | `claim_jobs {count, ats?}` | `POST /api/agent/claim {"count":4,"ats":["greenhouse"]}` |
+| Fresh job status | `get_job {id}` | `GET /api/agent/jobs/:id` |
+| Extend lease | `renew_lease {id}` | `POST /api/agent/jobs/:id/renew` |
+| Report outcome | `report_result {id, outcome, platform?, note?}` | `POST /api/agent/jobs/:id/report` |
+| Give a job back | `release_job {id, note?}` | `POST /api/agent/jobs/:id/release` |
+| Queue a posting you found | `add_job {company, role, url, …}` | `POST /api/agent/jobs` |
+| Log an application made elsewhere | `log_application {company, role, …}` | `POST /api/agent/applications` |
+
+Outcomes:
+
+- `applied`: submitted. Sets status *applied*, *Applied By*, *Platform Applied*, *Applied On*, and comments.
+- `needs_human`: blocked on something only the human can do (CAPTCHA, emailed code, account creation). Note required. Parks the job (*Next Action: Needs human: …*) until an admin releases it.
+- `skipped`: not a fit under the playbook rules. Note required. Status → *rejected / paused*.
+- `failed`: technical failure; the job returns to the queue.
+
+Errors come back as HTTP 4xx (REST) or `isError` tool results (MCP), e.g. `409 … is claimed by codex until …`.
+
+## ClickUp-only agents
+
+Agents that use the ClickUp API/MCP directly can still take part without double-applying:
+
+1. Skip any task whose **Next Action** is `Claimed by <agent> until <time>` (time in the future) or starts with `Needs human`.
+2. To claim, set **Next Action** to `Claimed by <you> until <ISO time, ≤60 min ahead>Z`. The hub won't hand that job to anyone else.
+3. When done, set status/fields as usual and clear **Next Action**.
+
+## Rules for agents
+
+1. **Only work on jobs you have claimed.** Re-check `get_job` if in doubt.
+2. **Never create accounts, enter passwords, or solve CAPTCHAs/bot checks.** Report `needs_human`.
+3. **Never invent** experience, employers or metrics. The playbook is the source of truth.
+4. **No secrets in notes.** Notes become ClickUp comments.

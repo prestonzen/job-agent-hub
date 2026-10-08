@@ -43,6 +43,7 @@ export async function adminEmail(request: Request, env: Env): Promise<string | n
   // Local development only: MOCK mode on localhost skips Access.
   if (env.MOCK === "true" && isLocal(request)) return "local-dev@example.com";
 
+  if (!env.ACCESS_TEAM_DOMAIN || !env.ACCESS_AUD || !env.ADMIN_EMAILS) return null;
   const jwt = request.headers.get("Cf-Access-Jwt-Assertion");
   if (!jwt) return null;
   const parts = jwt.split(".");
@@ -77,27 +78,38 @@ export async function adminEmail(request: Request, env: Env): Promise<string | n
     );
     if (!ok || !payload.email) return null;
 
-    const allowed = env.ADMIN_EMAILS.split(",").map((e) => e.trim().toLowerCase());
+    const allowed = (env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim().toLowerCase());
     return allowed.includes(payload.email.toLowerCase()) ? payload.email : null;
   } catch {
     return null;
   }
 }
 
+function tokenMap(env: Env): Record<string, string> {
+  if (!env.AGENT_TOKENS) return {};
+  try {
+    return JSON.parse(env.AGENT_TOKENS) as Record<string, string>;
+  } catch {
+    return {}; // malformed secret
+  }
+}
+
+/** Configured agent names (never the tokens). */
+export function agentNames(env: Env): string[] {
+  return Object.keys(tokenMap(env)).map((n) => n.toLowerCase());
+}
+
 /** Agent API auth: Authorization: Bearer <token>, matched against the AGENT_TOKENS secret. */
 export function agentName(request: Request, env: Env): string | null {
   const h = request.headers.get("Authorization") ?? "";
   const m = h.match(/^Bearer\s+(.+)$/i);
-  if (!m || !env.AGENT_TOKENS) return null;
-  try {
-    const map = JSON.parse(env.AGENT_TOKENS) as Record<string, string>;
-    for (const [name, tok] of Object.entries(map)) {
-      if (timingSafeEqual(tok, m[1])) return name;
-    }
-  } catch {
-    /* malformed secret */
+  if (!m) return null;
+  let found: string | null = null;
+  // Compare against every token (no early exit) so timing doesn't reveal which name matched.
+  for (const [name, tok] of Object.entries(tokenMap(env))) {
+    if (tok.length >= 24 && timingSafeEqual(tok, m[1].trim())) found = name.toLowerCase();
   }
-  return null;
+  return found;
 }
 
 function timingSafeEqual(a: string, b: string): boolean {

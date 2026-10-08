@@ -1,16 +1,17 @@
 {
   "name": "job-agent-hub",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "One pane of glass for an AI-assisted job search: public sanitized activity dashboard + admin panel, backed by ClickUp via a Cloudflare Worker.",
+  "description": "One pane of glass for a multi-agent job search: shared job queue with atomic claims, MCP + REST for every agent, public sanitized dashboard and admin command center. Cloudflare Pages + D1, backed by ClickUp.",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:worker": "wrangler dev",
+    "dev:api": "wrangler pages dev dist --port 8788 --binding MOCK=true",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b && tsc -p worker/tsconfig.json --noEmit",
     "preview": "vite preview",
-    "deploy": "npm run build && wrangler deploy"
+    "db:migrate": "wrangler d1 migrations apply job-agent-hub --remote",
+    "deploy": "npm run build && wrangler pages deploy dist --project-name job-agent-hub"
   },
   "dependencies": {
     "react": "^19.0.0",

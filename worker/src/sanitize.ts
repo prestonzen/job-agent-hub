@@ -26,7 +26,9 @@ export function toPublicSummary(tasks: Task[], env: Env, demo = false): PublicSu
   const byAgent: Record<string, number> = {};
   const byDayMap: Record<string, number> = {};
 
-  const recent: PublicApplication[] = apps.map((t) => {
+  // Queued postings are counted but not listed: the public view shows what was done, not targets.
+  const queued = apps.filter((t) => t.status === "not started").length;
+  const recent: PublicApplication[] = apps.filter((t) => t.status !== "not started").map((t) => {
     const { company, role } = splitName(t.name);
     return {
       company,
@@ -38,10 +40,11 @@ export function toPublicSummary(tasks: Task[], env: Env, demo = false): PublicSu
     };
   });
 
+  byStatus["not started"] = queued;
   for (const a of recent) {
     bump(byStatus, a.status);
     bump(byPlatform, a.platform, "Other");
-    if (a.status !== "not started") bump(byAgent, a.appliedBy, "Unknown");
+    bump(byAgent, a.appliedBy, "Unknown");
     if (a.appliedOn) byDayMap[a.appliedOn] = (byDayMap[a.appliedOn] ?? 0) + 1;
   }
 
@@ -50,7 +53,7 @@ export function toPublicSummary(tasks: Task[], env: Env, demo = false): PublicSu
   return {
     generatedAt: new Date().toISOString(),
     demo,
-    totals: { applications: apps.length, platforms: platforms.length },
+    totals: { applications: apps.length - queued, platforms: platforms.length, queued },
     byStatus,
     byPlatform,
     byAgent,

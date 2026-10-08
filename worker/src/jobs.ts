@@ -1,0 +1,353 @@
+import {
+  HttpError,
+  addComment,
+  clearField,
+  createApplication,
+  getPlaybook,
+  getTask,
+  listTasks,
+  setField,
+  setStatus,
+  stampApplied,
+} from "./clickup";
+import { activeClaims, deleteClaim, getClaim, logEvent, tryClaim, type Claim } from "./db";
+import { mockPlaybook, mockTasks } from "./mock";
+import { splitName } from "./sanitize";
+import type { Env, Job, Task } from "./types";
+
+/**
+ * The job queue and its rules. Both front doors (REST /api/agent/* and MCP /mcp) call these
+ * functions, so every agent gets identical behaviour.
+ *
+ * Queue = subtasks of PARENT_TASK_ID with status "not started".
+ * A job is unavailable while it has an unexpired claim, either a hub claim (D1) or a ClickUp
+ * "Next Action" note "Claimed by <agent> until <ISO time>" (so ClickUp-only agents can take part).
+ */
+
+const mock = (env: Env) => env.MOCK === "true";
+const leaseMs = (env: Env) => Math.max(5, Number(env.LEASE_MINUTES) || 60) * 60_000;
+
+export const OUTCOMES = ["applied", "needs_human", "skipped", "failed"] as const;
+export type Outcome = (typeof OUTCOMES)[number];
+
+/** "kimi" -> "Kimi" for comments and ClickUp dropdowns. */
+export const displayAgent = (a: string) => (a.length ? a[0].toUpperCase() + a.slice(1) : a);
+
+export async function loadTasks(env: Env): Promise<Task[]> {
+  return mock(env) ? mockTasks(env) : listTasks(env);
+}
+
+async function loadTask(env: Env, id: string): Promise<Task> {
+  if (!mock(env)) return getTask(env, id);
+  const t = mockTasks(env).find((x) => x.id === id);
+  if (!t) throw new HttpError(404, `no task ${id}`);
+  return t;
+}
+
+/** Skip ClickUp writes in demo mode; everything else (D1 claims, events) still runs. */
+async function write(env: Env, fn: () => Promise<unknown>): Promise<void> {
+  if (!mock(env)) await fn();
+}
+
+export function playbook(env: Env): Promise<string> {
+  return mock(env) ? Promise.resolve(mockPlaybook()) : getPlaybook(env);
+}
+
+// ---------- Parsing ----------
+
+/** Parses the queue task description: "Apply: <url>\nPay: … | Travel: … | Fit: 5/5 (…) | ATS: Greenhouse". */
+export function parseDetails(desc: string) {
+  const grab = (key: string) => {
+    const m = desc.match(new RegExp(`${key}:\\s*([^|\\n]+)`, "i"));
+    return m ? m[1].trim() : null;
+  };
+  const applyUrl = desc.match(/Apply:\s*\[?(https?:\/\/[^\s\]\)]+)/i)?.[1] ?? desc.match(/https?:\/\/[^\s\]\)]+/)?.[0] ?? null;
+  const fitRaw = grab("Fit");
+  const fitNum = fitRaw?.match(/(\d+(?:\.\d+)?)\s*\/\s*5/);
+  return {
+    applyUrl,
+    pay: grab("Pay"),
+    travel: grab("Travel"),
+    ats: grab("ATS"),
+    fit: fitNum ? Number(fitNum[1]) : null,
+    fitNote: fitRaw?.match(/\((.*)\)/)?.[1] ?? null,
+  };
+}
+
+const CLAIM_NOTE = /^Claimed by\s+(\S+)\s+until\s+(\S+)/i;
+const NEEDS_HUMAN = /^Needs human:?\s*(.*)$/i;
+
+/** A ClickUp-side claim ("Claimed by codex until 2026-10-08T03:15:00Z"), if still live. */
+function noteClaim(t: Task): { agent: string; expiresAt: number } | null {
+  const m = t.nextAction?.match(CLAIM_NOTE);
+  if (!m) return null;
+  const exp = Date.parse(m[2]);
+  return Number.isFinite(exp) && exp > Date.now() ? { agent: m[1].toLowerCase(), expiresAt: exp } : null;
+}
+
+const claimNote = (agent: string, expiresAt: number) =>
+  `Claimed by ${agent} until ${new Date(expiresAt).toISOString().slice(0, 16)}Z (Job Agent Hub)`;
+
+function toJob(t: Task, claim: Claim | undefined | null): Job {
+  const { company, role } = splitName(t.name);
+  const d = parseDetails(t.description);
+  const note = noteClaim(t);
+  const holder = claim ? { agent: claim.agent, expiresAt: claim.expiresAt } : note;
+  return {
+    id: t.id,
+    name: t.name,
+    company,
+    role,
+    status: t.status,
+    applyUrl: d.applyUrl,
+    ats: d.ats,
+    pay: d.pay,
+    travel: d.travel,
+    fit: d.fit,
+    fitNote: d.fitNote,
+    priority: t.priority,
+    clickupUrl: t.url,
+    claimedBy: holder?.agent ?? null,
+    claimExpiresAt: holder ? new Date(holder.expiresAt).toISOString() : null,
+    needsHuman: t.nextAction?.match(NEEDS_HUMAN)?.[1] ?? null,
+  };
+}
+
+const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
+
+function byBestFirst(a: Job, b: Job): number {
+  return (
+    (b.fit ?? 0) - (a.fit ?? 0) ||
+    (PRIORITY_RANK[a.priority ?? ""] ?? 4) - (PRIORITY_RANK[b.priority ?? ""] ?? 4) ||
+    a.name.localeCompare(b.name)
+  );
+}
+
+// ---------- Queue ----------
+
+export async function queue(env: Env): Promise<Job[]> {
+  const [tasks, claims] = await Promise.all([loadTasks(env), activeClaims(env)]);
+  return tasks
+    .filter((t) => t.parentId === env.PARENT_TASK_ID && t.status === "not started")
+    .map((t) => toJob(t, claims.get(t.id)))
+    .sort(byBestFirst);
+}
+
+export const isAvailable = (j: Job) => !j.claimedBy && !j.needsHuman && !!j.applyUrl;
+
+export async function claimJobs(
+  env: Env,
+  agent: string,
+  opts: { count?: number; ats?: string[] } = {},
+): Promise<{ jobs: Job[]; remaining: number }> {
+  const count = Math.min(10, Math.max(1, Math.floor(opts.count ?? 1)));
+  const ats = (opts.ats ?? []).map((a) => a.toLowerCase()).filter(Boolean);
+  const all = await queue(env);
+
+  // Re-hand an agent the jobs it already holds (e.g. after a crash) before giving it new ones.
+  const mine = all.filter((j) => j.claimedBy === agent);
+  const out: Job[] = mine.slice(0, count);
+
+  for (const job of all) {
+    if (out.length >= count) break;
+    if (!isAvailable(job)) continue;
+    if (ats.length && !ats.some((a) => (job.ats ?? "").toLowerCase().includes(a))) continue;
+    const expiresAt = await tryClaim(env, job.id, agent, leaseMs(env));
+    if (!expiresAt) continue; // another agent won the race
+    await write(env, () => setField(env, job.id, env.FIELD_NEXT_ACTION, claimNote(agent, expiresAt)));
+    await logEvent(env, { agent, taskId: job.id, taskName: job.name, type: "claimed" });
+    out.push({ ...job, claimedBy: agent, claimExpiresAt: new Date(expiresAt).toISOString() });
+  }
+
+  const remaining = all.filter(isAvailable).length - (out.length - mine.length);
+  return { jobs: out, remaining: Math.max(0, remaining) };
+}
+
+export async function getJob(env: Env, id: string): Promise<Job> {
+  const [task, claim] = await Promise.all([loadTask(env, id), getClaim(env, id)]);
+  return toJob(task, claim);
+}
+
+/** Throws 409 if someone else holds the job. Admins ("human") may act on anything. */
+function assertHolder(job: Job, agent: string, admin: boolean) {
+  if (!admin && job.claimedBy && job.claimedBy !== agent) {
+    throw new HttpError(409, `${job.name} is claimed by ${job.claimedBy} until ${job.claimExpiresAt}`);
+  }
+}
+
+export async function renewLease(env: Env, agent: string, id: string): Promise<Job> {
+  const job = await getJob(env, id);
+  assertHolder(job, agent, false);
+  if (job.status !== "not started") throw new HttpError(409, `${job.name} is already "${job.status}"`);
+  const expiresAt = await tryClaim(env, id, agent, leaseMs(env));
+  if (!expiresAt) throw new HttpError(409, `${job.name} was claimed by someone else`);
+  await write(env, () => setField(env, id, env.FIELD_NEXT_ACTION, claimNote(agent, expiresAt)));
+  return { ...job, claimedBy: agent, claimExpiresAt: new Date(expiresAt).toISOString() };
+}
+
+export async function releaseJob(env: Env, agent: string, id: string, note?: string, admin = false): Promise<void> {
+  const [task, claim] = await Promise.all([loadTask(env, id), getClaim(env, id)]);
+  const job = toJob(task, claim);
+  assertHolder(job, agent, admin);
+  await deleteClaim(env, id);
+  if (task.nextAction && (CLAIM_NOTE.test(task.nextAction) || (admin && NEEDS_HUMAN.test(task.nextAction)))) {
+    await write(env, () => clearField(env, id, env.FIELD_NEXT_ACTION));
+  }
+  if (note) await write(env, () => addComment(env, id, `[hub] Released by ${displayAgent(agent)}: ${note}`));
+  await logEvent(env, { agent, taskId: id, taskName: task.name, type: "released", message: note });
+}
+
+export interface Report {
+  outcome: Outcome;
+  platform?: string | null;
+  note?: string | null;
+}
+
+export async function reportResult(
+  env: Env,
+  agent: string,
+  id: string,
+  r: Report,
+  admin = false,
+): Promise<{ job: Job; warnings: string[] }> {
+  if (!OUTCOMES.includes(r.outcome)) throw new HttpError(400, `outcome must be one of ${OUTCOMES.join(", ")}`);
+  const note = r.note?.trim().slice(0, 4000) || null;
+  if ((r.outcome === "skipped" || r.outcome === "needs_human") && !note) {
+    throw new HttpError(400, `a note explaining why is required for outcome "${r.outcome}"`);
+  }
+
+  const [task, claim] = await Promise.all([loadTask(env, id), getClaim(env, id)]);
+  const job = toJob(task, claim);
+  assertHolder(job, agent, admin);
+  if (r.outcome === "applied" && task.status !== "not started") {
+    throw new HttpError(409, `${task.name} is already "${task.status}"${task.appliedBy ? ` (by ${task.appliedBy})` : ""}; not overwriting`);
+  }
+
+  const who = displayAgent(agent);
+  const platform = r.platform ?? job.ats ?? "Other";
+  const today = new Date().toISOString().slice(0, 10);
+  const warnings: string[] = [];
+
+  switch (r.outcome) {
+    case "applied": {
+      await write(env, async () => {
+        await setStatus(env, id, "applied");
+        const stamped = await stampApplied(env, id, { agent, platform, on: today });
+        if (!stamped.appliedBy) warnings.push(`ClickUp "Applied By" has no option "${who}"; add it in ClickUp to tag these.`);
+        await clearField(env, id, env.FIELD_NEXT_ACTION);
+        await addComment(env, id, `[hub] ${today}: applied by ${who} via ${platform}.${note ? `\n${note}` : ""}`);
+      });
+      break;
+    }
+    case "needs_human": {
+      await write(env, async () => {
+        await setField(env, id, env.FIELD_NEXT_ACTION, `Needs human: ${note}`.slice(0, 250));
+        await addComment(env, id, `[hub] ${today}: ${who} needs a human: ${note}`);
+      });
+      break;
+    }
+    case "skipped": {
+      await write(env, async () => {
+        await setStatus(env, id, "rejected / paused");
+        await clearField(env, id, env.FIELD_NEXT_ACTION);
+        await addComment(env, id, `[hub] ${today}: skipped by ${who}: ${note}`);
+      });
+      break;
+    }
+    case "failed": {
+      await write(env, async () => {
+        await clearField(env, id, env.FIELD_NEXT_ACTION);
+        await addComment(env, id, `[hub] ${today}: ${who} could not finish; back in the queue.${note ? `\n${note}` : ""}`);
+      });
+      break;
+    }
+  }
+
+  await deleteClaim(env, id);
+  await logEvent(env, { agent, taskId: id, taskName: task.name, type: r.outcome, message: note });
+  return { job: await getJob(env, id).catch(() => job), warnings };
+}
+
+// ---------- Adding work ----------
+
+const norm = (s: string) => s.toLowerCase().replace(/[—–-]/g, " ").replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+
+async function findExisting(env: Env, company: string, role: string, url?: string): Promise<Task | null> {
+  const key = norm(`${company} ${role}`);
+  const tasks = (await loadTasks(env)).filter((t) => t.parentId === env.PARENT_TASK_ID);
+  return (
+    tasks.find((t) => norm(t.name) === key) ??
+    (url ? tasks.find((t) => parseDetails(t.description).applyUrl === url) : undefined) ??
+    null
+  );
+}
+
+export interface NewJob {
+  company: string;
+  role: string;
+  url?: string;
+  ats?: string;
+  pay?: string;
+  travel?: string;
+  fit?: string;
+  notes?: string;
+}
+
+/** Add a posting to the queue (status "not started"). Returns the existing task if it's already tracked. */
+export async function addJob(env: Env, agent: string, j: NewJob): Promise<{ id: string; created: boolean; status: string }> {
+  const existing = await findExisting(env, j.company, j.role, j.url);
+  if (existing) return { id: existing.id, created: false, status: existing.status };
+  let id = `demo-${Date.now()}`;
+  await write(env, async () => {
+    id = await createApplication(env, {
+      company: j.company,
+      role: j.role,
+      url: j.url,
+      platform: j.ats,
+      pay: j.pay,
+      travel: j.travel,
+      fit: j.fit,
+      notes: j.notes,
+      appliedBy: displayAgent(agent),
+      status: "not started",
+    });
+  });
+  await logEvent(env, { agent, taskId: id, taskName: `${j.company} — ${j.role}`, type: "added", message: j.url ?? null });
+  return { id, created: true, status: "not started" };
+}
+
+/**
+ * Log an application the agent already submitted for a posting that may not be in the queue.
+ * If the posting is queued, it's reported on that task instead of duplicating it.
+ */
+export async function logApplication(
+  env: Env,
+  agent: string,
+  a: NewJob & { platform?: string },
+): Promise<{ id: string; created: boolean; warnings: string[] }> {
+  const existing = await findExisting(env, a.company, a.role, a.url);
+  if (existing && existing.status === "not started") {
+    const { warnings } = await reportResult(env, agent, existing.id, { outcome: "applied", platform: a.platform ?? a.ats, note: a.notes });
+    return { id: existing.id, created: false, warnings };
+  }
+  if (existing) {
+    throw new HttpError(409, `${existing.name} is already tracked as "${existing.status}"${existing.appliedBy ? ` (by ${existing.appliedBy})` : ""}`);
+  }
+  let id = `demo-${Date.now()}`;
+  await write(env, async () => {
+    id = await createApplication(env, {
+      company: a.company,
+      role: a.role,
+      url: a.url,
+      platform: a.platform ?? a.ats,
+      pay: a.pay,
+      travel: a.travel,
+      fit: a.fit,
+      notes: a.notes,
+      appliedBy: displayAgent(agent),
+      status: "applied",
+    });
+  });
+  await logEvent(env, { agent, taskId: id, taskName: `${a.company} — ${a.role}`, type: "applied", message: a.notes ?? null });
+  return { id, created: true, warnings: [] };
+}

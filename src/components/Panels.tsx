@@ -1,10 +1,11 @@
 import type { PublicApplication } from "../types";
 
-const AGENT_COLORS: Record<string, string> = {
+export const AGENT_COLORS: Record<string, string> = {
   Claude: "#d97757",
   Codex: "#10a37f",
   Gemini: "#4285f4",
   Kimi: "#7c4dff",
+  Mistral: "#fa520f",
   Ollama: "#6b7280",
   Human: "#0f6b5c",
 };

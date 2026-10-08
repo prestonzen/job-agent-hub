@@ -1,6 +1,5 @@
-# Copy to .dev.vars (git-ignored) for local `wrangler dev`. NEVER commit real values.
+# Copy to .dev.vars (git-ignored) for local `npm run dev:api`. NEVER commit real values.
+# Without CLICKUP_TOKEN, run with MOCK=true (the dev:api script does) to use demo data.
 CLICKUP_TOKEN=pk_your_clickup_personal_token
-# JSON map: agent name -> bearer token (names should match Applied By options)
-AGENT_TOKENS={"claude":"change-me","codex":"change-me"}
-ZADARMA_KEY=your_zadarma_key
-ZADARMA_SECRET=your_zadarma_secret
+# JSON map: agent name -> bearer token (24+ chars). Names should match ClickUp "Applied By" options.
+AGENT_TOKENS={"claude":"change-me-to-a-long-random-token","codex":"change-me-to-a-long-random-token"}

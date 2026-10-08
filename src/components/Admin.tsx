@@ -1,9 +1,65 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { addComment, getAdminTasks, getMe, setStatus } from "../api";
 import { STATUSES, type AdminTask } from "../types";
+import CommandCenter from "./CommandCenter";
+import Connect from "./Connect";
+
+const TABS = [
+  { id: "hub", label: "Command center" },
+  { id: "pipeline", label: "Pipeline" },
+  { id: "connect", label: "Connect agents" },
+] as const;
+type Tab = (typeof TABS)[number]["id"];
+
+const tabFromHash = (): Tab => (TABS.find((t) => `#${t.id}` === window.location.hash)?.id ?? "hub");
 
 export default function Admin() {
   const [email, setEmail] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>(tabFromHash);
+
+  useEffect(() => {
+    getMe()
+      .then((r) => setEmail(r.email))
+      .catch((e: Error) => setErr(e.message));
+    const onHash = () => setTab(tabFromHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  if (err)
+    return (
+      <main>
+        <p className="notice">
+          Admin API said: <b>{err}</b>. This area is protected by Cloudflare Access — sign in with an allowed email.
+        </p>
+      </main>
+    );
+  if (!email) return <p className="notice">Loading…</p>;
+
+  return (
+    <main>
+      <section className="hero compact">
+        <h1>Admin</h1>
+        <p>
+          Signed in as <b>{email}</b>. Changes write straight to ClickUp.
+        </p>
+        <nav className="tabs" aria-label="Admin sections">
+          {TABS.map((t) => (
+            <a key={t.id} href={`#${t.id}`} className={tab === t.id ? "on" : ""} aria-current={tab === t.id ? "page" : undefined}>
+              {t.label}
+            </a>
+          ))}
+        </nav>
+      </section>
+      {tab === "hub" && <CommandCenter />}
+      {tab === "pipeline" && <Pipeline />}
+      {tab === "connect" && <Connect />}
+    </main>
+  );
+}
+
+function Pipeline() {
   const [tasks, setTasks] = useState<AdminTask[]>([]);
   const [demo, setDemo] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -13,7 +69,6 @@ export default function Admin() {
 
   async function load() {
     try {
-      setEmail((await getMe()).email);
       const r = await getAdminTasks();
       setTasks(r.tasks);
       setDemo(r.demo);
@@ -30,15 +85,6 @@ export default function Admin() {
     () => tasks.filter((t) => t.name.toLowerCase().includes(q.toLowerCase())),
     [tasks, q],
   );
-
-  if (err)
-    return (
-      <main>
-        <p className="notice">
-          Admin API said: <b>{err}</b>. This area is protected by Cloudflare Access — sign in with an allowed email.
-        </p>
-      </main>
-    );
 
   async function changeStatus(t: AdminTask, status: string) {
     setTasks((all) => all.map((x) => (x.id === t.id ? { ...x, status } : x)));
@@ -58,14 +104,10 @@ export default function Admin() {
   }
 
   return (
-    <main>
-      <section className="hero compact">
-        <h1>Admin</h1>
-        <p>
-          Signed in as <b>{email}</b>. Changes write straight to ClickUp. {demo && <span className="badge">Demo data</span>}
-        </p>
-        <input className="search" placeholder="Filter by company or role…" value={q} onChange={(e) => setQ(e.target.value)} />
-      </section>
+    <>
+      {err && <p className="notice">Error: {err}</p>}
+      <input className="search" placeholder="Filter by company or role…" value={q} onChange={(e) => setQ(e.target.value)} />
+      {demo && <span className="badge"> Demo data</span>}
       <section className="card wide">
         <table>
           <thead>
@@ -80,20 +122,23 @@ export default function Admin() {
           </thead>
           <tbody>
             {shown.map((t) => (
-              <>
-                <tr key={t.id}>
-                  <td>{t.name}</td>
+              <Fragment key={t.id}>
+                <tr>
+                  <td>
+                    {t.name}
+                    {t.nextAction && <div className="sub">{t.nextAction}</div>}
+                  </td>
                   <td>{t.platform ?? "—"}</td>
                   <td>{t.appliedBy ?? "—"}</td>
                   <td>{t.appliedOn ?? "—"}</td>
                   <td>
-                    <select value={t.status} onChange={(e) => void changeStatus(t, e.target.value)}>
+                    <select value={t.status} onChange={(e) => void changeStatus(t, e.target.value)} aria-label={`Status of ${t.name}`}>
                       {[...new Set([...STATUSES, t.status])].map((s) => (
                         <option key={s}>{s}</option>
                       ))}
                     </select>
                   </td>
-                  <td className="r">
+                  <td className="r nowrap">
                     <button className="ghost" onClick={() => setOpen(open === t.id ? null : t.id)}>
                       Note
                     </button>{" "}
@@ -103,7 +148,7 @@ export default function Admin() {
                   </td>
                 </tr>
                 {open === t.id && (
-                  <tr key={t.id + "-n"}>
+                  <tr>
                     <td colSpan={6}>
                       <div className="note-row">
                         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a comment to this task…" />
@@ -112,11 +157,11 @@ export default function Admin() {
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
       </section>
-    </main>
+    </>
   );
 }

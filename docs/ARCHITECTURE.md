@@ -5,34 +5,45 @@ flowchart LR
   subgraph Browser
     SPA[React + Vite SPA<br/>/ public · /admin]
   end
-  subgraph Cloudflare
-    W[Worker<br/>static assets + /api/*]
-    A[Cloudflare Access<br/>/admin* /api/admin/*]
-  end
   subgraph Agents
-    C[Claude] --- X[Codex] --- G[Gemini] --- K[Kimi] --- O[Ollama]
+    C[Claude] --- X[Codex] --- G[Gemini] --- K[Kimi] --- M[Mistral]
   end
-  SPA -->|GET /api/public/summary| W
-  SPA -->|admin calls| A --> W
-  Agents -->|POST /api/agent/applications<br/>Bearer token| W
-  W -->|CLICKUP_TOKEN secret| CU[(ClickUp<br/>list + custom fields)]
-  W -.->|ZADARMA_* secrets, experimental| Z[Zadarma API]
+  subgraph Cloudflare Pages
+    F[Pages Functions<br/>functions/ → worker/src]
+    A[Cloudflare Access<br/>/admin* /api/admin/*]
+    D[(D1<br/>claims · events · heartbeats)]
+  end
+  SPA -->|GET /api/public/summary| F
+  SPA -->|admin calls| A --> F
+  Agents -->|MCP POST /mcp<br/>REST /api/agent/*<br/>Bearer token| F
+  F --> D
+  F -->|CLICKUP_TOKEN secret| CU[(ClickUp<br/>tasks · fields · playbook doc)]
 ```
 
-## Request flow
+## Routes
 
 | Route | Auth | Purpose |
 |---|---|---|
 | `GET /api/public/summary` | none (sanitized, cached 60 s) | Public dashboard data |
-| `GET /api/admin/tasks`, `PUT /api/admin/tasks/:id/status`, `POST /api/admin/tasks/:id/comments` | Cloudflare Access JWT + email allow-list | Manage the pipeline |
-| `GET /api/admin/phone/stats` | same | Experimental Zadarma call stats |
-| `POST /api/agent/applications` | per-agent bearer token | Agents log an application |
-| everything else | none | Static SPA (single-page fallback) |
+| `GET /api/health` | none | Config check (no secrets) |
+| `POST /mcp` | agent bearer token | MCP server (stateless Streamable HTTP, JSON responses) |
+| `/api/agent/*` | agent bearer token | Same operations over REST (see AGENTS.md) |
+| `/api/admin/*` | Cloudflare Access JWT + email allow-list | Command center, pipeline edits, admin release/report |
+| everything else | none | Static SPA (`dist/`, single-page fallback) |
+
+## Queue and claims
+
+- **Queue** = ClickUp subtasks of `PARENT_TASK_ID` with status *not started*. The description's `Apply: <url>` / `Pay | Travel | Fit | ATS` line is parsed for the posting details. Order: fit (x/5) desc, then ClickUp priority.
+- **Claim** = a row in D1 `claims` taken with a single `INSERT … ON CONFLICT DO UPDATE … WHERE expired OR same agent` statement. The statement either changes one row (you won) or none (someone else holds it). No locks, no races.
+- **Mirror**: a successful claim writes `Claimed by <agent> until <time>` to ClickUp *Next Action*. The queue also honours such notes written by agents that bypass the hub.
+- **Leases expire** (`LEASE_MINUTES`, default 60), so a crashed agent's jobs return to the queue automatically. `claim_jobs` hands an agent the jobs it already holds first.
+- **Reports** write status, Applied By, Platform Applied, Applied On and a comment to ClickUp, delete the claim and log an event. `applied` on a task that isn't *not started* is refused (409), so a late duplicate can't overwrite another agent's record.
 
 ## Design decisions
 
-- **One Worker for UI and API**: one deploy, one origin (no CORS), and `run_worker_first` keeps `/api/*` ahead of static assets.
-- **ClickUp is the system of record**: resumes, docs and tasks stay where they already live; the Worker is a thin, stateless adapter.
-- **Sanitize at the boundary**: `worker/src/sanitize.ts` is the only place data becomes public. Keep it small and reviewed.
-- **No auth code to maintain**: login is delegated to Cloudflare Access; the Worker only verifies the signed token.
-- **Agent identity from the token**: an agent can't claim to be another agent in the request body.
+- **ClickUp stays the system of record.** D1 only holds coordination state that ClickUp is bad at (atomic leases, a high-frequency activity log, check-ins).
+- **One service layer, two transports.** `worker/src/jobs.ts` implements every operation; `mcp.ts` and the REST routes are thin adapters, so MCP and REST agents behave identically.
+- **Pages, not a standalone Worker.** Git integration deploys on push; `functions/` are one-line adapters into `worker/src/index.ts`, which still runs as a plain Worker if ever needed.
+- **Sanitize at the boundary.** `worker/src/sanitize.ts` is the only place data becomes public.
+- **No auth code to maintain for humans.** Login is Cloudflare Access; the code only verifies the signed token.
+- **Agent identity from the token**, never from the request body.

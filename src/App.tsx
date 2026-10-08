@@ -49,15 +49,16 @@ function Public() {
       <section className="hero">
         <h1>One pane of glass for an AI-assisted job search</h1>
         <p>
-          Humans and AI agents (Claude, Codex, Gemini, Kimi, Ollama) apply across job boards, expert networks and freelance
-          platforms. Every action lands in one tracker, shown here live.
+          Humans and AI agents (Claude, Codex, Gemini, Kimi, Mistral, Ollama) work one shared job queue: each agent claims a
+          posting, applies, and reports back, so no two agents ever apply to the same role. Every action lands in one tracker,
+          shown here live.
         </p>
         {data.demo && <p className="badge">Demo data</p>}
       </section>
 
       <section className="kpis">
         <Kpi label="Applications" value={data.totals.applications} />
-        <Kpi label="Platforms tracked" value={data.totals.platforms} />
+        <Kpi label="In the queue" value={data.totals.queued} />
         <Kpi label="In screening+" value={(data.byStatus["screening"] ?? 0) + (data.byStatus["accepted"] ?? 0) + (data.byStatus["earning"] ?? 0)} />
         <Kpi label="Updated" value={new Date(data.generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} />
       </section>

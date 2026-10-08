@@ -1,69 +1,78 @@
 # Job Agent Hub
 
-**One pane of glass for an AI-assisted job search.** Humans and AI agents (Claude, Codex, Gemini, Kimi, Ollama) apply across job boards, expert networks and freelance platforms; every action lands in one tracker (ClickUp) and is shown here.
+**One pane of glass for a multi-agent job search.** Claude, Codex, Gemini, Kimi, Mistral, Ollama (and a human) work **one shared job queue**: each agent claims a posting, applies, and reports back. The hub makes sure no two agents ever apply to the same role, and every result lands in one tracker (ClickUp).
 
-- **Public site**: a sanitized live view: funnel, who applied (human vs. each agent), applications per day, platform breakdown and recent activity.
-- **Admin panel** (`/admin`): behind Cloudflare Access login. Change statuses and add notes; changes write straight to ClickUp.
-- **Agent API**: any agent with a bearer token can log an application (`POST /api/agent/applications`). See [docs/AGENTS.md](docs/AGENTS.md).
-- **Built for one person's workflow** (resumes, docs and tasks live in ClickUp), not a multi-tenant SaaS.
+Live at **https://jobhunter.prestonzen.com**.
+
+- **Shared queue with atomic claims**: an agent claims the best-fit postings and holds a lease (default 60 min) while it applies. Claims are one SQL statement in D1, so two agents can't both win. Claims are mirrored to ClickUp's *Next Action* field, and agents that only talk to ClickUp can claim there too (`Claimed by <agent> until <ISO time>`).
+- **Every agent, one endpoint**: MCP clients (Claude Code, Codex, Gemini CLI, Kimi CLI, Cursor…) connect to `/mcp`. Agents without MCP (browser agents, chat apps) use the same operations over REST at `/api/agent/*`. Each agent has its own bearer token, and the token decides who it is.
+- **One runner prompt**: the loop (read playbook → claim → apply → report) is served to every agent as MCP server instructions, from `GET /api/agent/instructions`, and on the admin *Connect agents* page.
+- **Playbook from ClickUp**: standard form answers and rules come from the ClickUp playbook doc, served only to authenticated agents and admins, so no agent re-asks profile questions.
+- **Admin command center** (`/admin`, behind Cloudflare Access): queue and claims, which agents are online, live activity, release/skip/mark-applied, pipeline editing, copy-paste agent setup.
+- **Public dashboard** (`/`): a sanitized live view: funnel, who applied, applications per day, platforms. No contact details, notes, links, answers or queued targets.
 
 ```
-React + Vite (SPA)  ──┐
-                      ├─ one Cloudflare Worker (static assets + /api/*) ── ClickUp API
-Agents (bearer token) ┘                                   └─ Zadarma API (optional, experimental)
+                       ┌── /            public dashboard (sanitized)
+Browser ── React SPA ──┤
+                       └── /admin       command center ── Cloudflare Access
+Agents ── MCP  /mcp ───────┐
+       └─ REST /api/agent ─┼── Pages Functions (worker/src) ──┬── ClickUp (system of record)
+                           │                                   └── D1 (claims, activity, check-ins)
 ```
 
-More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · Connecting agents: [docs/AGENTS.md](docs/AGENTS.md)
 
 ## Privacy model
 
 This repo and the public site contain **no personal data and no secrets**.
 
-- The Worker is the only thing that holds credentials (Cloudflare secrets). The browser bundle never does, so **never put secrets in `VITE_*` variables** (they get compiled into the public JS).
-- `/api/public/summary` returns only: company, role, platform, status, who applied, and the date. Descriptions, comments, links, contact details, DOB/address and form answers are never sent.
-- `/api/admin/*` requires a valid Cloudflare Access JWT **and** an allow-listed email; the Worker re-verifies the token (RS256 against your team's JWKS) so a misconfigured Access policy can't expose it.
-- `/api/agent/*` uses per-agent bearer tokens; the agent's identity comes from the token, not the request body.
+- Only the Functions hold credentials (Pages secrets). The browser bundle never does, so **never put secrets in `VITE_*` variables**.
+- `/api/public/summary` returns only company, role, platform, status, who applied and the date for submitted applications.
+- `/api/admin/*` requires a valid Cloudflare Access JWT **and** an allow-listed email; the code re-verifies the token (RS256 against your team's JWKS).
+- `/api/agent/*` and `/mcp` use per-agent bearer tokens (24+ chars). The playbook (personal data) is only served there and to admins, and is cached in memory only.
 
-## Quick start (local, demo data)
+## Setup
+
+The Pages project `job-agent-hub` is Git-connected: **every push to `main` builds and deploys**. Bindings and vars live in `wrangler.jsonc`.
+
+Secrets (`npx wrangler pages secret put <NAME> --project-name job-agent-hub`):
+
+| Secret | What |
+|---|---|
+| `CLICKUP_TOKEN` | ClickUp personal API token (`pk_…`). Required for real data. |
+| `AGENT_TOKENS` | JSON map of agent name → token, e.g. `{"claude":"…","codex":"…"}`. Names should match ClickUp *Applied By* options. |
+| `ACCESS_TEAM_DOMAIN` | e.g. `yourteam.cloudflareaccess.com` |
+| `ACCESS_AUD` | AUD tag of the Access application covering `/admin*` and `/api/admin/*` |
+| `ADMIN_EMAILS` | Comma-separated emails allowed into the admin |
+| `ZADARMA_KEY`, `ZADARMA_SECRET` | Optional, experimental phone stats |
+
+The Access settings are not secret; they're stored as secrets only to keep them out of this public repo.
+
+**Admin login**: Cloudflare Zero Trust → Access → Applications → add a self-hosted app for `jobhunter.prestonzen.com` with paths `/admin` and `/api/admin`, allow only your email. Put its AUD tag, your team domain and your email in the three secrets above.
+
+**Database**: D1 `job-agent-hub`. Tables are created on first use; `npm run db:migrate` applies `migrations/` explicitly.
+
+## Local development (demo data)
 
 ```bash
 npm install
-cp .dev.vars.example .dev.vars        # optional for demo mode
-# run the Worker in demo mode, then the app:
-npx wrangler dev --var MOCK:true      # terminal 1  → http://127.0.0.1:8787
-npm run dev                           # terminal 2  → http://localhost:5173 (proxies /api)
+cp .dev.vars.example .dev.vars   # set AGENT_TOKENS to test tokens
+npm run build && npm run dev:api # Pages Functions + local D1 on http://127.0.0.1:8788 (MOCK=true)
+npm run dev                      # Vite on http://localhost:5173, proxies /api and /mcp
 ```
 
-## Deploy (Cloudflare, via GitHub Actions)
-
-1. **Create a Cloudflare API token** (Workers Scripts: Edit) and note your Account ID.
-2. **GitHub → Settings → Secrets and variables → Actions → New repository secret**:
-   `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLICKUP_TOKEN` (ClickUp personal API token),
-   `AGENT_TOKENS` (JSON like `{"claude":"…","codex":"…"}`), and optionally `ZADARMA_KEY` / `ZADARMA_SECRET`.
-3. The app is configured for the custom domain **jobhunter.prestonzen.com** (`routes` in `wrangler.jsonc`; the `prestonzen.com` zone must be in the same Cloudflare account). Edit `wrangler.jsonc` vars (`CLICKUP_LIST_ID`, `PARENT_TASK_ID`, field ids, `ADMIN_EMAILS`).
-4. **Protect the admin area**: Cloudflare Zero Trust → Access → Applications → add a self-hosted app for your Worker's hostname with paths `/admin*` and `/api/admin/*`, allow only your email. Copy the application's **AUD tag** and your **team domain** into `ACCESS_AUD` / `ACCESS_TEAM_DOMAIN` in `wrangler.jsonc`.
-5. Add a repository **variable** `DEPLOY_ENABLED` = `true` (Settings → Secrets and variables → Actions → Variables). Until then CI only typechecks and builds.
-6. Push to `main`. The workflow typechecks, builds and deploys; secrets are synced to the Worker automatically.
-
-## ClickUp data model
-
-The tracker is a ClickUp list where each application is a subtask of one parent task, with three custom fields:
-**Applied By** (Human/Claude/Codex/Kimi/Gemini/Ollama), **Platform Applied** (Greenhouse/Ashby/Lever/…), **Applied On** (date).
-Task names follow `Company — Role`. Statuses: `not started → applied → screening → accepted → earning` (or `rejected / paused`).
+In demo mode, ClickUp writes are skipped, while claims and activity run for real against local D1. The admin page skips Access on localhost.
 
 ## Scripts
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Vite dev server (proxies `/api` to the local Worker) |
-| `npm run dev:worker` | `wrangler dev` |
-| `npm run typecheck` | Type-check the app and the Worker |
+| `npm run dev` | Vite dev server (proxies `/api`, `/mcp` to port 8788) |
+| `npm run dev:api` | `wrangler pages dev dist` in demo mode |
+| `npm run typecheck` | Type-check the app, the Functions and `worker/src` |
 | `npm run build` | Production build into `dist/` |
-| `npm run deploy` | Build + `wrangler deploy` (CI does this for you) |
-
-## Status
-
-MVP. Planned: more agent connectors (subscription-based clients), Zadarma inbound-call/SMS feed in the admin, per-platform adapters, resume/document panel backed by ClickUp Docs.
+| `npm run db:migrate` | Apply D1 migrations to the remote database |
+| `npm run deploy` | Manual deploy (normally Git integration does this) |
 
 ## License
 

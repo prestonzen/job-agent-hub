@@ -1,0 +1,24 @@
+name: CI
+
+# Deploys are done by Cloudflare Pages' Git integration (push to main -> jobhunter.prestonzen.com).
+# This workflow only checks that the app and the Functions typecheck and build.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build

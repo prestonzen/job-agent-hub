@@ -8,3 +8,6 @@ dist
 *.log
 .DS_Store
 *.tsbuildinfo
+
+# Local copy of production agent tokens (never commit)
+.agent-tokens.local.json
