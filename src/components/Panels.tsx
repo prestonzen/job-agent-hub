@@ -38,11 +38,13 @@ function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] 
 
 const fmtDay = (iso: string, opts: Intl.DateTimeFormatOptions) => new Date(`${iso}T12:00:00`).toLocaleDateString([], opts);
 
-function niceMax(v: number): number {
-  if (v <= 4) return 4;
-  const step = Math.pow(10, Math.floor(Math.log10(v)));
-  for (const m of [1, 2, 2.5, 5, 10]) if (m * step >= v) return m * step;
-  return 10 * step;
+/** Axis with ~4 round steps that just clears `v` (54 → 0/20/40/60, not 0..100). */
+function niceScale(v: number): { max: number; ticks: number[] } {
+  const raw = Math.max(1, v) / 4;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? 10 * mag;
+  const max = Math.ceil(Math.max(1, v) / step) * step;
+  return { max, ticks: Array.from({ length: Math.round(max / step) + 1 }, (_, i) => i * step) };
 }
 
 export function Card({ title, aside, children, className = "" }: { title: string; aside?: React.ReactNode; children: React.ReactNode; className?: string }) {
@@ -79,11 +81,10 @@ export function DailyChart({ days: raw }: { days: (Omit<Day, "byAgent"> & { byAg
   const M = { top: 24, right: 8, bottom: 28, left: 32 };
   const innerW = Math.max(0, width - M.left - M.right);
   const innerH = H - M.top - M.bottom;
-  const max = niceMax(Math.max(1, ...shown.map((d) => d.count)));
+  const { max, ticks } = niceScale(Math.max(1, ...shown.map((d) => d.count)));
   const band = shown.length ? innerW / shown.length : 0;
   const barW = Math.max(6, Math.min(56, band * 0.62));
   const y = (v: number) => innerH - (v / max) * innerH;
-  const ticks = [0, max / 4, max / 2, (3 * max) / 4, max];
 
   const legend = (
     <ul className="legend" aria-label="Agents">
