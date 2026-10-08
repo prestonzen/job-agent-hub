@@ -1,0 +1,6 @@
+# Copy to .dev.vars (git-ignored) for local `wrangler dev`. NEVER commit real values.
+CLICKUP_TOKEN=pk_your_clickup_personal_token
+# JSON map: agent name -> bearer token (names should match Applied By options)
+AGENT_TOKENS={"claude":"change-me","codex":"change-me"}
+ZADARMA_KEY=your_zadarma_key
+ZADARMA_SECRET=your_zadarma_secret

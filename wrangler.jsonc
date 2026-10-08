@@ -1,0 +1,28 @@
+{
+  // One Worker serves the React app (static assets) and the /api/* routes.
+  "name": "job-agent-hub",
+  "main": "worker/src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // Let the Worker handle API routes before static assets.
+    "run_worker_first": ["/api/*"]
+  },
+  // Non-secret configuration. Secrets (tokens/keys) are NEVER put here:
+  //   npx wrangler secret put CLICKUP_TOKEN   (and AGENT_TOKENS, ZADARMA_KEY, ZADARMA_SECRET)
+  "vars": {
+    "MOCK": "false",
+    "CLICKUP_LIST_ID": "901115501535",
+    "PARENT_TASK_ID": "868mehfh7",
+    "FIELD_APPLIED_BY": "051b2bae-f334-4927-a0c4-c70f9f3cc377",
+    "FIELD_PLATFORM": "ded5bdeb-290d-431b-9de3-c99ccd3854a4",
+    "FIELD_APPLIED_ON": "a750f70b-fff3-4bb9-b2e9-e54b09d33600",
+    // Cloudflare Access (Zero Trust) protects /admin* and /api/admin/*.
+    "ACCESS_TEAM_DOMAIN": "YOUR-TEAM.cloudflareaccess.com",
+    "ACCESS_AUD": "REPLACE_WITH_ACCESS_APPLICATION_AUD_TAG",
+    "ADMIN_EMAILS": "you@example.com"
+  },
+  "observability": { "enabled": true }
+}
