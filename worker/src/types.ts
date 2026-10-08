@@ -21,6 +21,8 @@ export interface Env {
   // --- secrets (wrangler pages secret put ...) ---
   /** Admin login token (24+ chars). Traded for a signed session cookie on /admin. */
   ADMIN_TOKEN?: string;
+  /** Shared secret for runner machines (runner/runner.mjs) that execute agent runs. */
+  RUNNER_TOKEN?: string;
   CLICKUP_TOKEN?: string;
   /** JSON map of agent name -> bearer token, e.g. {"claude":"...","codex":"..."} */
   AGENT_TOKENS?: string;

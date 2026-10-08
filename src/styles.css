@@ -210,3 +210,29 @@ label.inline { display: inline-flex; align-items: center; gap: 8px; margin: 6px 
 @media (forced-colors: active) {
   .key, .tt-row i, .board .meter span { forced-color-adjust: none; }
 }
+
+/* ---------- Admin: run agents ---------- */
+.runner { padding: 8px 0 12px; border-bottom: 1px solid var(--line); }
+.runner:last-child { border-bottom: 0; }
+.runner-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.pulse.on { background: #22c55e; }
+.chip.ready { border-color: color-mix(in srgb, #22c55e 45%, var(--line)); color: var(--ink); }
+.launcher { display: grid; gap: 12px; align-content: start; }
+.launcher label { display: grid; gap: 6px; font-size: 14px; font-weight: 600; }
+.launcher select, .launcher textarea { background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; font: inherit; font-weight: 400; }
+.launcher input[type="range"] { accent-color: var(--accent); }
+.runs { list-style: none; margin: 0; padding: 0; }
+.runs > li { border-bottom: 1px solid var(--line); }
+.run-row { width: 100%; display: grid; grid-template-columns: 44px minmax(90px, auto) 1fr auto 70px; align-items: center; gap: 10px; padding: 10px 4px; background: transparent; color: var(--ink); border-radius: 0; text-align: left; font-size: 14px; }
+.run-row:hover { background: var(--grid); }
+.run-row .who { display: flex; align-items: center; font-weight: 600; }
+.run-row .task { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12px; }
+.run-log { padding: 0 4px 12px; }
+.run-log-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.run-log pre { margin: 0; max-height: 420px; overflow: auto; padding: 12px; background: #0b0f14; color: #d6dde6; border-radius: 8px; font: 12px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+button.danger { color: #e5484d; border-color: color-mix(in srgb, #e5484d 40%, var(--line)); }
+@media (max-width: 640px) {
+  .run-row { grid-template-columns: 38px 1fr auto; }
+  .run-row .task, .run-row > .nowrap { display: none; }
+}

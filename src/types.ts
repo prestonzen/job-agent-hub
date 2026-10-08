@@ -79,3 +79,31 @@ export interface HubState {
   applied: Record<string, number>;
   leaseMinutes: number;
 }
+
+export interface Run {
+  id: number;
+  agent: string;
+  kind: "queue" | "prompt";
+  prompt: string | null;
+  count: number | null;
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  runner: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  exitCode: number | null;
+  cancel: boolean;
+  logSize: number;
+  log?: string;
+}
+
+export interface RunnerInfo {
+  name: string;
+  lastSeen: string;
+  online: boolean;
+  agents: { id: string; installed: boolean; ready: boolean; version?: string | null; note?: string | null }[];
+  slots: number;
+  busy: number;
+  version: string | null;
+  host: string | null;
+}

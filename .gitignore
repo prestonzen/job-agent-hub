@@ -13,3 +13,4 @@ dist
 .agent-tokens.local.json
 .admin-token.local.txt
 vite.preview-prod.config.ts
+.runner-token.local.txt

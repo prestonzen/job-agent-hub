@@ -3,9 +3,11 @@ import { addComment, getAdminTasks, getMe, login, logout, setStatus } from "../a
 import { STATUSES, type AdminTask } from "../types";
 import CommandCenter from "./CommandCenter";
 import Connect from "./Connect";
+import RunAgents from "./RunAgents";
 
 const TABS = [
   { id: "hub", label: "Command center" },
+  { id: "run", label: "Run agents" },
   { id: "pipeline", label: "Pipeline" },
   { id: "connect", label: "Connect agents" },
 ] as const;
@@ -50,6 +52,7 @@ export default function Admin() {
         </nav>
       </section>
       {tab === "hub" && <CommandCenter />}
+      {tab === "run" && <RunAgents />}
       {tab === "pipeline" && <Pipeline />}
       {tab === "connect" && <Connect />}
     </main>

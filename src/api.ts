@@ -1,4 +1,4 @@
-import type { AdminTask, HubState, PublicSummary } from "./types";
+import type { AdminTask, HubState, PublicSummary, Run, RunnerInfo } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
@@ -34,3 +34,9 @@ export async function getText(path: string): Promise<string> {
   if (!res.ok) throw new Error(`${res.status}`);
   return res.text();
 }
+
+export const getRuns = () => request<{ runs: Run[]; runners: RunnerInfo[] }>("/api/admin/runs");
+export const getRun = (id: number) => request<Run>(`/api/admin/runs/${id}`);
+export const createRun = (r: { agent: string; kind: "queue" | "prompt"; count?: number; prompt?: string; copies?: number }) =>
+  request<{ runs: Run[] }>("/api/admin/runs", { method: "POST", body: JSON.stringify(r) });
+export const cancelRun = (id: number) => request<Run>(`/api/admin/runs/${id}/cancel`, { method: "POST" });

@@ -19,6 +19,7 @@ import {
   type Report,
 } from "./jobs";
 import { handleMcp } from "./mcp";
+import { appendLog, cancelRun, claimRun, createRun, finishRun, getRun, isRunnerToken, listRunners, listRuns, runnerHeartbeat, type RunKind } from "./runs";
 import { toPublicSummary } from "./sanitize";
 import type { Env } from "./types";
 import { zadarmaGet } from "./zadarma";
@@ -112,6 +113,35 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     if (!agent) return unauthorizedAgent();
     ctx.waitUntil(heartbeat(env, agent, `mcp ${request.headers.get("User-Agent") ?? ""}`).catch(() => {}));
     return handleMcp(request, env, agent);
+  }
+
+  // ---------- Runner API (RUNNER_TOKEN): machines that execute agent runs ----------
+  if (path.startsWith("/api/runner/")) {
+    if (!isRunnerToken(env, request)) return json({ error: "unauthorized" }, 401);
+    const sub = path.slice("/api/runner".length);
+    if (sub === "/heartbeat" && method === "POST") {
+      const b = await readJson<Parameters<typeof runnerHeartbeat>[1]>(request);
+      if (!b.name) return json({ error: "name is required" }, 400);
+      await runnerHeartbeat(env, b);
+      return json({ ok: true });
+    }
+    if (sub === "/claim" && method === "POST") {
+      const b = await readJson<{ name?: string; agents?: string[] }>(request);
+      if (!b.name) return json({ error: "name is required" }, 400);
+      return json({ run: await claimRun(env, b.name, Array.isArray(b.agents) ? b.agents : [], url.origin) });
+    }
+    const m = sub.match(/^\/runs\/(\d+)\/(log|finish)$/);
+    if (m && method === "POST") {
+      const id = Number(m[1]);
+      if (m[2] === "log") {
+        const b = await readJson<{ name?: string; chunk?: string }>(request);
+        return json(await appendLog(env, id, String(b.name ?? ""), String(b.chunk ?? "")));
+      }
+      const b = await readJson<{ name?: string; exitCode?: number | null; cancelled?: boolean }>(request);
+      await finishRun(env, id, String(b.name ?? ""), { exitCode: b.exitCode ?? null, cancelled: !!b.cancelled });
+      return json({ ok: true });
+    }
+    return json({ error: "not found" }, 404);
   }
 
   // ---------- Agent REST API (bearer token) ----------
@@ -215,6 +245,26 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     }
 
     if (path === "/api/admin/playbook" && method === "GET") return text(await playbook(env));
+
+    // Remote agent runs (executed by runner machines).
+    if (path === "/api/admin/runs" && method === "GET") {
+      const [runs, runners] = await Promise.all([listRuns(env, Number(url.searchParams.get("limit")) || 50), listRunners(env)]);
+      return json({ runs, runners });
+    }
+    if (path === "/api/admin/runs" && method === "POST") {
+      const b = await readJson<{ agent?: string; kind?: RunKind; prompt?: string; count?: number; copies?: number }>(request);
+      if (!b.agent) return json({ error: "agent is required" }, 400);
+      const copies = Math.min(5, Math.max(1, Math.floor(b.copies ?? 1)));
+      const created = [];
+      for (let i = 0; i < copies; i++) created.push(await createRun(env, { agent: b.agent, kind: b.kind ?? "queue", prompt: b.prompt, count: b.count }));
+      return json({ runs: created }, 201);
+    }
+    const runRoute = path.match(/^\/api\/admin\/runs\/(\d+)(?:\/(cancel))?$/);
+    if (runRoute) {
+      const id = Number(runRoute[1]);
+      if (!runRoute[2] && method === "GET") return json(await getRun(env, id));
+      if (runRoute[2] === "cancel" && method === "POST") return json(await cancelRun(env, id));
+    }
 
     const adminJob = path.match(/^\/api\/admin\/jobs\/([^/]+)\/(release|report)$/);
     if (adminJob && method === "POST") {
