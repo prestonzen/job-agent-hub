@@ -13,6 +13,11 @@ npx wrangler pages secret put AGENT_TOKENS --project-name job-agent-hub
 
 The name is the agent's identity in comments, activity and the ClickUp **Applied By** field. If ClickUp has no option with that name (e.g. *Mistral*), add the option in ClickUp; until then the application is still recorded, just untagged.
 
+## ClickUp conventions (every agent, every doc)
+
+- **Flat list, no subtasks.** Each application is one top-level task named "Company — Role" in the *AI Job Applications* list. Never create subtasks or nest tasks; if you find one, convert it to a task (Subtasks: "Separate" → Convert to Task). The header task `AI Dev Job Applications — Oct 2026` is notes-only.
+- **Platform Applied is the ATS where the form was actually submitted** (Greenhouse, Ashby, Lever, Workable, Workday, SmartRecruiters, Breezy, Rippling, Avature, Indeed Easy Apply, …). **Company site** means the company's own custom form. There is no "Other": if the platform you used is missing, add that specific platform to the dropdown. Unknown names are skipped, never guessed.
+
 ## 2. Connect
 
 **MCP** (Claude Code, Codex, Gemini CLI, Kimi CLI, Cursor…): remote server at `https://jobhunter.prestonzen.com/mcp`, Streamable HTTP, header `Authorization: Bearer <token>`.

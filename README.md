@@ -79,3 +79,6 @@ In demo mode, ClickUp writes are skipped, while claims and activity run for real
 ## License
 
 MIT
+
+
+> ClickUp conventions: one flat top-level task per application (no subtasks); *Platform Applied* = the ATS actually used (no "Other"). See docs/AGENTS.md.

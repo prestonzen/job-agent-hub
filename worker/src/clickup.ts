@@ -171,7 +171,7 @@ export async function stampApplied(
   a: { agent: string; platform?: string | null; on?: string },
 ): Promise<{ appliedBy: boolean; platform: boolean }> {
   const by = await optionId(env, env.FIELD_APPLIED_BY, a.agent);
-  const plat = (a.platform && (await optionId(env, env.FIELD_PLATFORM, a.platform))) || (await optionId(env, env.FIELD_PLATFORM, "Other"));
+  const plat = a.platform ? await optionId(env, env.FIELD_PLATFORM, a.platform) : null; // no "Other" fallback: add the specific platform to the dropdown instead
   const on = a.on ?? new Date().toISOString().slice(0, 10);
   await Promise.all([
     by ? setField(env, taskId, env.FIELD_APPLIED_BY, by) : Promise.resolve(),
@@ -202,7 +202,7 @@ export async function createApplication(env: Env, a: NewApplication): Promise<st
   if (status !== "not started") {
     const by = await optionId(env, env.FIELD_APPLIED_BY, a.appliedBy);
     if (by) custom_fields.push({ id: env.FIELD_APPLIED_BY, value: by });
-    const plat = (await optionId(env, env.FIELD_PLATFORM, a.platform ?? "Other")) ?? (await optionId(env, env.FIELD_PLATFORM, "Other"));
+    const plat = a.platform ? await optionId(env, env.FIELD_PLATFORM, a.platform) : null;
     if (plat) custom_fields.push({ id: env.FIELD_PLATFORM, value: plat });
     const on = a.appliedOn ?? new Date().toISOString().slice(0, 10);
     custom_fields.push({ id: env.FIELD_APPLIED_ON, value: Date.parse(`${on}T12:00:00Z`) });
