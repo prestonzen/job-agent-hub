@@ -327,11 +327,11 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     // Notifications + replies.
     if (path === "/api/admin/telegram/test" && method === "POST") {
       const err = await notify(env, "👋 Job Agent Hub is connected. Alerts for runs, jobs that need you, and recruiter replies will land in this topic.");
-      return json({ ok: !err, error: err, configured: telegramConfigured(env) }, err ? 502 : 200);
+      return json({ ok: !err, error: err, configured: telegramConfigured(env) }); // 200 either way: Cloudflare replaces 502 bodies
     }
     if (path === "/api/admin/digest" && method === "POST") {
       const err = await sendDigest(env, url.origin);
-      return json({ ok: !err, error: err }, err ? 502 : 200);
+      return json({ ok: !err, error: err });
     }
     if (path === "/api/admin/inbound" && method === "GET") return json({ emails: await recentInbound(env) });
 
