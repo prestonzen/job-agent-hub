@@ -3,6 +3,10 @@ export interface Env {
   ASSETS?: Fetcher;
   /** D1: job claims (leases), agent activity log, agent heartbeats. */
   DB: D1Database;
+  /** R2: resume bank (private). */
+  RESUMES?: R2Bucket;
+  /** Workers AI: classifies inbound recruiter email. */
+  AI?: Ai;
 
   // --- non-secret vars (wrangler.jsonc) ---
   MOCK: string;
@@ -17,12 +21,19 @@ export interface Env {
   PLAYBOOK_DOC_ID: string;
   /** How long a claim lasts before the job returns to the queue. */
   LEASE_MINUTES: string;
+  /** Telegram chat for notifications (Kaizen Apps Operations forum); TELEGRAM_THREAD_ID pins a topic. */
+  TELEGRAM_CHAT_ID?: string;
+  TELEGRAM_THREAD_ID?: string;
 
   // --- secrets (wrangler pages secret put ...) ---
   /** Admin login token (24+ chars). Traded for a signed session cookie on /admin. */
   ADMIN_TOKEN?: string;
   /** Shared secret for runner machines (runner/runner.mjs) that execute agent runs. */
   RUNNER_TOKEN?: string;
+  /** Telegram bot token (BotFather). */
+  TELEGRAM_BOT_TOKEN?: string;
+  /** Shared secret for the Gmail reply-tracker script posting to /api/inbound/email. */
+  INBOUND_TOKEN?: string;
   CLICKUP_TOKEN?: string;
   /** JSON map of agent name -> bearer token, e.g. {"claude":"...","codex":"..."} */
   AGENT_TOKENS?: string;

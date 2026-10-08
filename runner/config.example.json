@@ -6,7 +6,7 @@
   "timeoutMinutes": 90,
   "workDir": "/var/lib/job-agent-runner/runs",
   "files": ["/home/agent/resume/Preston_Zen_Resume_AI_2026-10-08.pdf"],
-  "machineNotes": "This is a Linux runner. Use the playwright MCP tools for the browser (a real Chromium on a virtual display). The resume PDF is ./Preston_Zen_Resume_AI_2026-10-08.pdf in your current directory; upload that file and ignore the Windows path in the playbook. You cannot receive email or SMS codes here: report needs_human for those.",
+  "machineNotes": "This is a Linux runner. Use the playwright MCP tools for the browser (a real Chromium on a virtual display). For each job call get_resume with the job title; the chosen file is in ./resumes/<filename> in your current directory (fallback: ./Preston_Zen_Resume_AI_2026-10-08.pdf). Upload that file and ignore the Windows path in the playbook. You cannot receive email or SMS codes here: report needs_human for those.",
   "agentTokens": {
     "claude": "<hub token>", "codex": "<hub token>", "gemini": "<hub token>",
     "qwen": "<hub token>", "kimi": "<hub token>", "mistral": "<hub token>"

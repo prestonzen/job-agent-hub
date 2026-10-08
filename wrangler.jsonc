@@ -13,9 +13,14 @@
       "migrations_dir": "migrations"
     }
   ],
+  // Resume bank (private bucket; served only to authenticated agents, runners and the admin).
+  "r2_buckets": [{ "binding": "RESUMES", "bucket_name": "job-agent-hub-resumes" }],
+  // Workers AI: classifies recruiter replies.
+  "ai": { "binding": "AI" },
   // Non-secret configuration (ClickUp ids are not credentials).
   // Secrets, set with `npx wrangler pages secret put <NAME> --project-name job-agent-hub`:
-  //   CLICKUP_TOKEN, AGENT_TOKENS, ADMIN_TOKEN, ZADARMA_KEY / ZADARMA_SECRET (optional).
+  //   CLICKUP_TOKEN, AGENT_TOKENS, ADMIN_TOKEN, RUNNER_TOKEN, TELEGRAM_BOT_TOKEN, INBOUND_TOKEN,
+  //   ZADARMA_KEY / ZADARMA_SECRET (optional).
   "vars": {
     "MOCK": "false",
     "CLICKUP_WORKSPACE_ID": "20570259",
@@ -27,6 +32,8 @@
     "FIELD_APPLIED_ON": "a750f70b-fff3-4bb9-b2e9-e54b09d33600",
     "FIELD_NEXT_ACTION": "53dcff41-989e-472c-b18f-4adb76acfef7",
     "PLAYBOOK_DOC_ID": "kkr4k-6751",
-    "LEASE_MINUTES": "60"
+    "LEASE_MINUTES": "60",
+    // Kaizen Apps Operations (forum supergroup); the hub creates its own topic there.
+    "TELEGRAM_CHAT_ID": "-1002407890552"
   }
 }

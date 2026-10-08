@@ -22,6 +22,11 @@ const SCHEMA = [
      message TEXT
    )`,
   `CREATE INDEX IF NOT EXISTS events_at ON events (at DESC)`,
+  `CREATE TABLE IF NOT EXISTS settings (
+     key TEXT PRIMARY KEY,
+     value TEXT NOT NULL,
+     updated_at INTEGER NOT NULL
+   )`,
   `CREATE TABLE IF NOT EXISTS snapshots (
      key TEXT PRIMARY KEY,
      at INTEGER NOT NULL,
@@ -34,14 +39,34 @@ const SCHEMA = [
    )`,
 ];
 
+/** Columns added after the first release; ALTER fails harmlessly when they already exist. */
+const ADDED_COLUMNS = ["ALTER TABLE events ADD COLUMN ats TEXT", "ALTER TABLE events ADD COLUMN company TEXT"];
+
 let ready = false;
 
-async function db(env: Env): Promise<D1Database> {
+export async function db(env: Env): Promise<D1Database> {
   if (!ready) {
     await env.DB.batch(SCHEMA.map((s) => env.DB.prepare(s)));
+    for (const sql of ADDED_COLUMNS) await env.DB.prepare(sql).run().catch(() => {});
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS events_ats ON events (type, ats, at)").run();
     ready = true;
   }
   return env.DB;
+}
+
+export async function getSetting<T>(env: Env, key: string): Promise<T | null> {
+  const r = await (await db(env)).prepare("SELECT value FROM settings WHERE key = ?").bind(key).first<{ value: string }>();
+  return r ? (JSON.parse(r.value) as T) : null;
+}
+
+export async function setSetting(env: Env, key: string, value: unknown): Promise<void> {
+  await (await db(env))
+    .prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)
+       ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    )
+    .bind(key, JSON.stringify(value), Date.now())
+    .run();
 }
 
 export interface Claim {
@@ -93,11 +118,20 @@ export async function deleteClaim(env: Env, taskId: string): Promise<void> {
 
 export async function logEvent(
   env: Env,
-  e: { agent: string; taskId?: string | null; taskName?: string | null; type: string; message?: string | null },
+  e: {
+    agent: string;
+    taskId?: string | null;
+    taskName?: string | null;
+    type: string;
+    message?: string | null;
+    /** Normalized ATS key and company, for pacing. */
+    ats?: string | null;
+    company?: string | null;
+  },
 ): Promise<void> {
   await (await db(env))
-    .prepare("INSERT INTO events (at, agent, task_id, task_name, type, message) VALUES (?, ?, ?, ?, ?, ?)")
-    .bind(Date.now(), e.agent, e.taskId ?? null, e.taskName ?? null, e.type, e.message ? e.message.slice(0, 2000) : null)
+    .prepare("INSERT INTO events (at, agent, task_id, task_name, type, message, ats, company) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(Date.now(), e.agent, e.taskId ?? null, e.taskName ?? null, e.type, e.message ? e.message.slice(0, 2000) : null, e.ats ?? null, e.company ?? null)
     .run();
 }
 

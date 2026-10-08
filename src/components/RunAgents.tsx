@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { agentColor, agentLabel, sortAgents } from "../agents";
 import { cancelRun, createRun, getRun, getRuns } from "../api";
 import type { Run, RunnerInfo } from "../types";
+import Schedules from "./Schedules";
 
 const ago = (iso: string) => {
   const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
@@ -102,6 +103,8 @@ export default function RunAgents() {
 
         <Launcher options={agentOptions} disabled={online.length === 0} onLaunched={(id) => { setSelected(id); void load(); }} />
       </div>
+
+      <Schedules agents={agentOptions.map((o) => o.id)} />
 
       <section className="card wide runs-card">
         <div className="card-head">

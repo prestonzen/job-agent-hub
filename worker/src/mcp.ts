@@ -1,6 +1,7 @@
 import { HttpError } from "./clickup";
 import { agentInstructions } from "./instructions";
 import { OUTCOMES, addJob, claimJobs, getJob, logApplication, playbook, queue, isAvailable, releaseJob, renewLease, reportResult, type Outcome } from "./jobs";
+import { pickResume } from "./resumes";
 import type { Env } from "./types";
 
 /**
@@ -41,6 +42,11 @@ const TOOLS = [
         ats: { type: "array", items: str, description: 'Only these application systems, e.g. ["greenhouse","ashby","lever"]' },
       },
     },
+  },
+  {
+    name: "get_resume",
+    description: "Pick the best tailored resume for a job from the resume bank (by role title). On a runner the file is already in ./resumes/<filename>; elsewhere download it from downloadUrl with your bearer token.",
+    inputSchema: { type: "object", properties: { role: { type: "string", description: "The job title, e.g. 'Senior Forward Deployed Engineer'" } }, required: ["role"] },
   },
   {
     name: "get_job",
@@ -104,7 +110,7 @@ const TOOLS = [
 type Args = Record<string, unknown>;
 const s = (v: unknown) => (typeof v === "string" ? v : undefined);
 
-async function callTool(env: Env, agent: string, name: string, args: Args): Promise<unknown> {
+async function callTool(env: Env, agent: string, name: string, args: Args, origin: string): Promise<unknown> {
   switch (name) {
     case "get_playbook":
       return await playbook(env);
@@ -123,6 +129,11 @@ async function callTool(env: Env, agent: string, name: string, args: Args): Prom
         count: Number(args.count) || 1,
         ats: Array.isArray(args.ats) ? args.ats.map(String) : undefined,
       });
+    case "get_resume": {
+      const pick = await pickResume(env, String(args.role ?? ""));
+      if (!pick) return { error: "resume bank is empty; use the resume named in the playbook" };
+      return { ...pick, runnerPath: `./resumes/${pick.filename}`, downloadUrl: `${origin}/api/agent/resumes/${pick.id}/file` };
+    }
     case "get_job":
       return await getJob(env, String(args.id));
     case "renew_lease":
@@ -185,7 +196,7 @@ async function handleOne(env: Env, agent: string, origin: string, msg: RpcReques
       const name = String(msg.params?.name ?? "");
       const args = (msg.params?.arguments ?? {}) as Args;
       try {
-        const result = await callTool(env, agent, name, args);
+        const result = await callTool(env, agent, name, args, origin);
         const text = typeof result === "string" ? result : JSON.stringify(result, null, 2);
         return ok({ content: [{ type: "text", text }] });
       } catch (err) {

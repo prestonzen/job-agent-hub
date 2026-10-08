@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getHub, releaseJob, reportJob } from "../api";
 import type { HubState, Job } from "../types";
 import { agentColor } from "../agents";
+import Pacing from "./Pacing";
 
 const ONLINE_MS = 15 * 60_000;
 const REFRESH_MS = 20_000;
@@ -165,6 +166,8 @@ export default function CommandCenter() {
           )}
         </section>
       </div>
+
+      <Pacing />
 
       <section className="card wide">
         <div className="card-head">

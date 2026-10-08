@@ -14,6 +14,7 @@ export function agentInstructions(agent: string, origin: string, mode: "mcp" | "
           report: "`report_result`",
           release: "`release_job`",
           get: "`get_job`",
+          resume: "`get_resume` with the job title",
           add: "`add_job`",
           log: "`log_application`",
         }
@@ -24,6 +25,7 @@ export function agentInstructions(agent: string, origin: string, mode: "mcp" | "
           report: '`POST /api/agent/jobs/<id>/report` with `{"outcome":"applied","platform":"Greenhouse","note":"…"}`',
           release: '`POST /api/agent/jobs/<id>/release` with `{"note":"…"}`',
           get: "`GET /api/agent/jobs/<id>`",
+          resume: "`GET /api/agent/resume?role=<job title>`",
           add: "`POST /api/agent/jobs` with `{company, role, url, ats, pay, travel, fit, notes}`",
           log: "`POST /api/agent/applications` with `{company, role, url, platform, notes}`",
         };
@@ -37,8 +39,8 @@ export function agentInstructions(agent: string, origin: string, mode: "mcp" | "
 ${auth}
 LOOP (repeat until the queue is empty or you are told to stop):
 1. Call ${t.playbook} once per session. It is the source of truth for every form answer (contact, work authorization, EEO, salary, travel, resume) and for the rules. Never ask the user a question it answers.
-2. Call ${t.claim}. Only work on jobs you have claimed. A claim lasts about 60 minutes; call ${t.renew} if a job runs long.
-3. For each claimed job: open applyUrl, fill the form exactly per the playbook, upload the resume last, and submit.
+2. Call ${t.claim}. Only work on jobs you have claimed. A claim lasts about 60 minutes; call ${t.renew} if a job runs long. The hub paces applications per hiring system (Greenhouse, Ashby, Lever…) and per company across all agents: if it returns no jobs and lists "paced" reasons, stop and report that instead of waiting or retrying.
+3. For each claimed job: call ${t.resume} to pick the tailored resume, open applyUrl, fill the form exactly per the playbook, upload that resume last, and submit.
 4. Right after each job, call ${t.report} with one outcome:
    - applied: submitted. Put anything notable in note (for example "Greenhouse emailed a verification code").
    - needs_human: blocked on something only Preston can do (CAPTCHA, emailed code, account creation, a required "in your own words" question). note is required.

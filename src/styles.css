@@ -238,3 +238,30 @@ button.danger { color: #e5484d; border-color: color-mix(in srgb, #e5484d 40%, va
   .run-row { grid-template-columns: 38px 1fr auto; }
   .run-row .task, .run-row > .nowrap { display: none; }
 }
+
+/* ---------- pacing, schedules, resumes, alerts ---------- */
+.row-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cap { text-transform: capitalize; }
+.num-in { width: 56px; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; font: inherit; text-align: right; }
+.inline-fields { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; font-size: 14px; }
+.inline-fields label { display: flex; align-items: center; gap: 8px; }
+.sched-list { list-style: none; margin: 0 0 14px; padding: 0; }
+.sched-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.sched-list li.off { opacity: 0.55; }
+.sched-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; font-size: 14px; }
+.sched-form label { display: grid; gap: 4px; font-weight: 600; }
+.sched-form label.full { flex-basis: 100%; }
+.sched-form select, .sched-form textarea, .sched-form input:not(.num-in) { background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; font: inherit; font-weight: 400; }
+.days { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.days button { background: transparent; color: var(--muted); border-radius: 0; padding: 6px 9px; font-size: 13px; }
+.days button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.resume-list { list-style: none; margin: 0; padding: 0; }
+.resume-list li { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.resume-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.resume-tags { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.resume-tags input { flex: 1 1 260px; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; font: inherit; }
+.probe { display: flex; align-items: end; gap: 10px; margin-top: 14px; flex-wrap: wrap; font-size: 14px; }
+.probe label { display: grid; gap: 4px; font-weight: 600; }
+.probe input { background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; font: inherit; min-width: 260px; }
+.launcher input[type="file"], .launcher input:not([type]) { background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; font-weight: 400; }
+.launcher label.check { display: flex; align-items: center; gap: 8px; font-weight: 400; }

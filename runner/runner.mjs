@@ -22,6 +22,26 @@ const expand = (p) => (p?.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
 // eslint-disable-next-line no-control-regex
 const stripAnsi = (s) => s.replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]|\x1b\][^\x07]*\x07|\r(?!\n)/g, "");
 
+async function hubGet(path) {
+  const res = await fetch(`${cfg.hub}${path}`, { headers: { Authorization: `Bearer ${cfg.token}` }, signal: AbortSignal.timeout(60_000) });
+  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
+  return res;
+}
+
+// Resume bank: cache every variant locally (keyed by id + size), copy into each run's ./resumes/.
+const CACHE = join(WORK, "..", "resume-cache");
+async function syncResumes() {
+  mkdirSync(CACHE, { recursive: true });
+  const { resumes } = await (await hubGet("/api/runner/resumes")).json();
+  const files = [];
+  for (const r of resumes) {
+    const local = join(CACHE, `${r.id}-${r.size}-${basename(r.filename)}`);
+    if (!existsSync(local)) writeFileSync(local, Buffer.from(await (await hubGet(`/api/runner/resumes/${r.id}/file`)).arrayBuffer()));
+    files.push({ local, filename: basename(r.filename) });
+  }
+  return files;
+}
+
 async function hub(path, body) {
   const res = await fetch(`${cfg.hub}${path}`, {
     method: "POST",
@@ -67,7 +87,7 @@ async function heartbeat() {
 
 // ---------- running one job ----------
 
-function startRun(run) {
+async function startRun(run) {
   const a = cfg.agents[run.agent];
   const prompt = cfg.machineNotes ? `${run.fullPrompt}\n\nNOTES FOR THIS MACHINE:\n${cfg.machineNotes}` : run.fullPrompt;
   const [bin, ...rest] = a.cmd;
@@ -77,6 +97,13 @@ function startRun(run) {
   // Only these files (e.g. the resume) are put where the agent's browser may upload from.
   for (const f of cfg.files ?? []) {
     try { copyFileSync(expand(f), join(cwd, basename(f))); } catch (e) { log(`copy ${f} failed:`, e.message); }
+  }
+  try {
+    const bank = await syncResumes();
+    if (bank.length) mkdirSync(join(cwd, "resumes"), { recursive: true });
+    for (const b of bank) copyFileSync(b.local, join(cwd, "resumes", b.filename));
+  } catch (e) {
+    log("resume bank sync failed:", e.message);
   }
 
   const child = spawn(bin, args, {
@@ -143,7 +170,10 @@ async function claimLoop() {
   if (!ready.length) return;
   try {
     const { run } = await hub("/api/runner/claim", { agents: ready });
-    if (run) startRun(run);
+    if (run) {
+      active.set(run.id, { child: null, buf: "", cancelled: false, timedOut: false, kill: () => {} }); // reserve the slot
+      await startRun(run);
+    }
   } catch (e) {
     log("claim failed:", e.message);
   }

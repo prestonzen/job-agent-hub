@@ -1,5 +1,6 @@
 import { HttpError } from "./clickup";
 import { agentInstructions } from "./instructions";
+import { esc, notify } from "./telegram";
 import type { Env } from "./types";
 
 /**
@@ -238,8 +239,22 @@ export async function appendLog(env: Env, id: number, runner: string, chunk: str
 
 export async function finishRun(env: Env, id: number, runner: string, f: { exitCode: number | null; cancelled?: boolean }): Promise<void> {
   const status = f.cancelled ? "cancelled" : f.exitCode === 0 ? "succeeded" : "failed";
-  await (await db(env))
-    .prepare("UPDATE runs SET status = ?1, exit_code = ?2, finished_at = ?3 WHERE id = ?4 AND runner = ?5 AND status = 'running'")
+  const r = await (await db(env))
+    .prepare(
+      `UPDATE runs SET status = ?1, exit_code = ?2, finished_at = ?3 WHERE id = ?4 AND runner = ?5 AND status = 'running'
+       RETURNING agent, kind, count, started_at, finished_at, substr(log, -1500) AS tail`,
+    )
     .bind(status, f.exitCode, Date.now(), id, runner)
-    .run();
+    .first<{ agent: string; kind: string; count: number | null; started_at: number; finished_at: number; tail: string }>();
+  if (r) {
+    const mins = Math.max(1, Math.round((r.finished_at - r.started_at) / 60_000));
+    const icon = status === "succeeded" ? "✅" : status === "cancelled" ? "⏹️" : "⚠️";
+    const tail = r.tail.trim().split("\n").slice(-12).join("\n");
+    await notify(
+      env,
+      `${icon} Run #${id} <b>${esc(r.agent)}</b> ${r.kind === "queue" ? `(work ${r.count} jobs)` : "(custom)"} ${status} on ${esc(runner)} after ${mins} min` +
+        (tail ? `\n<pre>${esc(tail.slice(-1200))}</pre>` : ""),
+      { silent: status === "succeeded" },
+    );
+  }
 }

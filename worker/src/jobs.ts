@@ -11,8 +11,10 @@ import {
   stampApplied,
 } from "./clickup";
 import { isApplication } from "./classify";
+import { atsKey, checkJob, companyKey, getPolicy, noteClaim as notePacedClaim, pacingState } from "./pacing";
 import { activeClaims, deleteClaim, getClaim, logEvent, tryClaim, type Claim } from "./db";
 import { mockPlaybook, mockTasks } from "./mock";
+import { esc, notify } from "./telegram";
 import { splitName } from "./sanitize";
 import type { Env, Job, Task } from "./types";
 
@@ -140,10 +142,13 @@ export async function claimJobs(
   env: Env,
   agent: string,
   opts: { count?: number; ats?: string[] } = {},
-): Promise<{ jobs: Job[]; remaining: number }> {
+): Promise<{ jobs: Job[]; remaining: number; paced: { ats: string; reason: string; retryAt: string | null }[] }> {
   const count = Math.min(10, Math.max(1, Math.floor(opts.count ?? 1)));
   const ats = (opts.ats ?? []).map((a) => a.toLowerCase()).filter(Boolean);
   const all = await queue(env);
+  const policy = await getPolicy(env);
+  const pace = await pacingState(env, all, policy);
+  const paced = new Map<string, { ats: string; reason: string; retryAt: string | null }>();
 
   // Re-hand an agent the jobs it already holds (e.g. after a crash) before giving it new ones.
   const mine = all.filter((j) => j.claimedBy === agent);
@@ -153,15 +158,22 @@ export async function claimJobs(
     if (out.length >= count) break;
     if (!isAvailable(job)) continue;
     if (ats.length && !ats.some((a) => (job.ats ?? "").toLowerCase().includes(a))) continue;
+    const verdict = checkJob(job, pace, policy);
+    if (!verdict.ok) {
+      const k = atsKey(job.ats);
+      if (!paced.has(k)) paced.set(k, { ats: k, reason: verdict.reason, retryAt: verdict.retryAt ? new Date(verdict.retryAt).toISOString() : null });
+      continue;
+    }
     const expiresAt = await tryClaim(env, job.id, agent, leaseMs(env));
     if (!expiresAt) continue; // another agent won the race
+    notePacedClaim(job, pace);
     await write(env, () => setField(env, job.id, env.FIELD_NEXT_ACTION, claimNote(agent, expiresAt)));
-    await logEvent(env, { agent, taskId: job.id, taskName: job.name, type: "claimed" });
+    await logEvent(env, { agent, taskId: job.id, taskName: job.name, type: "claimed", ats: atsKey(job.ats), company: companyKey(job.company) });
     out.push({ ...job, claimedBy: agent, claimExpiresAt: new Date(expiresAt).toISOString() });
   }
 
   const remaining = all.filter(isAvailable).length - (out.length - mine.length);
-  return { jobs: out, remaining: Math.max(0, remaining) };
+  return { jobs: out, remaining: Math.max(0, remaining), paced: [...paced.values()] };
 }
 
 export async function getJob(env: Env, id: string): Promise<Job> {
@@ -265,7 +277,10 @@ export async function reportResult(
   }
 
   await deleteClaim(env, id);
-  await logEvent(env, { agent, taskId: id, taskName: task.name, type: r.outcome, message: note });
+  if (r.outcome === "needs_human") {
+    await notify(env, `🙋 <b>${esc(who)} needs you</b> on <a href="${task.url}">${esc(task.name)}</a>\n${esc(note ?? "")}${job.applyUrl ? `\n<a href="${job.applyUrl}">Open the posting</a>` : ""}`);
+  }
+  await logEvent(env, { agent, taskId: id, taskName: task.name, type: r.outcome, message: note, ats: atsKey(platform), company: companyKey(job.company) });
   return { job: await getJob(env, id).catch(() => job), warnings };
 }
 
@@ -349,6 +364,6 @@ export async function logApplication(
       status: "applied",
     });
   });
-  await logEvent(env, { agent, taskId: id, taskName: `${a.company} — ${a.role}`, type: "applied", message: a.notes ?? null });
+  await logEvent(env, { agent, taskId: id, taskName: `${a.company} — ${a.role}`, type: "applied", message: a.notes ?? null, ats: atsKey(a.platform ?? a.ats), company: companyKey(a.company) });
   return { id, created: true, warnings: [] };
 }

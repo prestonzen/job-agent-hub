@@ -1,7 +1,7 @@
 import { adminUser, agentName, agentNames, clearedCookie, isAdminToken, sessionCookie } from "./auth";
 import { HttpError, addComment, setStatus } from "./clickup";
 import { isApplication } from "./classify";
-import { activeClaims, heartbeat, lastEventAt, listEvents, listHeartbeats, loadSnapshot, saveSnapshot } from "./db";
+import { activeClaims, heartbeat, lastEventAt, listEvents, listHeartbeats, loadSnapshot, saveSnapshot, setSetting } from "./db";
 import { agentInstructions } from "./instructions";
 import {
   addJob,
@@ -20,6 +20,12 @@ import {
 } from "./jobs";
 import { handleMcp } from "./mcp";
 import { appendLog, cancelRun, claimRun, createRun, finishRun, getRun, isRunnerToken, listRunners, listRuns, runnerHeartbeat, type RunKind } from "./runs";
+import { sendDigest } from "./digest";
+import { handleInbound, recentInbound, type InboundEmail } from "./inbound";
+import { DEFAULT_POLICY, getPolicy, pacingState, pacingSummary, type PacingPolicy } from "./pacing";
+import { deleteResume, listResumes, pickResume, resumeFile, updateResume, uploadResume } from "./resumes";
+import { createSchedule, deleteSchedule, listSchedules, tick, updateSchedule, type ScheduleKind } from "./schedules";
+import { notify, telegramConfigured } from "./telegram";
 import { toPublicSummary } from "./sanitize";
 import type { Env } from "./types";
 import { zadarmaGet } from "./zadarma";
@@ -107,6 +113,22 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     });
   }
 
+  // Uptime Kuma: 503 when no runner has checked in for 3 minutes.
+  if (path === "/api/health/runner" && method === "GET") {
+    const runners = await listRunners(env);
+    const fresh = runners.filter((r) => Date.now() - Date.parse(r.lastSeen) < 180_000);
+    return json({ ok: fresh.length > 0, runners: runners.map((r) => ({ name: r.name, lastSeen: r.lastSeen })) }, fresh.length ? 200 : 503);
+  }
+
+  // ---------- Reply tracking (Gmail Apps Script, INBOUND_TOKEN) ----------
+  if (path === "/api/inbound/email" && method === "POST") {
+    const m = (request.headers.get("Authorization") ?? "").match(/^Bearer\s+(.+)$/i);
+    if (!env.INBOUND_TOKEN || env.INBOUND_TOKEN.length < 24 || m?.[1]?.trim() !== env.INBOUND_TOKEN) return json({ error: "unauthorized" }, 401);
+    const b = await readJson<Partial<InboundEmail>>(request);
+    if (!b.id || !b.subject) return json({ error: "id and subject are required" }, 400);
+    return json(await handleInbound(env, { id: String(b.id), from: String(b.from ?? ""), subject: String(b.subject), date: b.date, text: String(b.text ?? "") }));
+  }
+
   // ---------- MCP (bearer token) ----------
   if (path === "/mcp" || path === "/api/mcp") {
     const agent = agentName(request, env);
@@ -123,8 +145,12 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       const b = await readJson<Parameters<typeof runnerHeartbeat>[1]>(request);
       if (!b.name) return json({ error: "name is required" }, 400);
       await runnerHeartbeat(env, b);
+      ctx.waitUntil(tick(env, () => sendDigest(env, url.origin).then(() => {})).catch((e) => console.error("schedule tick:", e)));
       return json({ ok: true });
     }
+    if (sub === "/resumes" && method === "GET") return json({ resumes: await listResumes(env) });
+    const rf = sub.match(/^\/resumes\/(\d+)\/file$/);
+    if (rf && method === "GET") return resumeFile(env, Number(rf[1]));
     if (sub === "/claim" && method === "POST") {
       const b = await readJson<{ name?: string; agents?: string[] }>(request);
       if (!b.name) return json({ error: "name is required" }, 400);
@@ -154,6 +180,12 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     if (sub === "/me" && method === "GET") return json({ agent });
     if (sub === "/instructions" && method === "GET") return text(agentInstructions(agent, url.origin, "rest"));
     if (sub === "/playbook" && method === "GET") return text(await playbook(env));
+    if (sub === "/resume" && method === "GET") {
+      const pick = await pickResume(env, url.searchParams.get("role") ?? "");
+      return json(pick ? { ...pick, downloadUrl: `${url.origin}/api/agent/resumes/${pick.id}/file` } : { error: "resume bank is empty" }, pick ? 200 : 404);
+    }
+    const arf = sub.match(/^\/resumes\/(\d+)\/file$/);
+    if (arf && method === "GET") return resumeFile(env, Number(arf[1]));
 
     if (sub === "/queue" && method === "GET") {
       const q = await queue(env);
@@ -246,8 +278,66 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
 
     if (path === "/api/admin/playbook" && method === "GET") return text(await playbook(env));
 
+    // Pacing (per-ATS / per-company limits across all agents).
+    if (path === "/api/admin/pacing" && method === "GET") {
+      const policy = await getPolicy(env);
+      return json({ policy, defaults: DEFAULT_POLICY, live: pacingSummary(await pacingState(env, await queue(env), policy), policy) });
+    }
+    if (path === "/api/admin/pacing" && method === "PUT") {
+      const b = await readJson<Partial<PacingPolicy>>(request);
+      await setSetting(env, "pacing", b);
+      return json({ policy: await getPolicy(env) });
+    }
+
+    // Schedules.
+    if (path === "/api/admin/schedules" && method === "GET") return json({ schedules: await listSchedules(env) });
+    if (path === "/api/admin/schedules" && method === "POST") {
+      const b = await readJson<{ name?: string; agent?: string; kind?: ScheduleKind; count?: number; copies?: number; prompt?: string; cron?: string; tz?: string }>(request);
+      if (!b.cron) return json({ error: "cron is required" }, 400);
+      return json(await createSchedule(env, { ...b, kind: b.kind ?? "queue", cron: b.cron }), 201);
+    }
+    const sched = path.match(/^\/api\/admin\/schedules\/(\d+)$/);
+    if (sched && method === "PATCH") return json(await updateSchedule(env, Number(sched[1]), await readJson<{ enabled?: boolean }>(request)));
+    if (sched && method === "DELETE") {
+      await deleteSchedule(env, Number(sched[1]));
+      return json({ ok: true });
+    }
+
+    // Resume bank.
+    if (path === "/api/admin/resumes" && method === "GET") return json({ resumes: await listResumes(env) });
+    if (path === "/api/admin/resumes" && method === "POST") {
+      const form = await request.formData();
+      const file = form.get("file");
+      if (!file || typeof file === "string") return json({ error: "file is required" }, 400);
+      const f = file as unknown as { name: string; arrayBuffer(): Promise<ArrayBuffer> };
+      return json(
+        await uploadResume(env, { name: String(form.get("name") ?? ""), filename: f.name, tags: String(form.get("tags") ?? ""), isDefault: form.get("isDefault") === "true" }, await f.arrayBuffer()),
+        201,
+      );
+    }
+    const res = path.match(/^\/api\/admin\/resumes\/(\d+)(\/file)?$/);
+    if (res && res[2] && method === "GET") return resumeFile(env, Number(res[1]));
+    if (res && !res[2] && method === "PATCH") return json(await updateResume(env, Number(res[1]), await readJson(request)));
+    if (res && !res[2] && method === "DELETE") {
+      await deleteResume(env, Number(res[1]));
+      return json({ ok: true });
+    }
+    if (path === "/api/admin/resume-pick" && method === "GET") return json(await pickResume(env, url.searchParams.get("role") ?? ""));
+
+    // Notifications + replies.
+    if (path === "/api/admin/telegram/test" && method === "POST") {
+      const err = await notify(env, "👋 Job Agent Hub is connected. Alerts for runs, jobs that need you, and recruiter replies will land in this topic.");
+      return json({ ok: !err, error: err, configured: telegramConfigured(env) }, err ? 502 : 200);
+    }
+    if (path === "/api/admin/digest" && method === "POST") {
+      const err = await sendDigest(env, url.origin);
+      return json({ ok: !err, error: err }, err ? 502 : 200);
+    }
+    if (path === "/api/admin/inbound" && method === "GET") return json({ emails: await recentInbound(env) });
+
     // Remote agent runs (executed by runner machines).
     if (path === "/api/admin/runs" && method === "GET") {
+      ctx.waitUntil(tick(env, () => sendDigest(env, url.origin).then(() => {})).catch((e) => console.error("schedule tick:", e)));
       const [runs, runners] = await Promise.all([listRuns(env, Number(url.searchParams.get("limit")) || 50), listRunners(env)]);
       return json({ runs, runners });
     }
