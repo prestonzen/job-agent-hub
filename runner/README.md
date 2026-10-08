@@ -16,9 +16,26 @@ Phone / browser ──► /admin#run ──► hub (D1: runs) ◄── poll/cla
 | File | What |
 |---|---|
 | `provision.sh` | Installs Node 22, Chromium + Xvfb, the agent CLIs and Playwright MCP (idempotent; run as root) |
-| `setup.sh` | Creates the `agent` user, writes each CLI's MCP config (hub + browser), installs the systemd units |
+| `setup.sh` | Creates the `agent` user, writes each CLI's MCP config (hub + browser), installs the systemd units. `--desktop <user>` for a desktop machine |
+| `update.sh` | Pull-based auto-update, run by `job-agent-updater.timer` every 5 min |
 | `runner.mjs` | The runner (zero dependencies) |
 | `config.example.json` | Runner config shape; the real one is `/etc/job-agent-runner/config.json` (holds secrets, never committed) |
+
+## New machine
+
+```bash
+git clone https://github.com/prestonzen/job-agent-hub.git /opt/job-agent-runner/repo
+sudo bash /opt/job-agent-runner/repo/runner/provision.sh
+sudo install -d /etc/job-agent-runner && sudo cp config.json /etc/job-agent-runner/   # from config.example.json
+sudo bash /opt/job-agent-runner/repo/runner/setup.sh                     # server (Xvfb, starts at boot)
+sudo bash /opt/job-agent-runner/repo/runner/setup.sh --desktop "$USER"   # or: desktop, browsers on your screen
+```
+
+Give each machine its own `name` in the config. Several runners can share one hub, and each claims runs only for the CLIs it has ready.
+
+## Updates
+
+Push to `main`. Within about 5 minutes `job-agent-updater.timer` notices that `runner/` changed and waits until no run is active. Then it re-runs `setup.sh` from the new checkout. Check it with `journalctl -u job-agent-updater -n 20`. System packages and CLI versions (`provision.sh`) are updated by hand: `sudo bash /opt/job-agent-runner/repo/runner/provision.sh`.
 
 ## Logins (one time, per CLI)
 
@@ -40,6 +57,7 @@ vibe              # first run asks for a Mistral API key
 
 ```bash
 pct exec 218 -- systemctl status job-agent-runner xvfb-runner
+pct exec 218 -- systemctl list-timers job-agent-updater.timer
 pct exec 218 -- journalctl -u job-agent-runner -f
 pct exec 218 -- systemctl restart job-agent-runner
 ```
