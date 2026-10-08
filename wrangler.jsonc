@@ -3,6 +3,8 @@
   "name": "job-agent-hub",
   "main": "worker/src/index.ts",
   "compatibility_date": "2025-01-01",
+  // Custom domain (the zone prestonzen.com must be on this Cloudflare account; DNS record is created automatically).
+  "routes": [{ "pattern": "jobhunting.prestonzen.com", "custom_domain": true }],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
