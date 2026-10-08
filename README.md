@@ -40,7 +40,7 @@ npm run dev                           # terminal 2  → http://localhost:5173 (p
 2. **GitHub → Settings → Secrets and variables → Actions → New repository secret**:
    `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLICKUP_TOKEN` (ClickUp personal API token),
    `AGENT_TOKENS` (JSON like `{"claude":"…","codex":"…"}`), and optionally `ZADARMA_KEY` / `ZADARMA_SECRET`.
-3. The app is configured for the custom domain **jobhunting.prestonzen.com** (`routes` in `wrangler.jsonc`; the `prestonzen.com` zone must be in the same Cloudflare account). Edit `wrangler.jsonc` vars (`CLICKUP_LIST_ID`, `PARENT_TASK_ID`, field ids, `ADMIN_EMAILS`).
+3. The app is configured for the custom domain **jobhunter.prestonzen.com** (`routes` in `wrangler.jsonc`; the `prestonzen.com` zone must be in the same Cloudflare account). Edit `wrangler.jsonc` vars (`CLICKUP_LIST_ID`, `PARENT_TASK_ID`, field ids, `ADMIN_EMAILS`).
 4. **Protect the admin area**: Cloudflare Zero Trust → Access → Applications → add a self-hosted app for your Worker's hostname with paths `/admin*` and `/api/admin/*`, allow only your email. Copy the application's **AUD tag** and your **team domain** into `ACCESS_AUD` / `ACCESS_TEAM_DOMAIN` in `wrangler.jsonc`.
 5. Add a repository **variable** `DEPLOY_ENABLED` = `true` (Settings → Secrets and variables → Actions → Variables). Until then CI only typechecks and builds.
 6. Push to `main`. The workflow typechecks, builds and deploys; secrets are synced to the Worker automatically.
