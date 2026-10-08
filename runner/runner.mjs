@@ -3,7 +3,7 @@
 // streams its output back, and stops it when the run is cancelled or times out.
 // Zero dependencies (Node 22+). Config: /etc/job-agent-runner/config.json (see config.example.json).
 import { spawn, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { hostname, homedir } from "node:os";
 import { basename, join } from "node:path";
 
@@ -14,6 +14,8 @@ const NAME = cfg.name ?? hostname();
 const SLOTS = Math.max(1, cfg.slots ?? 2);
 const TIMEOUT_MS = (cfg.timeoutMinutes ?? 90) * 60_000;
 const WORK = cfg.workDir ?? "/var/lib/job-agent-runner/runs";
+// Read by update.sh: it only restarts the runner when nothing is running.
+const STATE = cfg.stateFile ?? join(WORK, "..", "state.json");
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const expand = (p) => (p?.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
@@ -50,7 +52,12 @@ function probe() {
 let agents = probe();
 const active = new Map(); // runId -> { child, buf, cancelled, timedOut }
 
+function saveState() {
+  try { writeFileSync(STATE, JSON.stringify({ busy: active.size, runs: [...active.keys()], at: new Date().toISOString() })); } catch {}
+}
+
 async function heartbeat() {
+  saveState();
   try {
     await hub("/api/runner/heartbeat", { agents, slots: SLOTS, busy: active.size, version: VERSION, host: hostname(), active: [...active.keys()] });
   } catch (e) {
@@ -80,6 +87,7 @@ function startRun(run) {
   });
   const state = { child, buf: `[runner ${NAME}] run #${run.id}: ${run.agent} (${run.kind}) started\n`, cancelled: false, timedOut: false };
   active.set(run.id, state);
+  saveState();
   log(`run #${run.id} ${run.agent} pid ${child.pid}`);
 
   const onData = (d) => (state.buf += stripAnsi(d.toString()));
@@ -107,6 +115,7 @@ function startRun(run) {
       log(`finish #${run.id} failed:`, e.message);
     }
     active.delete(run.id);
+    saveState();
     log(`run #${run.id} done (${code ?? signal})`);
   });
 }

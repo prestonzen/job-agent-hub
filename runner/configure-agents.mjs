@@ -63,10 +63,16 @@ for (const [agent, dir] of [["gemini", ".gemini"], ["qwen", ".qwen"]]) {
   const s = readJson(p);
   s.mcpServers = {
     ...(s.mcpServers ?? {}),
-    jobhunter: { httpUrl: MCP_URL, headers: { Authorization: bearer(agent) } },
+    // Default connect timeout is too short over a high-latency home/mobile uplink.
+    jobhunter: { httpUrl: MCP_URL, headers: { Authorization: bearer(agent) }, timeout: 30000 },
     playwright: { command: BROWSER.command, args: BROWSER.args },
   };
   write(p, JSON.stringify(s, null, 2) + "\n");
+  // Gemini-family CLIs disable MCP servers in untrusted folders; each run gets a fresh dir under workDir.
+  const tf = join(H, dir, "trustedFolders.json");
+  const trusted = readJson(tf);
+  trusted[cfg.workDir ?? "/var/lib/job-agent-runner/runs"] = "TRUST_FOLDER";
+  write(tf, JSON.stringify(trusted, null, 2) + "\n");
 }
 
 // Kimi Code: ~/.kimi-code/mcp.json; token from $JOBHUNTER_TOKEN.
