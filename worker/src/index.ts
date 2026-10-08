@@ -1,7 +1,7 @@
 import { adminUser, agentName, agentNames, clearedCookie, isAdminToken, sessionCookie } from "./auth";
 import { HttpError, addComment, setStatus } from "./clickup";
 import { isApplication } from "./classify";
-import { heartbeat, listEvents, listHeartbeats } from "./db";
+import { heartbeat, listEvents, listHeartbeats, loadSnapshot, saveSnapshot } from "./db";
 import { agentInstructions } from "./instructions";
 import {
   addJob,
@@ -72,8 +72,18 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     const cacheKey = new Request(`${url.origin}/__cache/public-summary`);
     const hit = await cache.match(cacheKey);
     if (hit) return hit;
-    const tasks = await loadTasks(env);
-    const res = json(toPublicSummary(tasks, env, env.MOCK === "true"), 200, { "Cache-Control": "public, max-age=60" });
+    let body: string;
+    try {
+      body = JSON.stringify(toPublicSummary(await loadTasks(env), env, env.MOCK === "true"));
+      ctx.waitUntil(saveSnapshot(env, "public-summary", body).catch(() => {}));
+    } catch (err) {
+      // ClickUp down, slow or rate-limited: show the last good snapshot instead of an error.
+      const last = await loadSnapshot(env, "public-summary").catch(() => null);
+      if (!last) throw err;
+      console.error("public summary from snapshot:", err);
+      return json({ ...JSON.parse(last), stale: true }, 200, { "Cache-Control": "public, max-age=30" });
+    }
+    const res = new Response(body, { headers: { ...JSON_HEADERS, "Cache-Control": "public, max-age=60" } });
     ctx.waitUntil(cache.put(cacheKey, res.clone()));
     return res;
   }

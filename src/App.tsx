@@ -54,6 +54,7 @@ function Public() {
           shown here live.
         </p>
         {data.demo && <p className="badge">Demo data</p>}
+        {data.stale && <p className="badge">Showing the last snapshot; live data is temporarily unavailable</p>}
       </section>
 
       <section className="kpis">

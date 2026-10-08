@@ -11,6 +11,7 @@ export interface PublicApplication {
 export interface PublicSummary {
   generatedAt: string;
   demo: boolean;
+  stale?: boolean;
   totals: { applications: number; platforms: number; queued: number };
   byStatus: Record<string, number>;
   byPlatform: Record<string, number>;

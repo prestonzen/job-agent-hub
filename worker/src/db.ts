@@ -22,6 +22,11 @@ const SCHEMA = [
      message TEXT
    )`,
   `CREATE INDEX IF NOT EXISTS events_at ON events (at DESC)`,
+  `CREATE TABLE IF NOT EXISTS snapshots (
+     key TEXT PRIMARY KEY,
+     at INTEGER NOT NULL,
+     body TEXT NOT NULL
+   )`,
   `CREATE TABLE IF NOT EXISTS heartbeats (
      agent TEXT PRIMARY KEY,
      last_seen INTEGER NOT NULL,
@@ -127,4 +132,20 @@ export async function listHeartbeats(env: Env): Promise<{ agent: string; lastSee
     .prepare("SELECT agent, last_seen, client FROM heartbeats ORDER BY last_seen DESC")
     .all<{ agent: string; last_seen: number; client: string | null }>();
   return results.map((r) => ({ agent: r.agent, lastSeen: new Date(r.last_seen).toISOString(), client: r.client }));
+}
+
+/** Last good copy of a computed response (e.g. the public summary), served when ClickUp is down. */
+export async function saveSnapshot(env: Env, key: string, body: string): Promise<void> {
+  await (await db(env))
+    .prepare(
+      `INSERT INTO snapshots (key, at, body) VALUES (?1, ?2, ?3)
+       ON CONFLICT (key) DO UPDATE SET at = excluded.at, body = excluded.body`,
+    )
+    .bind(key, Date.now(), body)
+    .run();
+}
+
+export async function loadSnapshot(env: Env, key: string): Promise<string | null> {
+  const r = await (await db(env)).prepare("SELECT body FROM snapshots WHERE key = ?").bind(key).first<{ body: string }>();
+  return r?.body ?? null;
 }
