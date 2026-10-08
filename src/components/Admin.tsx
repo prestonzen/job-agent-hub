@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { addComment, getAdminTasks, getMe, setStatus } from "../api";
+import { addComment, getAdminTasks, getMe, login, logout, setStatus } from "../api";
 import { STATUSES, type AdminTask } from "../types";
 import CommandCenter from "./CommandCenter";
 import Connect from "./Connect";
@@ -14,35 +14,32 @@ type Tab = (typeof TABS)[number]["id"];
 const tabFromHash = (): Tab => (TABS.find((t) => `#${t.id}` === window.location.hash)?.id ?? "hub");
 
 export default function Admin() {
-  const [email, setEmail] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const [user, setUser] = useState<string | null>(null);
+  const [checked, setChecked] = useState(false);
   const [tab, setTab] = useState<Tab>(tabFromHash);
 
   useEffect(() => {
     getMe()
-      .then((r) => setEmail(r.email))
-      .catch((e: Error) => setErr(e.message));
+      .then((r) => setUser(r.user))
+      .catch(() => setUser(null))
+      .finally(() => setChecked(true));
     const onHash = () => setTab(tabFromHash());
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  if (err)
-    return (
-      <main>
-        <p className="notice">
-          Admin API said: <b>{err}</b>. This area is protected by Cloudflare Access — sign in with an allowed email.
-        </p>
-      </main>
-    );
-  if (!email) return <p className="notice">Loading…</p>;
+  if (!checked) return <p className="notice">Loading…</p>;
+  if (!user) return <Login onDone={setUser} />;
 
   return (
     <main>
       <section className="hero compact">
         <h1>Admin</h1>
         <p>
-          Signed in as <b>{email}</b>. Changes write straight to ClickUp.
+          Signed in as <b>{user}</b>. Changes write straight to ClickUp.{" "}
+          <button className="ghost" onClick={() => void logout().then(() => setUser(null))}>
+            Sign out
+          </button>
         </p>
         <nav className="tabs" aria-label="Admin sections">
           {TABS.map((t) => (
@@ -55,6 +52,47 @@ export default function Admin() {
       {tab === "hub" && <CommandCenter />}
       {tab === "pipeline" && <Pipeline />}
       {tab === "connect" && <Connect />}
+    </main>
+  );
+}
+
+function Login({ onDone }: { onDone: (user: string) => void }) {
+  const [token, setToken] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await login(token);
+      onDone((await getMe()).user);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main>
+      <section className="hero compact">
+        <h1>Admin sign-in</h1>
+        <p>Paste the admin token. You stay signed in on this browser for 30 days.</p>
+      </section>
+      <form className="card login" onSubmit={(e) => void submit(e)}>
+        <label htmlFor="admin-token">Admin token</label>
+        <input
+          id="admin-token"
+          type="password"
+          autoComplete="current-password"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          required
+        />
+        <button disabled={busy || !token}>{busy ? "Checking…" : "Sign in"}</button>
+        {err && <p className="err">{err}</p>}
+      </form>
     </main>
   );
 }

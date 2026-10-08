@@ -16,7 +16,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const getSummary = () => request<PublicSummary>("/api/public/summary");
 export const getAdminTasks = () => request<{ demo: boolean; tasks: AdminTask[] }>("/api/admin/tasks");
-export const getMe = () => request<{ email: string }>("/api/admin/me");
+export const getMe = () => request<{ user: string }>("/api/admin/me");
+export const login = (token: string) => request<{ ok: true }>("/api/admin/login", { method: "POST", body: JSON.stringify({ token }) });
+export const logout = () => request<{ ok: true }>("/api/admin/logout", { method: "POST" });
 export const setStatus = (id: string, status: string) =>
   request<{ ok: true }>(`/api/admin/tasks/${id}/status`, { method: "PUT", body: JSON.stringify({ status }) });
 export const addComment = (id: string, text: string) =>

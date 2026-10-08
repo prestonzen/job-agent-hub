@@ -10,7 +10,7 @@ flowchart LR
   end
   subgraph Cloudflare Pages
     F[Pages Functions<br/>functions/ → worker/src]
-    A[Cloudflare Access<br/>/admin* /api/admin/*]
+    A[Admin token login<br/>signed session cookie]
     D[(D1<br/>claims · events · heartbeats)]
   end
   SPA -->|GET /api/public/summary| F
@@ -28,7 +28,8 @@ flowchart LR
 | `GET /api/health` | none | Config check (no secrets) |
 | `POST /mcp` | agent bearer token | MCP server (stateless Streamable HTTP, JSON responses) |
 | `/api/agent/*` | agent bearer token | Same operations over REST (see AGENTS.md) |
-| `/api/admin/*` | Cloudflare Access JWT + email allow-list | Command center, pipeline edits, admin release/report |
+| `POST /api/admin/login` | `ADMIN_TOKEN` in body | Sets the admin session cookie |
+| `/api/admin/*` | admin session cookie or `Bearer <ADMIN_TOKEN>` | Command center, pipeline edits, admin release/report |
 | everything else | none | Static SPA (`dist/`, single-page fallback) |
 
 ## Queue and claims
@@ -45,5 +46,5 @@ flowchart LR
 - **One service layer, two transports.** `worker/src/jobs.ts` implements every operation; `mcp.ts` and the REST routes are thin adapters, so MCP and REST agents behave identically.
 - **Pages, not a standalone Worker.** Git integration deploys on push; `functions/` are one-line adapters into `worker/src/index.ts`, which still runs as a plain Worker if ever needed.
 - **Sanitize at the boundary.** `worker/src/sanitize.ts` is the only place data becomes public.
-- **No auth code to maintain for humans.** Login is Cloudflare Access; the code only verifies the signed token.
+- **One-person admin auth.** A single long random token (Pages secret) traded for an HMAC-signed HttpOnly cookie. No identity provider or dashboard setup; rotate the secret to log everyone out.
 - **Agent identity from the token**, never from the request body.

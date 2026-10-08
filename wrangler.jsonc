@@ -15,8 +15,7 @@
   ],
   // Non-secret configuration (ClickUp ids are not credentials).
   // Secrets, set with `npx wrangler pages secret put <NAME> --project-name job-agent-hub`:
-  //   CLICKUP_TOKEN, AGENT_TOKENS, ACCESS_TEAM_DOMAIN, ACCESS_AUD, ADMIN_EMAILS (kept out of this public repo),
-  //   ZADARMA_KEY, ZADARMA_SECRET (optional).
+  //   CLICKUP_TOKEN, AGENT_TOKENS, ADMIN_TOKEN, ZADARMA_KEY / ZADARMA_SECRET (optional).
   "vars": {
     "MOCK": "false",
     "CLICKUP_WORKSPACE_ID": "20570259",

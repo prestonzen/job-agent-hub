@@ -8,13 +8,13 @@ Live at **https://jobhunter.prestonzen.com**.
 - **Every agent, one endpoint**: MCP clients (Claude Code, Codex, Gemini CLI, Kimi CLI, Cursor…) connect to `/mcp`. Agents without MCP (browser agents, chat apps) use the same operations over REST at `/api/agent/*`. Each agent has its own bearer token, and the token decides who it is.
 - **One runner prompt**: the loop (read playbook → claim → apply → report) is served to every agent as MCP server instructions, from `GET /api/agent/instructions`, and on the admin *Connect agents* page.
 - **Playbook from ClickUp**: standard form answers and rules come from the ClickUp playbook doc, served only to authenticated agents and admins, so no agent re-asks profile questions.
-- **Admin command center** (`/admin`, behind Cloudflare Access): queue and claims, which agents are online, live activity, release/skip/mark-applied, pipeline editing, copy-paste agent setup.
+- **Admin command center** (`/admin`, admin-token login): queue and claims, which agents are online, live activity, release/skip/mark-applied, pipeline editing, copy-paste agent setup.
 - **Public dashboard** (`/`): a sanitized live view: funnel, who applied, applications per day, platforms. No contact details, notes, links, answers or queued targets.
 
 ```
                        ┌── /            public dashboard (sanitized)
 Browser ── React SPA ──┤
-                       └── /admin       command center ── Cloudflare Access
+                       └── /admin       command center (admin token → session cookie)
 Agents ── MCP  /mcp ───────┐
        └─ REST /api/agent ─┼── Pages Functions (worker/src) ──┬── ClickUp (system of record)
                            │                                   └── D1 (claims, activity, check-ins)
@@ -28,27 +28,29 @@ This repo and the public site contain **no personal data and no secrets**.
 
 - Only the Functions hold credentials (Pages secrets). The browser bundle never does, so **never put secrets in `VITE_*` variables**.
 - `/api/public/summary` returns only company, role, platform, status, who applied and the date for submitted applications.
-- `/api/admin/*` requires a valid Cloudflare Access JWT **and** an allow-listed email; the code re-verifies the token (RS256 against your team's JWKS).
+- `/api/admin/*` requires the admin session cookie (HMAC-signed, HttpOnly, Secure, SameSite=Strict, 30 days) obtained by posting `ADMIN_TOKEN` to `/api/admin/login`, or `Authorization: Bearer <ADMIN_TOKEN>` for scripts. Rotating the secret ends all sessions.
 - `/api/agent/*` and `/mcp` use per-agent bearer tokens (24+ chars). The playbook (personal data) is only served there and to admins, and is cached in memory only.
 
 ## Setup
 
 The Pages project `job-agent-hub` is Git-connected: **every push to `main` builds and deploys**. Bindings and vars live in `wrangler.jsonc`.
 
-Secrets (`npx wrangler pages secret put <NAME> --project-name job-agent-hub`):
+Everything is done with wrangler; no dashboard steps. Set the account first (3 accounts are logged in):
+
+```powershell
+$env:CLOUDFLARE_ACCOUNT_ID = "f19d27cc74917ce2597bf6b423f94aff"   # Kaizen Apps
+npx wrangler pages secret list --project-name job-agent-hub
+npx wrangler pages secret put <NAME> --project-name job-agent-hub    # prompts for the value
+```
+
+Secrets take effect on the next deployment (push to `main`, or `git commit --allow-empty -m redeploy; git push`).
 
 | Secret | What |
 |---|---|
 | `CLICKUP_TOKEN` | ClickUp personal API token (`pk_…`). Required for real data. |
 | `AGENT_TOKENS` | JSON map of agent name → token, e.g. `{"claude":"…","codex":"…"}`. Names should match ClickUp *Applied By* options. |
-| `ACCESS_TEAM_DOMAIN` | e.g. `yourteam.cloudflareaccess.com` |
-| `ACCESS_AUD` | AUD tag of the Access application covering `/admin*` and `/api/admin/*` |
-| `ADMIN_EMAILS` | Comma-separated emails allowed into the admin |
+| `ADMIN_TOKEN` | 24+ char random string; paste it on `/admin` to sign in. |
 | `ZADARMA_KEY`, `ZADARMA_SECRET` | Optional, experimental phone stats |
-
-The Access settings are not secret; they're stored as secrets only to keep them out of this public repo.
-
-**Admin login**: Cloudflare Zero Trust → Access → Applications → add a self-hosted app for `jobhunter.prestonzen.com` with paths `/admin` and `/api/admin`, allow only your email. Put its AUD tag, your team domain and your email in the three secrets above.
 
 **Database**: D1 `job-agent-hub`. Tables are created on first use; `npm run db:migrate` applies `migrations/` explicitly.
 
@@ -61,7 +63,7 @@ npm run build && npm run dev:api # Pages Functions + local D1 on http://127.0.0.
 npm run dev                      # Vite on http://localhost:5173, proxies /api and /mcp
 ```
 
-In demo mode, ClickUp writes are skipped, while claims and activity run for real against local D1. The admin page skips Access on localhost.
+In demo mode, ClickUp writes are skipped, while claims and activity run for real against local D1. The admin page skips login on localhost.
 
 ## Scripts
 

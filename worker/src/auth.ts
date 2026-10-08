@@ -1,36 +1,25 @@
 import type { Env } from "./types";
 
 /**
- * Admin auth = Cloudflare Access. Access sits in front of /admin* and /api/admin/*, and
- * attaches a signed JWT (Cf-Access-Jwt-Assertion). We still verify it here so the API is
- * safe even if the Access policy is misconfigured.
+ * Admin auth = one long random ADMIN_TOKEN (a Pages secret). The admin page trades it once for a
+ * signed, HttpOnly session cookie; scripts can send it as a bearer token instead. Rotating the
+ * secret logs every session out.
  */
 
-interface Jwk {
-  kid: string;
-  kty: string;
-  n: string;
-  e: string;
-  alg?: string;
+const COOKIE = "jah_admin";
+const SESSION_SECONDS = 30 * 86_400;
+const enc = new TextEncoder();
+
+function b64url(bytes: ArrayBuffer): string {
+  return btoa(String.fromCharCode(...new Uint8Array(bytes)))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
-let jwksCache: { at: number; keys: Jwk[] } | null = null;
-
-function b64urlToBytes(s: string): Uint8Array {
-  const pad = "=".repeat((4 - (s.length % 4)) % 4);
-  const bin = atob(s.replace(/-/g, "+").replace(/_/g, "/") + pad);
-  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
-}
-
-const dec = new TextDecoder();
-
-async function getKeys(env: Env): Promise<Jwk[]> {
-  if (jwksCache && Date.now() - jwksCache.at < 3_600_000) return jwksCache.keys;
-  const res = await fetch(`https://${env.ACCESS_TEAM_DOMAIN}/cdn-cgi/access/certs`);
-  if (!res.ok) throw new Error("could not fetch Access certs");
-  const { keys } = (await res.json()) as { keys: Jwk[] };
-  jwksCache = { at: Date.now(), keys };
-  return keys;
+async function sign(env: Env, msg: string): Promise<string> {
+  const key = await crypto.subtle.importKey("raw", enc.encode(env.ADMIN_TOKEN), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return b64url(await crypto.subtle.sign("HMAC", key, enc.encode(msg)));
 }
 
 function isLocal(request: Request): boolean {
@@ -38,52 +27,36 @@ function isLocal(request: Request): boolean {
   return host === "127.0.0.1" || host === "localhost";
 }
 
-/** Returns the admin's email if the request is authorized, otherwise null. */
-export async function adminEmail(request: Request, env: Env): Promise<string | null> {
-  // Local development only: MOCK mode on localhost skips Access.
-  if (env.MOCK === "true" && isLocal(request)) return "local-dev@example.com";
+const adminConfigured = (env: Env) => !!env.ADMIN_TOKEN && env.ADMIN_TOKEN.length >= 24;
 
-  if (!env.ACCESS_TEAM_DOMAIN || !env.ACCESS_AUD || !env.ADMIN_EMAILS) return null;
-  const jwt = request.headers.get("Cf-Access-Jwt-Assertion");
-  if (!jwt) return null;
-  const parts = jwt.split(".");
-  if (parts.length !== 3) return null;
-  try {
-    const header = JSON.parse(dec.decode(b64urlToBytes(parts[0]))) as { kid: string };
-    const payload = JSON.parse(dec.decode(b64urlToBytes(parts[1]))) as {
-      aud: string | string[];
-      exp: number;
-      iss: string;
-      email?: string;
-    };
-    if (payload.exp * 1000 < Date.now()) return null;
-    if (payload.iss !== `https://${env.ACCESS_TEAM_DOMAIN}`) return null;
-    const auds = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
-    if (!auds.includes(env.ACCESS_AUD)) return null;
-
-    const jwk = (await getKeys(env)).find((k) => k.kid === header.kid);
-    if (!jwk) return null;
-    const key = await crypto.subtle.importKey(
-      "jwk",
-      jwk,
-      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-      false,
-      ["verify"],
-    );
-    const ok = await crypto.subtle.verify(
-      "RSASSA-PKCS1-v1_5",
-      key,
-      b64urlToBytes(parts[2]),
-      new TextEncoder().encode(`${parts[0]}.${parts[1]}`),
-    );
-    if (!ok || !payload.email) return null;
-
-    const allowed = (env.ADMIN_EMAILS ?? "").split(",").map((e) => e.trim().toLowerCase());
-    return allowed.includes(payload.email.toLowerCase()) ? payload.email : null;
-  } catch {
-    return null;
-  }
+/** True if `token` is the admin token. */
+export function isAdminToken(env: Env, token: string): boolean {
+  return adminConfigured(env) && timingSafeEqual(env.ADMIN_TOKEN!, token.trim());
 }
+
+/** Returns "admin" if the request carries a valid session cookie or admin bearer token, otherwise null. */
+export async function adminUser(request: Request, env: Env): Promise<string | null> {
+  // Local development only: MOCK mode on localhost skips login.
+  if (env.MOCK === "true" && isLocal(request)) return "local-dev";
+  if (!adminConfigured(env)) return null;
+
+  const bearer = (request.headers.get("Authorization") ?? "").match(/^Bearer\s+(.+)$/i);
+  if (bearer && isAdminToken(env, bearer[1])) return "admin";
+
+  const cookie = (request.headers.get("Cookie") ?? "").match(new RegExp(`(?:^|;\\s*)${COOKIE}=([^;]+)`));
+  if (!cookie) return null;
+  const [exp, sig] = cookie[1].split(".");
+  if (!exp || !sig || Number(exp) * 1000 < Date.now()) return null;
+  return timingSafeEqual(await sign(env, `admin.${exp}`), sig) ? "admin" : null;
+}
+
+/** Set-Cookie value for a fresh admin session. */
+export async function sessionCookie(env: Env): Promise<string> {
+  const exp = Math.floor(Date.now() / 1000) + SESSION_SECONDS;
+  return `${COOKIE}=${exp}.${await sign(env, `admin.${exp}`)}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${SESSION_SECONDS}`;
+}
+
+export const clearedCookie = `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`;
 
 function tokenMap(env: Env): Record<string, string> {
   if (!env.AGENT_TOKENS) return {};

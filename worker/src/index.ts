@@ -1,4 +1,4 @@
-import { adminEmail, agentName, agentNames } from "./auth";
+import { adminUser, agentName, agentNames, clearedCookie, isAdminToken, sessionCookie } from "./auth";
 import { HttpError, addComment, setStatus } from "./clickup";
 import { heartbeat, listEvents, listHeartbeats } from "./db";
 import { agentInstructions } from "./instructions";
@@ -83,7 +83,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       demo: env.MOCK === "true",
       clickup: !!env.CLICKUP_TOKEN,
       agents: agentNames(env).length,
-      accessConfigured: !!(env.ACCESS_TEAM_DOMAIN && env.ACCESS_AUD && env.ADMIN_EMAILS),
+      adminConfigured: !!env.ADMIN_TOKEN,
     });
   }
 
@@ -145,12 +145,25 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     return json({ error: "not found" }, 404);
   }
 
-  // ---------- Admin API (Cloudflare Access) ----------
-  if (path.startsWith("/api/admin/")) {
-    const email = await adminEmail(request, env);
-    if (!email) return json({ error: "unauthorized: sign in via Cloudflare Access" }, 401);
+  // ---------- Admin login (ADMIN_TOKEN -> signed session cookie) ----------
+  if (path === "/api/admin/login" && method === "POST") {
+    const { token } = await readJson<{ token?: string }>(request);
+    if (!token || !isAdminToken(env, token)) {
+      await new Promise((r) => setTimeout(r, 750)); // slow down guessing
+      return json({ error: "wrong admin token" }, 401);
+    }
+    return json({ ok: true }, 200, { "Set-Cookie": await sessionCookie(env) });
+  }
+  if (path === "/api/admin/logout" && method === "POST") {
+    return json({ ok: true }, 200, { "Set-Cookie": clearedCookie });
+  }
 
-    if (path === "/api/admin/me" && method === "GET") return json({ email });
+  // ---------- Admin API (session cookie or admin bearer token) ----------
+  if (path.startsWith("/api/admin/")) {
+    const user = await adminUser(request, env);
+    if (!user) return json({ error: "unauthorized" }, 401);
+
+    if (path === "/api/admin/me" && method === "GET") return json({ user });
 
     if (path === "/api/admin/tasks" && method === "GET") {
       return json({ demo: env.MOCK === "true", tasks: await loadTasks(env) });
@@ -207,7 +220,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     if (comment && method === "POST") {
       const { text: body } = await readJson<{ text?: string }>(request);
       if (!body) return json({ error: "text is required" }, 400);
-      if (env.MOCK !== "true") await addComment(env, comment[1], `[hub:${email}] ${body}`);
+      if (env.MOCK !== "true") await addComment(env, comment[1], `[hub:${user}] ${body}`);
       return json({ ok: true });
     }
 

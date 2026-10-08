@@ -19,10 +19,8 @@ export interface Env {
   LEASE_MINUTES: string;
 
   // --- secrets (wrangler pages secret put ...) ---
-  /** Cloudflare Access (Zero Trust): protects /admin* and /api/admin/*. Not secret, just kept out of the public repo. */
-  ACCESS_TEAM_DOMAIN?: string;
-  ACCESS_AUD?: string;
-  ADMIN_EMAILS?: string;
+  /** Admin login token (24+ chars). Traded for a signed session cookie on /admin. */
+  ADMIN_TOKEN?: string;
   CLICKUP_TOKEN?: string;
   /** JSON map of agent name -> bearer token, e.g. {"claude":"...","codex":"..."} */
   AGENT_TOKENS?: string;
