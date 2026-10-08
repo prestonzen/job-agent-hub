@@ -10,6 +10,11 @@ Live at **https://jobhunter.prestonzen.com**.
 - **Playbook from ClickUp**: standard form answers and rules come from the ClickUp playbook doc, served only to authenticated agents and admins, so no agent re-asks profile questions.
 - **Admin command center** (`/admin`, admin-token login): queue and claims, which agents are online, live activity, release/skip/mark-applied, pipeline editing, copy-paste agent setup.
 - **Run agents from anywhere** (`/admin#run`): launch "Gemini: work 4 jobs" (or any prompt, up to 5 in parallel) from your phone. A **runner** on an always-on Linux box starts the CLI headless with a real browser, streams the output back live, and stops it on demand. See [runner/README.md](runner/README.md).
+- **Pacing across all agents**: claims are held to per-ATS limits (concurrent claims, minimum gap, 24 h cap; Greenhouse one at a time) and one in-flight application per company, so a growing army doesn't trip ATS anti-fraud checks or lock the account. Editable on the command center.
+- **Schedules**: recurring runs such as "weekdays 08:00: Gemini works 4 jobs, Claude sources new roles", plus a daily Telegram digest.
+- **Resume bank**: tailored resume variants (R2) tagged with role keywords; agents call `get_resume` with the job title and upload the best match.
+- **Reply tracking**: a Gmail Apps Script forwards recruiter mail; the hub classifies it (Workers AI), matches the application and moves its status (rejected / screening / accepted).
+- **Telegram alerts** in the Kaizen Apps Operations group: jobs that need you, finished runs, interview invites and offers, daily digest.
 - **Public dashboard** (`/`): a sanitized live view: funnel, who applied, applications per day, platforms. No contact details, notes, links, answers or queued targets.
 
 ```
@@ -58,16 +63,25 @@ Run agents from a **residential IP** (home or mobile line), not a cloud VM: Ashb
 - **Runner**: pull-based. `job-agent-updater.timer` runs `runner/update.sh` every 5 minutes. When anything under `runner/` changed on `main` and no run is in progress, it re-runs `setup.sh` from the new checkout. This works behind CGNAT with no open ports, and puts no deploy secrets in GitHub. `provision.sh` (system packages, CLI versions) is run by hand.
 - **Other servers**: skip Jenkins; it's a server you'd have to maintain for what GitHub Actions does for free. For a VPS with a public IP, use a GitHub Actions job that deploys over SSH with a deploy-only key (plus an environment approval for production). For machines behind NAT, either let the box pull (like the runner) or install a GitHub self-hosted runner on it. The Tailscale GitHub Action is an option if the box is on a tailnet.
 
-## Recommendations / roadmap
+## Roadmap
 
-1. **OAuth 2.1 on `/mcp`**, so ChatGPT, the Gemini web app and Comet can join.
-2. **Per-ATS throttles in `claim_jobs`**: at most one active Greenhouse session per identity (its emailed codes collide), and paced Ashby submissions, to stay under anti-fraud thresholds as the agent count grows.
-3. **Push notifications** (ntfy or Telegram) when a run needs a human (Greenhouse code, CAPTCHA, required "own words" answer) or finishes.
-4. **Scheduled runs** from the hub, e.g. every morning one agent sources new roles with `add_job` and two others work the queue.
-5. **Cost and safety caps** per run: max turns/price (Vibe has `--max-price`), per-agent concurrency, a daily applications limit.
-6. **Monitoring**: Uptime Kuma checks on `/api/health` and on the runner heartbeat (stale `lastSeen`), plus a weekly `wrangler d1 export` backup.
-7. **Reply tracking**: read recruiter replies (Gmail) and move tasks to *screening* automatically.
-8. **Tailored resumes**: serve resume variants from the hub per role family instead of one PDF on the runner.
+Done: per-ATS/per-company pacing, Telegram alerts, scheduled runs, resume bank, reply tracking, runner health for Uptime Kuma.
+
+1. **OAuth 2.1 on `/mcp`**, so ChatGPT, the Gemini web app and Comet can join (see below).
+2. **Cost and safety caps** per run: max turns/price (Vibe has `--max-price`), per-agent concurrency.
+3. **Weekly D1 backup** (`wrangler d1 export`) to R2.
+4. **Resume tailoring by agents**: an agent drafts a variant for a role family, and a human approves it into the bank.
+
+### How OAuth would work
+
+ChatGPT, the Gemini web app and Comet only connect to remote MCP servers through OAuth 2.1 (the MCP authorization spec), not a pasted token. The hub would become its own small authorization server:
+
+1. `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server` advertise the endpoints; `/mcp` answers 401 with a `WWW-Authenticate` pointer to them.
+2. The client registers itself (`/register`, dynamic client registration), then sends you to `/authorize` with PKCE.
+3. `/authorize` is a hub page behind the admin login: you pick which agent identity this client becomes (e.g. "chatgpt") and approve.
+4. `/token` exchanges the code for a short-lived access token (plus a refresh token) bound to that agent. `/mcp` accepts it exactly like today's bearer tokens, so pacing, claims and identity work unchanged.
+
+Cloudflare's `workers-oauth-provider` library implements this flow on Workers with KV for grants. ClickUp needs a matching *Applied By* option per new identity.
 
 ## Privacy model
 
@@ -97,7 +111,16 @@ Secrets take effect on the next deployment (push to `main`, or `git commit --all
 | `CLICKUP_TOKEN` | ClickUp personal API token (`pk_…`). Required for real data. |
 | `AGENT_TOKENS` | JSON map of agent name → token, e.g. `{"claude":"…","codex":"…"}`. Names should match ClickUp *Applied By* options. |
 | `ADMIN_TOKEN` | 24+ char random string; paste it on `/admin` to sign in. |
+| `RUNNER_TOKEN` | Shared secret for runner machines (`runner/`). |
+| `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather. The bot must be in the chat set by `TELEGRAM_CHAT_ID` (a var), and admin with "Manage topics" so it can create its own topic. |
+| `INBOUND_TOKEN` | Shared secret for the Gmail reply tracker (`integrations/gmail-reply-tracker.gs`). |
 | `ZADARMA_KEY`, `ZADARMA_SECRET` | Optional, experimental phone stats |
+
+**Bindings**: D1 `job-agent-hub` (`DB`), R2 `job-agent-hub-resumes` (`RESUMES`), Workers AI (`AI`).
+
+**Reply tracking**: paste `integrations/gmail-reply-tracker.gs` into a new project at script.google.com, set the script properties `HUB_URL`, `INBOUND_TOKEN` and `INBOX_ADDRESS`, then run `install` once. It runs every 10 minutes inside your own Google account.
+
+**Monitoring**: in Uptime Kuma (on coolify), add an HTTP monitor for `https://jobhunter.prestonzen.com/api/health/runner`. It returns 503 when no runner has checked in for 3 minutes. Attach Kuma's Telegram notification, and a monitor for `/api/health` too.
 
 **Database**: D1 `job-agent-hub`. Tables are created on first use; `npm run db:migrate` applies `migrations/` explicitly.
 
