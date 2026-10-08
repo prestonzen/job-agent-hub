@@ -12,6 +12,10 @@ DIR=/opt/job-agent-runner/repo
 STAMP=/var/lib/job-agent-runner/deployed-runner-tree
 STATE=/var/lib/job-agent-runner/state.json
 
+# One update at a time (timer + manual runs).
+exec 9>/run/job-agent-updater.lock
+flock -n 9 || { echo "another update is running"; exit 0; }
+
 [ -d "$DIR/.git" ] || git clone --quiet --depth 1 --branch "$BRANCH" "$REPO" "$DIR"
 git -C "$DIR" fetch --quiet --depth 1 origin "$BRANCH"
 NEW=$(git -C "$DIR" rev-parse "origin/$BRANCH:runner")   # tree hash of runner/ only
