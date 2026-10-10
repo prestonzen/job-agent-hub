@@ -23,6 +23,7 @@ export default function Schedules({ agents }: { agents: string[] }) {
   const [time, setTime] = useState("08:00");
   const [days, setDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [tz, setTz] = useState(localTz);
+  const [jitter, setJitter] = useState(20);
   const [msg, setMsg] = useState<string | null>(null);
 
   const load = () => getSchedules().then((r) => setList(r.schedules)).catch((e: Error) => setMsg(e.message));
@@ -34,7 +35,7 @@ export default function Schedules({ agents }: { agents: string[] }) {
     const [h, m] = time.split(":").map(Number);
     const dow = days.length === 7 || days.length === 0 ? "*" : [...days].sort().join(",");
     try {
-      await createSchedule({ kind, agent: kind === "digest" ? undefined : agent, count, copies, prompt, cron: `${m} ${h} * * ${dow}`, tz } as Partial<Schedule>);
+      await createSchedule({ kind, agent: kind === "digest" ? undefined : agent, count, copies, prompt, cron: `${m} ${h} * * ${dow}`, tz, jitterMin: jitter } as Partial<Schedule>);
       setMsg("Schedule added.");
       void load();
     } catch (err) {
@@ -55,7 +56,7 @@ export default function Schedules({ agents }: { agents: string[] }) {
               <div>
                 <b>{s.kind === "digest" ? "📊 Daily digest" : `${agentLabel(s.agent)}: ${s.kind === "queue" ? `work ${s.count} jobs` : "custom prompt"}${s.copies > 1 ? ` ×${s.copies}` : ""}`}</b>
                 <div className="muted small">
-                  {describe(s)} · next {s.enabled && s.nextRunAt ? new Date(s.nextRunAt).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
+                  {describe(s)}{s.jitterMin ? ` +0–${s.jitterMin} min` : ""} · next {s.enabled && s.nextRunAt ? new Date(s.nextRunAt).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "—"}
                 </div>
               </div>
               <div className="row-actions">
@@ -98,6 +99,7 @@ export default function Schedules({ agents }: { agents: string[] }) {
           ))}
         </div>
         <label>Time zone <input value={tz} onChange={(e) => setTz(e.target.value)} /></label>
+        <label>Random delay (min) <input className="num-in" type="number" min={0} max={120} value={jitter} onChange={(e) => setJitter(+e.target.value)} /></label>
         <button disabled={kind === "prompt" && !prompt.trim()}>Add schedule</button>
       </form>
       {msg && <p className="small muted">{msg}</p>}

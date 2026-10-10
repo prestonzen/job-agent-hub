@@ -94,6 +94,7 @@ export interface Run {
   exitCode: number | null;
   cancel: boolean;
   logSize: number;
+  notBefore: string | null;
   log?: string;
 }
 

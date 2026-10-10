@@ -41,6 +41,8 @@ let ready = false;
 async function db(env: Env): Promise<D1Database> {
   if (!ready) {
     await env.DB.batch(SCHEMA.map((s) => env.DB.prepare(s)));
+    // Added later: earliest start (scheduled runs get a random delay). Fails harmlessly if present.
+    await env.DB.prepare("ALTER TABLE runs ADD COLUMN not_before INTEGER").run().catch(() => {});
     ready = true;
   }
   return env.DB;
@@ -65,6 +67,8 @@ export interface RunRow {
   exitCode: number | null;
   cancel: boolean;
   logSize: number;
+  /** Earliest start, for scheduled runs with a random delay. */
+  notBefore: string | null;
   log?: string;
 }
 
@@ -82,6 +86,7 @@ interface DbRun {
   exit_code: number | null;
   cancel: number;
   log_size: number;
+  not_before: number | null;
   log?: string;
 }
 
@@ -100,20 +105,21 @@ const toRow = (r: DbRun): RunRow => ({
   exitCode: r.exit_code,
   cancel: !!r.cancel,
   logSize: r.log_size,
+  notBefore: iso(r.not_before),
   ...(r.log !== undefined ? { log: r.log } : {}),
 });
 
-const COLS = "id, agent, kind, prompt, count, status, runner, created_at, started_at, finished_at, exit_code, cancel, length(log) AS log_size";
+const COLS = "id, agent, kind, prompt, count, status, runner, created_at, started_at, finished_at, exit_code, cancel, not_before, length(log) AS log_size";
 
 // ---------- admin ----------
 
-export async function createRun(env: Env, r: { agent: string; kind: RunKind; prompt?: string; count?: number }): Promise<RunRow> {
+export async function createRun(env: Env, r: { agent: string; kind: RunKind; prompt?: string; count?: number; notBefore?: number }): Promise<RunRow> {
   if (!RUN_KINDS.includes(r.kind)) throw new HttpError(400, `kind must be one of ${RUN_KINDS.join(", ")}`);
   if (r.kind === "prompt" && !r.prompt?.trim()) throw new HttpError(400, "prompt is required for a custom run");
   const count = r.kind === "queue" ? Math.min(10, Math.max(1, Math.floor(r.count ?? 4))) : null;
   const row = await (await db(env))
-    .prepare(`INSERT INTO runs (agent, kind, prompt, count, created_at) VALUES (?, ?, ?, ?, ?) RETURNING ${COLS}`)
-    .bind(r.agent.toLowerCase(), r.kind, r.kind === "prompt" ? r.prompt!.trim().slice(0, 8000) : null, count, Date.now())
+    .prepare(`INSERT INTO runs (agent, kind, prompt, count, created_at, not_before) VALUES (?, ?, ?, ?, ?, ?) RETURNING ${COLS}`)
+    .bind(r.agent.toLowerCase(), r.kind, r.kind === "prompt" ? r.prompt!.trim().slice(0, 8000) : null, count, Date.now(), r.notBefore ?? null)
     .first<DbRun>();
   return toRow(row!);
 }
@@ -214,7 +220,8 @@ export async function claimRun(env: Env, runner: string, agents: string[], origi
   const r = await (await db(env))
     .prepare(
       `UPDATE runs SET status = 'running', runner = ?1, started_at = ?2
-       WHERE id = (SELECT id FROM runs WHERE status = 'queued' AND agent IN (SELECT value FROM json_each(?3)) ORDER BY id LIMIT 1)
+       WHERE id = (SELECT id FROM runs WHERE status = 'queued' AND agent IN (SELECT value FROM json_each(?3))
+                   AND (not_before IS NULL OR not_before <= ?2) ORDER BY id LIMIT 1)
        RETURNING ${COLS}`,
     )
     .bind(runner.slice(0, 60), Date.now(), JSON.stringify(list))

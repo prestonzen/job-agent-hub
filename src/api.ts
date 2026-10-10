@@ -48,7 +48,7 @@ export interface PacingLive { globalPerDay: number; todayTotal: number; ats: (At
 export const getPacing = () => request<{ policy: PacingPolicy; defaults: PacingPolicy; live: PacingLive }>("/api/admin/pacing");
 export const savePacing = (p: PacingPolicy) => request<{ policy: PacingPolicy }>("/api/admin/pacing", { method: "PUT", body: JSON.stringify(p) });
 
-export interface Schedule { id: number; name: string; agent: string | null; kind: "queue" | "prompt" | "digest"; count: number | null; copies: number; prompt: string | null; cron: string; tz: string; enabled: boolean; lastRunAt: string | null; nextRunAt: string | null }
+export interface Schedule { id: number; name: string; agent: string | null; kind: "queue" | "prompt" | "digest"; count: number | null; copies: number; prompt: string | null; cron: string; tz: string; enabled: boolean; jitterMin: number; lastRunAt: string | null; nextRunAt: string | null }
 export const getSchedules = () => request<{ schedules: Schedule[] }>("/api/admin/schedules");
 export const createSchedule = (s: Partial<Schedule>) => request<Schedule>("/api/admin/schedules", { method: "POST", body: JSON.stringify(s) });
 export const setScheduleEnabled = (id: number, enabled: boolean) => request<Schedule>(`/api/admin/schedules/${id}`, { method: "PATCH", body: JSON.stringify({ enabled }) });

@@ -23,6 +23,8 @@ export interface Schedule {
   cron: string;
   tz: string;
   enabled: boolean;
+  /** Random start delay, 0..jitterMin minutes, per fire (parallel copies are spread further). */
+  jitterMin: number;
   lastRunAt: string | null;
   nextRunAt: string | null;
 }
@@ -48,6 +50,7 @@ async function sdb(env: Env) {
   const d = await db(env);
   if (!ready) {
     await d.prepare(SCHEMA).run();
+    await d.prepare("ALTER TABLE schedules ADD COLUMN jitter_min INTEGER NOT NULL DEFAULT 20").run().catch(() => {});
     ready = true;
   }
   return d;
@@ -100,12 +103,12 @@ export function nextRun(cron: string, tz: string, from = Date.now()): number | n
 
 interface Row {
   id: number; name: string; agent: string | null; kind: ScheduleKind; count: number | null; copies: number; prompt: string | null;
-  cron: string; tz: string; enabled: number; last_run_at: number | null; next_run_at: number | null;
+  cron: string; tz: string; enabled: number; jitter_min: number; last_run_at: number | null; next_run_at: number | null;
 }
 const iso = (ms: number | null) => (ms ? new Date(ms).toISOString() : null);
 const toSchedule = (r: Row): Schedule => ({
   id: r.id, name: r.name, agent: r.agent, kind: r.kind, count: r.count, copies: r.copies, prompt: r.prompt,
-  cron: r.cron, tz: r.tz, enabled: !!r.enabled, lastRunAt: iso(r.last_run_at), nextRunAt: iso(r.next_run_at),
+  cron: r.cron, tz: r.tz, enabled: !!r.enabled, jitterMin: r.jitter_min ?? 0, lastRunAt: iso(r.last_run_at), nextRunAt: iso(r.next_run_at),
 });
 
 export async function listSchedules(env: Env): Promise<Schedule[]> {
@@ -115,7 +118,7 @@ export async function listSchedules(env: Env): Promise<Schedule[]> {
 
 export async function createSchedule(
   env: Env,
-  s: { name?: string; agent?: string; kind: ScheduleKind; count?: number; copies?: number; prompt?: string; cron: string; tz?: string },
+  s: { name?: string; agent?: string; kind: ScheduleKind; count?: number; copies?: number; prompt?: string; cron: string; tz?: string; jitterMin?: number },
 ): Promise<Schedule> {
   if (!SCHEDULE_KINDS.includes(s.kind)) throw new HttpError(400, `kind must be one of ${SCHEDULE_KINDS.join(", ")}`);
   if (s.kind !== "digest" && !s.agent) throw new HttpError(400, "agent is required");
@@ -130,14 +133,14 @@ export async function createSchedule(
   const name = s.name?.trim() || (s.kind === "digest" ? "Daily digest" : s.kind === "queue" ? `${s.agent}: work ${s.count ?? 4} jobs` : `${s.agent}: custom`);
   const r = await (await sdb(env))
     .prepare(
-      `INSERT INTO schedules (name, agent, kind, count, copies, prompt, cron, tz, next_run_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
+      `INSERT INTO schedules (name, agent, kind, count, copies, prompt, cron, tz, next_run_at, created_at, jitter_min)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .bind(
       name.slice(0, 80), s.kind === "digest" ? null : s.agent!.toLowerCase(), s.kind,
       s.kind === "queue" ? Math.min(10, Math.max(1, s.count ?? 4)) : null,
       Math.min(5, Math.max(1, s.copies ?? 1)), s.kind === "prompt" ? s.prompt!.trim().slice(0, 8000) : null,
-      s.cron.trim(), tz, next, Date.now(),
+      s.cron.trim(), tz, next, Date.now(), Math.min(120, Math.max(0, Math.round(s.jitterMin ?? 20))),
     )
     .first<Row>();
   return toSchedule(r!);
@@ -180,8 +183,11 @@ export async function tick(env: Env, onDigest: () => Promise<void>): Promise<num
       await onDigest().catch((e) => console.error("digest:", e));
       continue;
     }
+    // Random start within the jitter window; each parallel copy starts a few more random minutes later.
+    let start = now + Math.random() * (r.jitter_min ?? 0) * 60_000;
     for (let i = 0; i < r.copies; i++) {
-      await createRun(env, { agent: r.agent!, kind: r.kind, count: r.count ?? undefined, prompt: r.prompt ?? undefined });
+      await createRun(env, { agent: r.agent!, kind: r.kind, count: r.count ?? undefined, prompt: r.prompt ?? undefined, notBefore: Math.round(start) });
+      start += (3 + Math.random() * 9) * 60_000;
     }
   }
   return fired;

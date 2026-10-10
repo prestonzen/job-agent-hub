@@ -22,6 +22,8 @@ export interface PacingPolicy {
   companyConcurrent: number;
   companyCooldownDays: number;
   globalPerDay: number;
+  /** Extra random gap on top of minGapMin, as a fraction (0.75 → 1x–1.75x the minimum). */
+  gapJitter: number;
 }
 
 export const DEFAULT_POLICY: PacingPolicy = {
@@ -36,6 +38,7 @@ export const DEFAULT_POLICY: PacingPolicy = {
   companyConcurrent: 1,
   companyCooldownDays: 0,
   globalPerDay: 60,
+  gapJitter: 0.75,
 };
 
 /** "Greenhouse (job-boards)" → "greenhouse". */
@@ -52,6 +55,19 @@ export async function getPolicy(env: Env): Promise<PacingPolicy> {
     ...(saved ?? {}),
     ats: { ...DEFAULT_POLICY.ats, ...(saved?.ats ?? {}) },
   };
+}
+
+/**
+ * Gap after a claim, in ms: the minimum plus a random-looking extra derived from the claim's own
+ * timestamp. Deterministic per claim (no extra state, every check agrees), irregular across claims,
+ * so applications don't land on a fixed beat.
+ */
+export function gapMs(minGapMin: number, jitter: number, claimAt: number): number {
+  let h = Math.floor(claimAt) ^ 0x9e3779b9;
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  const r = ((h ^ (h >>> 16)) >>> 0) / 0xffffffff;
+  return minGapMin * 60_000 * (1 + Math.max(0, jitter) * r);
 }
 
 const limitFor = (p: PacingPolicy, ats: string) => p.ats[ats] ?? p.ats.default ?? DEFAULT_POLICY.ats.default;
@@ -115,8 +131,8 @@ export function checkJob(job: Job, st: PacingState, p: PacingPolicy, now = Date.
   }
   if (s.active >= lim.concurrent) return { ok: false, reason: `${ak}: ${s.active}/${lim.concurrent} in progress`, retryAt: null };
   if (s.today + s.active >= lim.perDay) return { ok: false, reason: `${ak}: daily limit ${lim.perDay} reached`, retryAt: null };
-  if (s.lastClaimAt && now - s.lastClaimAt < lim.minGapMin * 60_000) {
-    const retryAt = s.lastClaimAt + lim.minGapMin * 60_000;
+  if (s.lastClaimAt && now - s.lastClaimAt < gapMs(lim.minGapMin, p.gapJitter, s.lastClaimAt)) {
+    const retryAt = s.lastClaimAt + gapMs(lim.minGapMin, p.gapJitter, s.lastClaimAt);
     return { ok: false, reason: `${ak}: next slot in ${Math.ceil((retryAt - now) / 60_000)} min`, retryAt };
   }
   return { ok: true };
@@ -141,7 +157,7 @@ export function pacingSummary(st: PacingState, p: PacingPolicy, now = Date.now()
     ats: keys.map((k) => {
       const lim = limitFor(p, k);
       const s = st.ats[k] ?? { active: 0, lastClaimAt: null, today: 0 };
-      const next = s.lastClaimAt ? s.lastClaimAt + lim.minGapMin * 60_000 : null;
+      const next = s.lastClaimAt ? s.lastClaimAt + gapMs(lim.minGapMin, p.gapJitter, s.lastClaimAt) : null;
       return { ats: k, ...lim, active: s.active, today: s.today, nextSlotAt: next && next > now ? new Date(next).toISOString() : null };
     }),
   };

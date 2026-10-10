@@ -125,7 +125,13 @@ export default function RunAgents() {
                   </span>
                   <span className="task">{r.kind === "queue" ? `Work ${r.count} jobs` : (r.prompt ?? "").slice(0, 80)}</span>
                   <span className={`pill ${STATUS_CLASS[r.status]}`}>{r.cancel && r.status === "running" ? "stopping" : r.status}</span>
-                  <span className="muted small nowrap">{r.startedAt ? dur(r.startedAt, r.finishedAt) : ago(r.createdAt)}</span>
+                  <span className="muted small nowrap">
+                    {r.startedAt
+                      ? dur(r.startedAt, r.finishedAt)
+                      : r.notBefore && Date.parse(r.notBefore) > Date.now()
+                        ? `starts ${new Date(r.notBefore).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                        : ago(r.createdAt)}
+                  </span>
                 </button>
                 {selected === r.id && <RunLog run={r} onCancel={async () => { await cancelRun(r.id); void load(); }} />}
               </li>

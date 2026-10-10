@@ -292,7 +292,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     // Schedules.
     if (path === "/api/admin/schedules" && method === "GET") return json({ schedules: await listSchedules(env) });
     if (path === "/api/admin/schedules" && method === "POST") {
-      const b = await readJson<{ name?: string; agent?: string; kind?: ScheduleKind; count?: number; copies?: number; prompt?: string; cron?: string; tz?: string }>(request);
+      const b = await readJson<{ name?: string; agent?: string; kind?: ScheduleKind; count?: number; copies?: number; prompt?: string; cron?: string; tz?: string; jitterMin?: number }>(request);
       if (!b.cron) return json({ error: "cron is required" }, 400);
       return json(await createSchedule(env, { ...b, kind: b.kind ?? "queue", cron: b.cron }), 201);
     }
