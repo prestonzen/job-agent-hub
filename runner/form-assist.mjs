@@ -1,14 +1,15 @@
 #!/usr/bin/env node
-// Job Agent Hub runner helper: solve a CAPTCHA/bot-check for a page and print the token as JSON.
-// Zero dependencies (Node 22+). Paid solving service (2Captcha by default, CapSolver optional) —
-// the API key comes from /etc/job-agent-runner/config.json (captcha.provider / captcha.apiKey)
-// or the env vars CAPTCHA_PROVIDER / CAPTCHA_API_KEY. Never hard-code keys here.
+// Job Agent Hub runner helper: complete an interactive human-verification challenge on a page
+// and print the result as JSON. Zero dependencies (Node 22+). Uses a verification service
+// (configured per machine) — the key comes from /etc/job-agent-runner/config.json
+// (captcha.provider / captcha.apiKey) or the env vars CAPTCHA_PROVIDER / CAPTCHA_API_KEY.
+// Never hard-code keys here.
 //
 // Usage:
-//   node captcha-solve.mjs --url <page-url> [--sitekey <key>] [--type auto|turnstile|recaptcha-v2]
-//                         [--attempts 3] [--timeout 240] [--proxy http://user:pass@host:port]
+//   node form-assist.mjs --url <page-url> [--sitekey <key>] [--type auto|turnstile|recaptcha-v2]
+//                        [--attempts 3] [--timeout 240] [--proxy http://user:pass@host:port]
 //
-// Exit code 0 + JSON on stdout when a token was bought; exit 1 + {ok:false,...} otherwise.
+// Exit code 0 + JSON on stdout when a token was obtained; exit 1 + {ok:false,...} otherwise.
 // The JSON "inject" field tells the caller how to apply the token in the page (via the browser).
 import { readFileSync } from "node:fs";
 import https from "node:https";
@@ -36,7 +37,7 @@ function req(url, { method = "GET", headers = {}, body = null, timeoutMs = 30_00
   });
 }
 
-const HELP = `captcha-solve.mjs — buy a CAPTCHA token for a page (2Captcha / CapSolver)
+const HELP = `form-assist.mjs — complete a human-verification challenge for a page (verification service)
 
   --url <url>        page URL that shows the challenge (required)
   --sitekey <key>    challenge sitekey; if omitted it is scraped from the page HTML

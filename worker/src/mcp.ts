@@ -60,7 +60,7 @@ const TOOLS = [
   {
     name: "request_code",
     description:
-      "The form wants an emailed verification/security code (e.g. Greenhouse 8-character code). FALLBACK path: if your machine notes offer an inbox helper (gmail-code.mjs), use that first — Preston may be asleep. Otherwise this asks Preston on Telegram; he reads it from his inbox and replies. Then call wait_for_code. Never guess codes.",
+      "The form wants an emailed verification/security code. FALLBACK path: if your machine notes offer an inbox helper (inbox-assist.mjs), use that first — Preston may be asleep. Otherwise this asks Preston on Telegram; he reads it from his inbox and replies. Then call wait_for_code. Never guess codes.",
     inputSchema: {
       type: "object",
       properties: { job_id: str, kind: { type: "string", description: "e.g. 'Greenhouse security code'" }, hint: { type: "string", description: "Anything that helps him find it, e.g. the sender or subject" } },

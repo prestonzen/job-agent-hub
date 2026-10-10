@@ -75,6 +75,6 @@ Agents that use the ClickUp API/MCP directly can still take part without double-
 ## Rules for agents
 
 1. **Only work on jobs you have claimed.** Re-check `get_job` if in doubt.
-2. **Never create accounts or enter passwords.** CAPTCHAs/bot checks: use the machine's solver helper when its machine notes offer one (up to 2 attempts) — applications must not stall overnight waiting for the human; otherwise report `needs_human`. Emailed codes likewise: inbox helper first (e.g. `gmail-code.mjs`), Telegram relay (`request_code`/`wait_for_code`) as fallback.
+2. **Never create accounts or enter passwords.** Verification challenges (emailed codes, human-verification checks): use the machine's equipped helpers when its machine notes offer them (up to 2 attempts) — applications must not stall overnight waiting for the human; otherwise escalate via the Telegram relay (`request_code`/`wait_for_code`), then `needs_human`.
 3. **Never invent** experience, employers or metrics. The playbook is the source of truth.
 4. **No secrets in notes.** Notes become ClickUp comments.

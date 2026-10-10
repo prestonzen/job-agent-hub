@@ -19,16 +19,16 @@ Phone / browser ──► /admin#run ──► hub (D1: runs) ◄── poll/cla
 | `setup.sh` | Creates the `agent` user, writes each CLI's MCP config (hub + browser), installs the systemd units. `--desktop <user>` for a desktop machine |
 | `update.sh` | Pull-based auto-update, run by `job-agent-updater.timer` every 5 min |
 | `runner.mjs` | The runner (zero dependencies) |
-| `captcha-solve.mjs` | Helper for agents: buys a CAPTCHA/Turnstile token via 2Captcha/CapSolver and prints inject instructions |
-| `gmail-code.mjs` | Helper for agents: polls Gmail (OAuth, gmail.readonly) for an emailed verification/2FA code |
+| `form-assist.mjs` | Helper for agents: completes interactive human-verification challenges on a page |
+| `inbox-assist.mjs` | Helper for agents: picks up emailed verification codes from the applicant inbox |
 | `config.example.json` | Runner config shape; the real one is `/etc/job-agent-runner/config.json` (holds secrets, never committed) |
 
-## Unblock helpers (CAPTCHA + emailed codes)
+## Verification helpers
 
-`machineNotes` tells agents about two helpers installed at `/opt/job-agent-runner/`. They are best-effort: if credentials are missing or the attempt fails, agents fall back to reporting `needs_human` like before.
+`machineNotes` tells agents about two helpers installed at `/opt/job-agent-runner/`. They let equipped runners handle verification steps (human-verification challenges, emailed codes) autonomously instead of stalling overnight. They are best-effort: if credentials are missing or the attempt fails, agents fall back to the Telegram relay and then `needs_human`.
 
-- **CAPTCHA / bot checks** — `node captcha-solve.mjs --url <page url>` scrapes the sitekey, buys a token from 2Captcha (or CapSolver, `"provider": "capsolver"`), retries, and prints JSON with the token plus how to inject it into the page. Needs `captcha.apiKey` in the config (or `CAPTCHA_API_KEY`).
-- **Greenhouse emailed codes** — `node gmail-code.mjs --wait 120` polls Gmail until the code arrives and prints it as JSON (6-digit OTPs and 8-char alphanumeric codes, code-context scoring). Needs `gmail.clientId` / `clientSecret` / `refreshToken` in the config (one-time: OAuth playground with scope `gmail.readonly`, see the header comment in `gmail-code.mjs`).
+- **Page challenges** — `node form-assist.mjs --url <page url>`; needs `captcha.provider` / `captcha.apiKey` in the config.
+- **Emailed codes** — `node inbox-assist.mjs --wait 120`; needs `gmail.clientId` / `clientSecret` / `refreshToken` in the config (one-time OAuth setup, see the header comment in `inbox-assist.mjs`).
 
 ## New machine
 

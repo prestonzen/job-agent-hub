@@ -1,17 +1,17 @@
 #!/usr/bin/env node
-// Job Agent Hub runner helper: fetch an emailed verification/2FA code from Gmail and print it as JSON.
-// Zero dependencies (Node 22+). Auth is a Google OAuth refresh token with the gmail.readonly scope;
-// it comes from /etc/job-agent-runner/config.json (gmail.clientId / gmail.clientSecret / gmail.refreshToken)
+// Job Agent Hub runner helper: pick up an emailed verification code from the applicant inbox
+// (read-only OAuth) and print it as JSON. Zero dependencies (Node 22+). Credentials come from
+// /etc/job-agent-runner/config.json (gmail.clientId / gmail.clientSecret / gmail.refreshToken)
 // or the env vars GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET / GMAIL_REFRESH_TOKEN. Never hard-code secrets here.
 //
 // Usage:
-//   node gmail-code.mjs [--query 'gmail search'] [--wait 90] [--pattern '<regex with a capture group>']
-//                       [--max-age-min 15] [--mark-read]
+//   node inbox-assist.mjs [--query 'gmail search'] [--wait 90] [--pattern '<regex with a capture group>']
+//                         [--max-age-min 15] [--mark-read]
 //
 // Exit code 0 + JSON on stdout when a code was found; exit 1 + {ok:false,...} otherwise.
 import { readFileSync } from "node:fs";
 
-const HELP = `gmail-code.mjs — read a verification/2FA code out of Gmail
+const HELP = `inbox-assist.mjs — pick up an emailed verification code from the applicant inbox
 
   --query <q>          Gmail search query (default: {from:greenhouse.io from:greenhouse-mail.io}
                        newer_than:10m — Greenhouse security codes come from

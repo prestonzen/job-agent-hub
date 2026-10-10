@@ -4,10 +4,10 @@ import { esc, send } from "./telegram";
 import type { Env } from "./types";
 
 /**
- * Telegram-relayed verification codes — the FALLBACK path for emailed codes (Greenhouse "security
- * code", email verification). The primary path is autonomous: runner machines read the code out of
- * Gmail themselves (runner/gmail-code.mjs, OAuth gmail.readonly), because applications must not die
- * waiting for Preston to wake up. When no inbox helper is available or it fails, the agent calls
+ * Telegram-relayed verification codes — the FALLBACK path for emailed codes ("security code",
+ * email verification). The primary path is autonomous: equipped runner machines pick the code up
+ * from the applicant inbox themselves (runner/inbox-assist.mjs), because applications must not die
+ * waiting for Preston to wake up. When no helper is available or it fails, the agent calls
  * request_code: Preston gets a Telegram message, reads the code from his inbox and replies with it.
  * The agent waits (wait_for_code) and types exactly what he sent. This module never reads email.
  */
