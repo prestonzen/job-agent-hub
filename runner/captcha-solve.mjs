@@ -11,6 +11,30 @@
 // Exit code 0 + JSON on stdout when a token was bought; exit 1 + {ok:false,...} otherwise.
 // The JSON "inject" field tells the caller how to apply the token in the page (via the browser).
 import { readFileSync } from "node:fs";
+import https from "node:https";
+
+// node:https instead of fetch: undici (fetch) connection-hangs on this runner's dual-stack
+// network for the agent user, while the https module connects fine.
+function req(url, { method = "GET", headers = {}, body = null, timeoutMs = 30_000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const r = https.request(
+      { hostname: u.hostname, path: u.pathname + u.search, method, headers: { ...headers, ...(body != null ? { "Content-Length": Buffer.byteLength(body) } : {}) }, timeout: timeoutMs },
+      (res) => {
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => {
+          const text = Buffer.concat(chunks).toString("utf8");
+          resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, text: async () => text, json: async () => JSON.parse(text) });
+        });
+      },
+    );
+    r.on("timeout", () => r.destroy(new Error(`request timeout after ${timeoutMs}ms`)));
+    r.on("error", reject);
+    if (body != null) r.write(body);
+    r.end();
+  });
+}
 
 const HELP = `captcha-solve.mjs — buy a CAPTCHA token for a page (2Captcha / CapSolver)
 
@@ -61,7 +85,7 @@ const fail = (error, extra = {}) => { out({ ok: false, error, ...extra }); proce
 async function fetchSitekey(url) {
   let html;
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(20_000), headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36" } });
+    const res = await req(url, { timeoutMs: 20_000, headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130 Safari/537.36" } });
     if (!res.ok) return { sitekey: null, kindHint: null };
     html = await res.text();
   } catch { return { sitekey: null, kindHint: null }; }
@@ -87,14 +111,14 @@ async function solve2captcha({ apiKey, type, url, sitekey, proxy, timeoutSec }) 
     params.set("pageurl", url);
   }
   if (proxy) params.set("proxy", proxy.replace(/^https?:\/\//, ""));
-  const created = await (await fetch(`https://2captcha.com/in.php?${params}`, { signal: AbortSignal.timeout(30_000) })).json();
+  const created = await (await req(`https://2captcha.com/in.php?${params}`)).json();
   if (created.status !== 1) return { error: `2captcha in.php: ${created.request}` };
   const id = created.request;
   const deadline = Date.now() + timeoutSec * 1000;
   for (;;) {
     if (Date.now() > deadline) return { error: `timeout after ${timeoutSec}s waiting for solution (id ${id})` };
     await sleep(5_000);
-    const r = await (await fetch(`https://2captcha.com/res.php?key=${apiKey}&action=get&id=${id}&json=1`, { signal: AbortSignal.timeout(30_000) })).json();
+    const r = await (await req(`https://2captcha.com/res.php?key=${apiKey}&action=get&id=${id}&json=1`)).json();
     if (r.status === 1) return { token: r.request, costCents: parseFloat(r.price ?? 0) * 100 };
     if (r.request !== "CAPCHA_NOT_READY") return { error: `2captcha res.php: ${r.request} (id ${id})` };
   }
@@ -106,7 +130,7 @@ async function solveCapsolver({ apiKey, type, url, sitekey, proxy, timeoutSec })
   if (type === "turnstile") taskType = proxy ? "AntiTurnstileTask" : "AntiTurnstileTaskProxyLess";
   else taskType = proxy ? "RecaptchaV2Task" : "RecaptchaV2TaskProxyLess";
   if (proxy) task.proxy = proxy;
-  const post = (body) => fetch("https://api.capsolver.com", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(30_000) }).then((r) => r.json());
+  const post = (body) => req("https://api.capsolver.com", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
   const created = await post({ clientKey: apiKey, task: { type: taskType, ...task } });
   if (created.errorId !== 0) return { error: `capsolver createTask: ${created.errorDescription ?? created.errorCode}` };
   const deadline = Date.now() + timeoutSec * 1000;

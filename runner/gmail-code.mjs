@@ -59,6 +59,30 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const out = (obj) => console.log(JSON.stringify(obj));
 const fail = (error, extra = {}) => { out({ ok: false, error, ...extra }); process.exit(1); };
 
+// node:https instead of fetch: undici (fetch) connection-hangs on this runner's dual-stack
+// network for the agent user, while the https module connects fine.
+import https from "node:https";
+function req(url, { method = "GET", headers = {}, body = null, timeoutMs = 30_000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const r = https.request(
+      { hostname: u.hostname, path: u.pathname + u.search, method, headers: { ...headers, ...(body != null ? { "Content-Length": Buffer.byteLength(body) } : {}) }, timeout: timeoutMs },
+      (res) => {
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => {
+          const text = Buffer.concat(chunks).toString("utf8");
+          resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, text: async () => text, json: async () => JSON.parse(text) });
+        });
+      },
+    );
+    r.on("timeout", () => r.destroy(new Error(`request timeout after ${timeoutMs}ms`)));
+    r.on("error", reject);
+    if (body != null) r.write(body);
+    r.end();
+  });
+}
+
 let cachedToken = null;
 async function accessToken(cfg) {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) return cachedToken.value;
@@ -66,8 +90,8 @@ async function accessToken(cfg) {
   const clientSecret = process.env.GMAIL_CLIENT_SECRET ?? cfg.gmail?.clientSecret;
   const refreshToken = process.env.GMAIL_REFRESH_TOKEN ?? cfg.gmail?.refreshToken;
   if (!clientId || !clientSecret || !refreshToken) fail("missing gmail oauth credentials: set gmail.clientId/clientSecret/refreshToken in config or GMAIL_CLIENT_ID/GMAIL_CLIENT_SECRET/GMAIL_REFRESH_TOKEN");
-  const body = new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: "refresh_token" });
-  const res = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body, signal: AbortSignal.timeout(30_000) });
+  const body = new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: "refresh_token" }).toString();
+  const res = await req("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) fail(`token refresh failed: ${res.status} ${json.error_description ?? json.error ?? ""}`.trim());
   cachedToken = { value: json.access_token, expiresAt: Date.now() + (json.expires_in ?? 3600) * 1000 };
@@ -76,7 +100,7 @@ async function accessToken(cfg) {
 
 async function gmail(path, cfg) {
   const token = await accessToken(cfg);
-  const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me${path}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30_000) });
+  const res = await req(`https://gmail.googleapis.com/gmail/v1/users/me${path}`, { headers: { Authorization: `Bearer ${token}` } });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) fail(`gmail api ${path.split("?")[0]}: ${res.status} ${json.error?.message ?? ""}`.trim());
   return json;
@@ -84,11 +108,10 @@ async function gmail(path, cfg) {
 
 async function gmailModify(messageId, body, cfg) {
   const token = await accessToken(cfg);
-  const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`, {
+  const res = await req(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) throw new Error(`gmail modify ${messageId}: ${res.status}`);
 }
