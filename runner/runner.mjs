@@ -28,6 +28,32 @@ const STATE = cfg.stateFile ?? join(WORK, "..", "state.json");
 
 function log(...a) { console.log(new Date().toISOString(), ...a); }
 const expand = (p) => (p?.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
+
+/** KEY=VALUE lines of an env file (quotes stripped); missing file = nothing. */
+function readEnvFile(p) {
+  const out = {};
+  try {
+    for (const l of readFileSync(expand(p), "utf8").split(/\r?\n/)) {
+      const m = l.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+      if (m) out[m[1]] = m[2].replace(/^(['"])(.*)\1$/, "$2");
+    }
+  } catch {
+    /* no file */
+  }
+  return out;
+}
+
+/**
+ * Environment for an agent CLI: the runner config's env, then the agent's env file (so an API key can live
+ * in a root-managed file, not in config.json), then envMap renames ({ ANTHROPIC_AUTH_TOKEN: "DEEPSEEK_API_KEY" }),
+ * then the agent's own env. Values may start with ~/ .
+ */
+function agentEnv(a) {
+  const file = a.envFile ? readEnvFile(a.envFile) : {};
+  const mapped = Object.fromEntries(Object.entries(a.envMap ?? {}).filter(([, src]) => file[src] !== undefined).map(([dst, src]) => [dst, file[src]]));
+  const own = Object.fromEntries(Object.entries(a.env ?? {}).map(([k, v]) => [k, typeof v === "string" ? expand(v) : v]));
+  return { ...(cfg.env ?? {}), ...file, ...mapped, ...own };
+}
 // eslint-disable-next-line no-control-regex
 const stripAnsi = (s) => s.replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]|\x1b\][^\x07]*\x07|\r(?!\n)/g, "");
 
@@ -67,9 +93,9 @@ async function hub(path, body) {
 function probe() {
   reloadCfg();
   return Object.entries(cfg.agents ?? {}).map(([id, a]) => {
-    const bin = a.cmd?.[0];
+    const bin = a.probeBin ?? a.cmd?.[0];
     const installed = !!bin && spawnSync("sh", ["-c", `command -v "${bin}"`]).status === 0;
-    const authOk = !a.auth || [].concat(a.auth).some((p) => existsSync(expand(p)));
+    const authOk = !a.auth || [].concat(a.auth).some((p) => existsSync(expand(p)) && (!a.authNeeds || a.authNeeds.every((v) => readEnvFile(a.envFile ?? p)[v])));
     let version = null;
     if (installed && a.versionArgs !== false) {
       const v = spawnSync(bin, a.versionArgs ?? ["--version"], { encoding: "utf8", timeout: 15_000 });
@@ -149,7 +175,7 @@ async function startRun(run) {
 
   const child = spawn(bin, args, {
     cwd,
-    env: { ...process.env, ...(cfg.env ?? {}), ...(a.env ?? {}), JOB_AGENT_RUN_ID: String(run.id) },
+    env: { ...process.env, ...agentEnv(a), JOB_AGENT_RUN_ID: String(run.id) },
     stdio: ["ignore", "pipe", "pipe"],
     detached: true, // own process group, so cancel kills the CLI and its browser/MCP children
   });

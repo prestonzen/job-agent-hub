@@ -5,11 +5,15 @@ import { Card } from "./Panels";
 // ---------- Hero: the agent constellation ----------
 
 /** Agents orbiting the hub. Working agents get a packet travelling to the hub; idle-but-ready ones breathe. */
+/** Agents the hub is wired for that haven't signed in yet: shown as dashed placeholders, so the roster reads as a platform, not a snapshot. */
+const PLANNED: Record<string, string> = { qwen: "Alibaba · planned", deepseek: "free tier · soon" };
+
 export function Constellation({ byAgent, working, ready }: { byAgent: Record<string, number>; working: string[]; ready: string[] }) {
   // Everyone who has applied, plus agents that are logged in and standing by (they haven't sent anything yet).
   const seen = new Map<string, string>();
   for (const a of [...Object.keys(byAgent), ...working, ...ready]) if (!["unknown", "human"].includes(agentKey(a))) seen.set(agentKey(a), a);
-  const names = sortAgents([...seen.values()]);
+  const names = sortAgents([...seen.values(), ...Object.keys(PLANNED).filter((p) => !seen.has(p))]);
+  const isPlanned = (a: string) => !seen.has(agentKey(a));
   const sent = (a: string) => byAgent[a] ?? byAgent[agentLabel(a)] ?? Object.entries(byAgent).find(([k]) => agentKey(k) === agentKey(a))?.[1] ?? 0;
   const isWorking = (a: string) => working.map(agentKey).includes(agentKey(a));
   const isReady = (a: string) => ready.map(agentKey).includes(agentKey(a));
@@ -21,7 +25,7 @@ export function Constellation({ byAgent, working, ready }: { byAgent: Record<str
   const ry = 112;
   const n = Math.max(1, names.length);
   return (
-    <svg className="constellation" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${names.length} AI agents connected to one hub`}>
+    <svg className="constellation" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${names.filter((n) => !isPlanned(n)).length} AI agents connected to one hub, ${names.filter(isPlanned).length} more planned`}>
       <defs>
         <radialGradient id="hubglow" cx="50%" cy="50%" r="50%">
           <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.35" />
@@ -36,11 +40,12 @@ export function Constellation({ byAgent, working, ready }: { byAgent: Record<str
         const x = cx + rx * Math.cos(a);
         const y = cy + ry * Math.sin(a);
         const live = isWorking(name);
+        const ghost = isPlanned(name);
         const path = `M${x.toFixed(1)},${y.toFixed(1)} L${cx},${cy}`;
         const above = y < cy - 30; // labels go above only for nodes near the top
         const lblY = above ? y - 48 : y + 42;
         return (
-          <g key={name} className={`node${live ? " live" : isReady(name) ? " idle" : ""}`}>
+          <g key={name} className={`node${live ? " live" : isReady(name) ? " idle" : ""}${ghost ? " ghost" : ""}`}>
             <path d={path} className={`spoke${live ? " flow" : ""}`} />
             {live && (
               <circle r={4} style={{ fill: agentColor(name) }}>
@@ -48,7 +53,7 @@ export function Constellation({ byAgent, working, ready }: { byAgent: Record<str
               </circle>
             )}
             {(live || isReady(name)) && <circle cx={x} cy={y} r={27} className="ring" style={{ stroke: agentColor(name) }} />}
-            <circle cx={x} cy={y} r={22} style={{ fill: agentColor(name) }} />
+            <circle cx={x} cy={y} r={22} className="node-c" style={ghost ? { stroke: agentColor(name) } : { fill: agentColor(name) }} />
             <text x={x} y={y + 5} textAnchor="middle" className="node-i">
               {agentLabel(name).slice(0, 2)}
             </text>
@@ -56,7 +61,7 @@ export function Constellation({ byAgent, working, ready }: { byAgent: Record<str
               {agentLabel(name)}
             </text>
             <text x={x} y={lblY + 14} textAnchor="middle" className="node-n">
-              {sent(name) ? `${sent(name)} sent` : "standing by"}
+              {ghost ? PLANNED[agentKey(name)] : sent(name) ? `${sent(name)} sent` : "standing by"}
             </text>
           </g>
         );

@@ -26,7 +26,7 @@ fi
 install -d -o "$RUN_USER" -g "$RUN_USER" -m 700 "$RUN_HOME/resume" /var/lib/job-agent-runner /var/lib/job-agent-runner/runs
 install -d -m 755 /opt/job-agent-runner
 install -m 644 "$HERE/runner.mjs" "$HERE/configure-agents.mjs" /opt/job-agent-runner/
-install -m 755 "$HERE/update.sh" "$HERE/form-assist.mjs" "$HERE/inbox-assist.mjs" /opt/job-agent-runner/
+install -m 755 "$HERE/update.sh" "$HERE/form-assist.mjs" "$HERE/inbox-assist.mjs" "$HERE/with-key.mjs" /opt/job-agent-runner/
 install -m 755 "$HERE/set-key.sh" /usr/local/bin/jar-set-key
 chown "root:$RUN_USER" "$CONFIG" && chmod 640 "$CONFIG"
 

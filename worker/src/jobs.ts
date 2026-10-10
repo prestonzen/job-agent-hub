@@ -14,7 +14,7 @@ import { isApplication } from "./classify";
 import { inferPlatform } from "./platform";
 import { activeAssignments, assignJob, clearAssignment, getAssignment, FALLBACK_AGENT, type Assignment } from "./assign";
 import { countFailures, listAttempts, saveAttempt } from "./attempts";
-import { agentLane, inLane } from "./lanes";
+import { agentLane, inLane, laneOrder } from "./lanes";
 import { parkedCategory } from "./park";
 import { agentNames } from "./auth";
 import { atsKey, checkJob, companyKey, getPolicy, noteClaim as notePacedClaim, pacingState } from "./pacing";
@@ -223,7 +223,7 @@ export async function claimJobs(
   const out: Job[] = mine.slice(0, count);
 
   // Jobs handed to this agent come first.
-  const ordered = [...all.filter((j) => j.assignedTo === agent), ...all.filter((j) => j.assignedTo !== agent)];
+  const ordered = [...all.filter((j) => j.assignedTo === agent), ...laneOrder(all.filter((j) => j.assignedTo !== agent), lane)];
   for (const job of ordered) {
     if (out.length >= count) break;
     if (!isAvailableFor(job, agent) || !inLane(job, lane)) continue;

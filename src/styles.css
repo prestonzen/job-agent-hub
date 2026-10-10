@@ -18,6 +18,7 @@
   --agent-human: #008300;
   --agent-kimi: #4a3aa7;
   --agent-qwen: #e34948;
+  --agent-deepseek: #0e9fb5;
   --agent-unknown: #9aa3ad;
   color-scheme: light dark;
 }
@@ -41,6 +42,7 @@
     --agent-human: #008300;
     --agent-kimi: #9085e9;
     --agent-qwen: #e66767;
+    --agent-deepseek: #22b8cf;
     --agent-unknown: #6b7480;
   }
 }
@@ -379,3 +381,8 @@ button.danger { color: #e5484d; border-color: color-mix(in srgb, #e5484d 40%, va
 .facts dd small { font-size: 12px; font-weight: 400; color: var(--muted); }
 .spark { width: 100%; }
 .spark svg { display: block; }
+
+.constellation .ghost .node-c { fill: none; stroke-width: 2; stroke-dasharray: 4 4; opacity: 0.75; }
+.constellation .ghost .node-i { fill: var(--muted); }
+.constellation .ghost .spoke { stroke-dasharray: 2 6; opacity: 0.5; }
+.constellation .ghost .node-l, .constellation .ghost .node-n { opacity: 0.8; }

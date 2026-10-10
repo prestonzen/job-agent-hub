@@ -9,7 +9,7 @@
   "machineNotes": "This is a Linux runner. Use the playwright MCP tools for the browser (a real Chromium on a virtual display). For each job call get_resume with the job title; the chosen file is in ./resumes/<filename> in your current directory (fallback: ./Preston_Zen_Resume_AI_2026-10-08.pdf). Upload that file and ignore the Windows path in the playbook. This machine is equipped with two verification helpers. (1) If a page shows a human-verification challenge: run `node /opt/job-agent-runner/form-assist.mjs --url <current page url>` in the shell, apply the returned value in the page with browser_evaluate following the JSON's `inject` instructions, then continue; if it is missing credentials, errors, or the check still fails after 2 attempts, report needs_human with the details. (2) If a form asks for a code emailed to the applicant: first run `node /opt/job-agent-runner/inbox-assist.mjs --wait 120` in the shell and type the returned code; if it reports missing credentials or finds nothing, keep the page open and fall back to request_code + wait_for_code (Preston relays the code via Telegram, up to 20 min); never guess codes. Only if both fail, report needs_human.",
   "agentTokens": {
     "claude": "<hub token>", "codex": "<hub token>", "gemini": "<hub token>",
-    "qwen": "<hub token>", "kimi": "<hub token>", "mistral": "<hub token>"
+    "qwen": "<hub token>", "kimi": "<hub token>", "mistral": "<hub token>", "deepseek": "<hub token>"
   },
   "captcha": {
     "provider": "2captcha",
@@ -24,8 +24,9 @@
   "agents": {
     "claude":  { "cmd": ["claude", "-p", "{PROMPT}", "--model", "claude-sonnet-5-5", "--effort", "high", "--max-turns", "150", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"], "format": "claude-stream", "auth": ["~/.claude/.credentials.json"] },
     "codex":   { "cmd": ["codex", "exec", "-c", "model_reasoning_effort=\"low\"", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "{PROMPT}"], "auth": ["~/.codex/auth.json"], "env": { "JOBHUNTER_TOKEN": "<codex hub token>" } },
-    "gemini":  { "cmd": ["gemini", "--yolo", "-p", "{PROMPT}"], "auth": ["~/.gemini/oauth_creds.json", "~/.gemini/.env"] },
-    "qwen":    { "cmd": ["qwen", "--yolo", "{PROMPT}"], "auth": ["~/.qwen/oauth_creds.json"] },
+    "gemini":  { "cmd": ["node", "/opt/job-agent-runner/with-key.mjs", "--var", "GEMINI_API_KEY", "--keys", "~/.gemini/keys", "--env-file", "~/.gemini/.env", "--", "gemini", "--yolo", "-p", "{PROMPT}"], "probeBin": "gemini", "auth": ["~/.gemini/oauth_creds.json", "~/.gemini/.env", "~/.gemini/keys"] },
+    "qwen":    { "cmd": ["qwen", "--yolo", "-p", "{PROMPT}"], "auth": ["~/.qwen/.env"], "authNeeds": ["BAILIAN_CODING_PLAN_API_KEY"], "envFile": "~/.qwen/.env" },
+    "deepseek": { "cmd": ["claude", "-p", "{PROMPT}", "--model", "deepseek-v4-flash", "--max-turns", "100", "--dangerously-skip-permissions"], "probeBin": "claude", "auth": ["~/.deepseek/.env"], "authNeeds": ["DEEPSEEK_API_KEY"], "envFile": "~/.deepseek/.env", "envMap": { "ANTHROPIC_AUTH_TOKEN": "DEEPSEEK_API_KEY" }, "env": { "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic", "CLAUDE_CONFIG_DIR": "~/.claude-deepseek", "JOBHUNTER_TOKEN": "<deepseek hub token>" } },
     "kimi":    { "cmd": ["kimi", "-m", "kimi-code/kimi-for-coding-highspeed", "-p", "{PROMPT}"], "auth": ["~/.kimi-code/credentials", "~/.kimi-code/auth.json"], "env": { "JOBHUNTER_TOKEN": "<kimi hub token>" } },
     "mistral": { "cmd": ["vibe", "-p", "{PROMPT}", "--auto-approve", "--trust", "--max-turns", "120", "--max-price", "1.5"], "auth": ["~/.vibe/.env"], "versionArgs": ["--version"] }
   }

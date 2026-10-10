@@ -107,8 +107,8 @@ export async function autopilotStatus(env: Env) {
     if (!readySet.has(agent)) return { agent, role, state: "not-ready", nextAt: null, detail: "not logged in on a runner" };
     if (streak >= FAIL_STREAK_PAUSE) return { agent, role, state: "paused", nextAt: null, detail: `${streak} failed runs in a row` };
     if (active) return { agent, role, state: active.status === "running" ? "working" : "queued", nextAt: null, detail: `run #${active.id}` };
-    if (n > Date.now()) return { agent, role, state: "waiting", nextAt: new Date(n).toISOString(), detail: lane ? `${lane} applications only` : null };
-    return { agent, role, state: "ready", nextAt: null, detail: lane ? `${lane} applications only` : null };
+    if (n > Date.now()) return { agent, role, state: "waiting", nextAt: new Date(n).toISOString(), detail: lane === "email" ? "email applications only" : lane === "email-first" ? "email applications first" : null };
+    return { agent, role, state: "ready", nextAt: null, detail: lane === "email" ? "email applications only" : lane === "email-first" ? "email applications first" : null };
   });
   return { settings: s, agents };
 }
@@ -164,7 +164,7 @@ export async function autopilotTick(env: Env): Promise<string | null> {
     const won = await d.prepare("UPDATE autopilot_state SET next_after = ?1 WHERE agent = ?2 AND (next_after <= ?3 OR ?4 = 1)").bind(Math.round(nextAfter), agent, now, urgent).run();
     if (won.meta.changes !== 1) continue;
     // A lane agent (free tier) gets a short run: its daily request budget is tiny.
-    const run = await createRun(env, { agent, kind: "queue", count: Math.min(s.lanes[agent] ? 2 : s.jobsPerRun, claimable) });
+    const run = await createRun(env, { agent, kind: "queue", count: Math.min(s.lanes[agent] === "email" ? 2 : s.jobsPerRun, claimable) });
     return `launched run #${run.id} for ${agent}`;
   }
   return null;

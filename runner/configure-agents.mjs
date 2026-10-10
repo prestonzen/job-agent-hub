@@ -39,6 +39,22 @@ if (tokens.claude) {
   }
 }
 
+// DeepSeek has no CLI of its own: it runs through Claude Code pointed at DeepSeek's Anthropic-compatible endpoint
+// (see the runner config). A separate CLAUDE_CONFIG_DIR keeps its MCP config and history apart from Claude's.
+if (tokens.deepseek) {
+  const dir = join(H, ".claude-deepseek");
+  mkdirSync(dir, { recursive: true });
+  for (const [name, def] of [
+    ["jobhunter", { type: "http", url: MCP_URL, headers: { Authorization: bearer("deepseek") } }],
+    ["playwright", { type: "stdio", ...BROWSER }],
+  ]) {
+    const env = { ...process.env, CLAUDE_CONFIG_DIR: dir };
+    spawnSync("claude", ["mcp", "remove", "-s", "user", name], { stdio: "ignore", env });
+    const r = spawnSync("claude", ["mcp", "add-json", "-s", "user", name, JSON.stringify(def)], { encoding: "utf8", env });
+    console.log(`deepseek (claude) mcp ${name}:`, r.status === 0 ? "ok" : (r.stderr || r.stdout).trim());
+  }
+}
+
 // Codex: token comes from $JOBHUNTER_TOKEN, which the runner sets per agent.
 if (tokens.codex) {
   write(
