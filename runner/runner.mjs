@@ -85,6 +85,35 @@ async function heartbeat() {
   }
 }
 
+// ---------- readable logs from JSON event streams ----------
+
+const short = (v, n = 140) => {
+  const t = typeof v === "string" ? v : JSON.stringify(v);
+  return t.length > n ? `${t.slice(0, n)}…` : t;
+};
+
+/** Claude Code `--output-format stream-json --verbose`: one JSON event per line → human lines. */
+function formatClaudeEvent(line) {
+  let e;
+  try { e = JSON.parse(line); } catch { return line + "\n"; }
+  if (e.type === "assistant") {
+    return (e.message?.content ?? [])
+      .map((c) => (c.type === "text" ? `${c.text.trim()}\n` : c.type === "tool_use" ? `→ ${c.name.replace(/^mcp__/, "")} ${short(c.input)}\n` : ""))
+      .join("");
+  }
+  if (e.type === "user") {
+    return (e.message?.content ?? [])
+      .filter((c) => c.type === "tool_result" && c.is_error)
+      .map((c) => `  ✗ ${short(Array.isArray(c.content) ? c.content.map((x) => x.text ?? "").join(" ") : c.content, 200)}\n`)
+      .join("");
+  }
+  if (e.type === "result") return `\n=== ${e.subtype ?? "result"}${e.total_cost_usd ? ` · $${e.total_cost_usd.toFixed(2)}` : ""}${e.num_turns ? ` · ${e.num_turns} turns` : ""} ===\n${e.result ?? ""}\n`;
+  if (e.type === "system" && e.subtype === "init") return `[session ${e.model ?? ""} · ${(e.mcp_servers ?? []).map((m) => `${m.name}:${m.status}`).join(", ")}]\n`;
+  return "";
+}
+
+const FORMATTERS = { "claude-stream": formatClaudeEvent };
+
 // ---------- running one job ----------
 
 async function startRun(run) {
@@ -117,9 +146,17 @@ async function startRun(run) {
   saveState();
   log(`run #${run.id} ${run.agent} pid ${child.pid}`);
 
-  const onData = (d) => (state.buf += stripAnsi(d.toString()));
-  child.stdout.on("data", onData);
-  child.stderr.on("data", onData);
+  const fmt = FORMATTERS[a.format];
+  let partial = "";
+  const onOut = (d) => {
+    if (!fmt) return void (state.buf += stripAnsi(d.toString()));
+    partial += d.toString();
+    const lines = partial.split("\n");
+    partial = lines.pop() ?? "";
+    for (const l of lines) if (l.trim()) state.buf += fmt(l);
+  };
+  child.stdout.on("data", onOut);
+  child.stderr.on("data", (d) => (state.buf += stripAnsi(d.toString())));
 
   const kill = (why) => {
     state.buf += `\n[runner] stopping: ${why}\n`;
