@@ -59,7 +59,13 @@ codex login --device-auth
 gemini            # choose "Login with Google"
 qwen              # choose "Qwen OAuth"
 kimi login        # device-code flow (Kimi Code CLI)
-vibe              # first run asks for a Mistral API key
+vibe              # first run asks for a Mistral API key (or use jar-set-key, below)
+```
+
+Mistral Vibe and Gemini can also run headless on API keys with no login. As root on the runner, `jar-set-key mistral` (or `gemini`) asks for the key with hidden input and stores it for the `agent` user; the hub shows the agent as ready within about 5 minutes:
+
+```bash
+ssh -t root@kloud "pct exec 218 -- jar-set-key mistral"
 ```
 
 ## Operating

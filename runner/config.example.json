@@ -27,6 +27,6 @@
     "gemini":  { "cmd": ["gemini", "--yolo", "-p", "{PROMPT}"], "auth": ["~/.gemini/oauth_creds.json", "~/.gemini/.env"] },
     "qwen":    { "cmd": ["qwen", "--yolo", "{PROMPT}"], "auth": ["~/.qwen/oauth_creds.json"] },
     "kimi":    { "cmd": ["kimi", "-m", "kimi-code/kimi-for-coding-highspeed", "-p", "{PROMPT}"], "auth": ["~/.kimi-code/credentials", "~/.kimi-code/auth.json"], "env": { "JOBHUNTER_TOKEN": "<kimi hub token>" } },
-    "mistral": { "cmd": ["vibe", "-p", "{PROMPT}", "--auto-approve", "--trust"], "auth": ["~/.vibe/.env"], "versionArgs": ["--version"] }
+    "mistral": { "cmd": ["vibe", "-p", "{PROMPT}", "--auto-approve", "--trust", "--max-turns", "120", "--max-price", "1.5"], "auth": ["~/.vibe/.env"], "versionArgs": ["--version"] }
   }
 }
