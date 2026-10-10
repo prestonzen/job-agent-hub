@@ -1,8 +1,9 @@
+import { buildAnalytics } from "./analytics";
 import { adminUser, agentName, agentNames, clearedCookie, isAdminToken, sessionCookie } from "./auth";
 import { HttpError, addComment, appendDocPage, getDocPage, getPlaybook, patchDocPage, replayWrite, setStatus } from "./clickup";
 import { flushOutbox, mirrorAge, mirrorTasks, outboxSize, usageToday } from "./mirror";
 import { isApplication } from "./classify";
-import { activeClaims, heartbeat, lastEventAt, listEvents, listHeartbeats, loadSnapshot, saveSnapshot, setSetting } from "./db";
+import { activeClaims, db as dbHandle, heartbeat, lastEventAt, listEvents, listHeartbeats, loadSnapshot, saveSnapshot, setSetting } from "./db";
 import { agentInstructions } from "./instructions";
 import {
   addJob,
@@ -32,7 +33,7 @@ import { notify, setHubWebhook, telegramConfigured, webhookInfo } from "./telegr
 import { handleTelegramUpdate } from "./telegram-bot";
 import { getCodeRequest, requestCode, waitForCode } from "./codes";
 import { toPublicSummary } from "./sanitize";
-import type { Env } from "./types";
+import type { Env, PublicSummary } from "./types";
 import { zadarmaGet } from "./zadarma";
 
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
@@ -282,6 +283,12 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       return json({ demo: env.MOCK === "true", tasks: await loadTasks(env) });
     }
 
+    // Analytics: per-agent success, time to apply, ATS yield, queue health (rolling window).
+    if (path === "/api/admin/analytics" && method === "GET") {
+      const days = Math.min(90, Math.max(7, Number(url.searchParams.get("days")) || 30));
+      return json(await buildAnalytics(env, days));
+    }
+
     // Command center: queue + claims, agent activity and check-ins, per-agent totals.
     if (path === "/api/admin/hub" && method === "GET") {
       const [tasks, q, events, heartbeats] = await Promise.all([loadTasks(env), queue(env), listEvents(env, 150), listHeartbeats(env)]);
@@ -468,6 +475,27 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
 
 const ONLINE_MS = 15 * 60_000;
 
+/** Fleet totals for the public page: counts and hours only, never anything about a specific job. */
+async function publicOps(env: Env): Promise<NonNullable<PublicSummary["ops"]>> {
+  const d = await dbHandle(env);
+  const [r, c, f] = await Promise.all([
+    d
+      .prepare(
+        "SELECT COUNT(*) AS runs, SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END) AS ok, SUM(CASE WHEN started_at IS NOT NULL AND finished_at > started_at THEN finished_at - started_at ELSE 0 END) AS ms FROM runs WHERE kind != 'login' AND status IN ('succeeded','failed')",
+      )
+      .first<{ runs: number; ok: number | null; ms: number | null }>(),
+    d.prepare("SELECT COUNT(*) AS n FROM events WHERE type = 'claimed'").first<{ n: number }>(),
+    d.prepare("SELECT MIN(at) AS at FROM events").first<{ at: number | null }>(),
+  ]);
+  return {
+    runs: r?.runs ?? 0,
+    runsOk: r?.ok ?? 0,
+    agentHours: Math.round(((r?.ms ?? 0) / 3_600_000) * 10) / 10,
+    claims: c?.n ?? 0,
+    since: f?.at ? new Date(f.at).toISOString().slice(0, 10) : null,
+  };
+}
+
 /** Compute the public summary from ClickUp + hub activity, and save it as the latest snapshot. */
 async function buildPublicSummary(env: Env): Promise<string> {
   const [tasks, beats, claims, last, runners] = await Promise.all([
@@ -485,6 +513,7 @@ async function buildPublicSummary(env: Env): Promise<string> {
     inProgress: claims.size,
     lastActivityAt: last,
   };
+  summary.ops = await publicOps(env).catch(() => undefined);
   const body = JSON.stringify(summary);
   await saveSnapshot(env, "public-summary-v2", body);
   return body;

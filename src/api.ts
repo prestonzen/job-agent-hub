@@ -76,3 +76,18 @@ export interface AgentAutopilot { agent: string; state: "working" | "queued" | "
 export const getAutopilot = () => request<{ settings: AutopilotSettings; agents: AgentAutopilot[] }>("/api/admin/autopilot");
 export const saveAutopilot = (p: Partial<AutopilotSettings>) =>
   request<{ settings: AutopilotSettings; agents: AgentAutopilot[] }>("/api/admin/autopilot", { method: "PUT", body: JSON.stringify(p) });
+
+// ---------- analytics ----------
+export interface AgentStats { agent: string; claimed: number; applied: number; skipped: number; needsHuman: number; failed: number; released: number; successRate: number | null; medianMinToApply: number | null; runs: number; runsOk: number; runsFailed: number; avgRunMin: number | null; runMinutes: number }
+export interface AtsStats { ats: string; applied: number; needsHuman: number; skipped: number; failed: number; successRate: number | null }
+export interface DayStats { date: string; applied: number; needsHuman: number; skipped: number; failed: number; runsOk: number; runsFailed: number }
+export interface Analytics {
+  generatedAt: string; days: number; demo: boolean;
+  totals: { applied: number; claimed: number; skipped: number; needsHuman: number; failed: number; successRate: number | null; medianMinToApply: number | null; runs: number; runsOk: number; runMinutes: number; appsPerRunHour: number | null };
+  byAgent: AgentStats[]; byDay: DayStats[]; byHour: number[]; byAts: AtsStats[];
+  parked: { reason: string; count: number }[];
+  queue: { ready: number; claimed: number; parked: number; total: number };
+  clickup: { day: string; calls: number }[];
+  fleet: { agentsReady: number; runnersOnline: number; slots: number; busy: number };
+}
+export const getAnalytics = (days: number) => request<Analytics>(`/api/admin/analytics?days=${days}`);

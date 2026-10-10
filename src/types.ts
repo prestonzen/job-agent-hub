@@ -18,6 +18,8 @@ export interface PublicSummary {
   byAgent: Record<string, number>;
   byDay: { date: string; count: number; byAgent: Record<string, number> }[];
   live: { agentsOnline: string[]; agentsReady: string[]; inProgress: number; lastActivityAt: string | null };
+  /** Aggregate operations numbers (no job detail): how much work the fleet has done. Optional on old snapshots. */
+  ops?: { runs: number; runsOk: number; agentHours: number; claims: number; since: string | null };
   recent: PublicApplication[];
   platforms: { name: string; status: string }[];
 }

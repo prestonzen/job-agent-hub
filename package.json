@@ -11,7 +11,9 @@
     "typecheck": "tsc -b && tsc -p worker/tsconfig.json --noEmit",
     "preview": "vite preview",
     "db:migrate": "wrangler d1 migrations apply job-agent-hub --remote",
-    "deploy": "npm run build && wrangler pages deploy dist --project-name job-agent-hub"
+    "deploy": "npm run build && wrangler pages deploy dist --project-name job-agent-hub",
+    "demo:seed": "node scripts/seed-demo.mjs > .demo-seed.sql && wrangler d1 execute job-agent-hub --local --file=.demo-seed.sql",
+    "demo": "npm run build && npm run demo:seed && wrangler pages dev dist --port 8788 --binding MOCK=true"
   },
   "dependencies": {
     "react": "^19.0.0",

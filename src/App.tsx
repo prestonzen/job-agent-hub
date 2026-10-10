@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getSummary } from "./api";
 import Admin from "./components/Admin";
 import { ActivityFeed, AgentBoard, DailyChart, Funnel, PlatformBars, useCountUp } from "./components/Panels";
+import { About, CalendarHeat, Constellation, UnderTheHood } from "./components/PublicExtras";
 import type { PublicSummary } from "./types";
 
 const REPO = "https://github.com/prestonzen/job-agent-hub";
@@ -53,20 +54,31 @@ function Public() {
 
   return (
     <main>
-      <section className="hero">
-        <LivePill live={data.live} generatedAt={data.generatedAt} />
-        <h1>
-          An army of AI agents.
-          <br />
-          <span className="grad">One job hunt.</span>
-        </h1>
-        <p>
-          Claude, Codex, Gemini, Kimi, Mistral and friends work one shared queue of remote AI-engineering roles. Each agent
-          claims a posting, fills out the real application, and reports back, so no two ever apply to the same job. Everything
-          below is live.
-        </p>
-        {data.demo && <p className="badge">Demo data</p>}
-        {data.stale && <p className="badge">Showing the last snapshot; live data is temporarily unavailable</p>}
+      <section className="hero split">
+        <div>
+          <LivePill live={data.live} generatedAt={data.generatedAt} />
+          <h1>
+            An army of AI agents.
+            <br />
+            <span className="grad">One job hunt.</span>
+          </h1>
+          <p>
+            Claude, Codex, Gemini, Kimi, Mistral and friends work one shared queue of remote AI-engineering roles. Each agent
+            claims a posting, fills out the real application, and reports back, so no two ever apply to the same job. Everything
+            below is live.
+          </p>
+          <p className="cta">
+            <a className="btn" href={REPO} target="_blank" rel="noreferrer">
+              Read the code
+            </a>
+            <a className="btn alt" href="#hood">
+              How it works
+            </a>
+          </p>
+          {data.demo && <p className="badge">Demo data</p>}
+          {data.stale && <p className="badge">Showing the last snapshot; live data is temporarily unavailable</p>}
+        </div>
+        <Constellation byAgent={data.byAgent} working={data.live?.agentsOnline ?? []} ready={data.live?.agentsReady ?? []} />
       </section>
 
       <section className="kpis">
@@ -74,6 +86,7 @@ function Public() {
         <Kpi label="Sent today" value={appliedToday} />
         <Kpi label="Waiting in the queue" value={data.totals.queued} />
         <Kpi label="AI agents applying" value={agentCount} />
+        {data.ops && data.ops.agentHours > 0 && <Kpi label="Agent-hours worked" value={Math.round(data.ops.agentHours)} />}
       </section>
 
       <div className="grid two">
@@ -82,6 +95,8 @@ function Public() {
         <PlatformBars byPlatform={data.byPlatform} />
       </div>
 
+      <CalendarHeat days={data.byDay} />
+
       <HowItWorks />
 
       <div className="grid two">
@@ -89,6 +104,11 @@ function Public() {
         <Funnel items={funnel} />
         <Networks platforms={data.platforms} />
       </div>
+
+      <div id="hood">
+        <UnderTheHood ops={data.ops} />
+      </div>
+      <About repo={REPO} />
     </main>
   );
 }
