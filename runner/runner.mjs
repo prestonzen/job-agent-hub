@@ -19,7 +19,8 @@ function reloadCfg() {
   }
 }
 const NAME = cfg.name ?? hostname();
-const SLOTS = Math.max(1, cfg.slots ?? 2);
+// Read live from the config (reloadCfg) so capacity can be tuned without a restart.
+const maxSlots = () => Math.max(1, cfg.slots ?? 2);
 const TIMEOUT_MS = (cfg.timeoutMinutes ?? 90) * 60_000;
 const WORK = cfg.workDir ?? "/var/lib/job-agent-runner/runs";
 // Read by update.sh: it only restarts the runner when nothing is running.
@@ -88,7 +89,7 @@ function saveState() {
 async function heartbeat() {
   saveState();
   try {
-    await hub("/api/runner/heartbeat", { agents, slots: SLOTS, busy: active.size, version: VERSION, host: hostname(), active: [...active.keys()] });
+    await hub("/api/runner/heartbeat", { agents, slots: maxSlots(), busy: active.size, version: VERSION, host: hostname(), active: [...active.keys()] });
   } catch (e) {
     log("heartbeat failed:", e.message);
   }
@@ -219,7 +220,8 @@ async function flush(id) {
 }
 
 async function claimLoop() {
-  if (active.size >= SLOTS) return;
+  reloadCfg(); // pick up slot/config changes without a restart
+  if (active.size >= maxSlots()) return;
   const ready = agents.filter((a) => a.ready).map((a) => a.id);
   const installed = agents.filter((a) => a.installed).map((a) => a.id);
   if (!installed.length) return;
@@ -236,7 +238,7 @@ async function claimLoop() {
 
 // ---------- main ----------
 
-log(`runner ${NAME} v${VERSION}: ${SLOTS} slots; agents: ${agents.map((a) => `${a.id}=${a.ready ? "ready" : a.note}`).join(", ")}`);
+log(`runner ${NAME} v${VERSION}: ${maxSlots()} slots; agents: ${agents.map((a) => `${a.id}=${a.ready ? "ready" : a.note}`).join(", ")}`);
 await heartbeat();
 setInterval(heartbeat, 30_000);
 setInterval(() => { agents = probe(); }, 5 * 60_000); // pick up new logins without a restart
