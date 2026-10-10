@@ -4,10 +4,12 @@ import { esc, send } from "./telegram";
 import type { Env } from "./types";
 
 /**
- * Human-relayed verification codes. When a form asks for an emailed code (Greenhouse "security
- * code", email verification), the agent calls request_code: Preston gets a Telegram message, reads
- * the code from his own inbox and replies with it. Sending it is his approval for that application.
- * The agent waits (wait_for_code) and types exactly what he sent. Nothing reads the inbox for codes.
+ * Telegram-relayed verification codes — the FALLBACK path for emailed codes (Greenhouse "security
+ * code", email verification). The primary path is autonomous: runner machines read the code out of
+ * Gmail themselves (runner/gmail-code.mjs, OAuth gmail.readonly), because applications must not die
+ * waiting for Preston to wake up. When no inbox helper is available or it fails, the agent calls
+ * request_code: Preston gets a Telegram message, reads the code from his inbox and replies with it.
+ * The agent waits (wait_for_code) and types exactly what he sent. This module never reads email.
  */
 
 const SCHEMA = `CREATE TABLE IF NOT EXISTS code_requests (

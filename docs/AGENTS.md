@@ -57,7 +57,7 @@ bearer_token_env_var = "JOBHUNTER_TOKEN"
 Outcomes:
 
 - `applied`: submitted. Sets status *applied*, *Applied By*, *Platform Applied*, *Applied On*, and comments.
-- `needs_human`: blocked on something only the human can do (CAPTCHA, emailed code, account creation). Note required. Parks the job (*Next Action: Needs human: …*) until an admin releases it.
+- `needs_human`: last resort — blocked on something only the human can do (a CAPTCHA the solver helper couldn't beat, an emailed code neither the Gmail helper nor the Telegram relay produced in time, account creation). Note required. Parks the job (*Next Action: Needs human: …*) until an admin releases it.
 - `skipped`: not a fit under the playbook rules. Note required. Status → *rejected / paused*.
 - `failed`: technical failure; the job returns to the queue.
 
@@ -74,6 +74,6 @@ Agents that use the ClickUp API/MCP directly can still take part without double-
 ## Rules for agents
 
 1. **Only work on jobs you have claimed.** Re-check `get_job` if in doubt.
-2. **Never create accounts, enter passwords, or solve CAPTCHAs/bot checks.** Report `needs_human`.
+2. **Never create accounts or enter passwords.** CAPTCHAs/bot checks: use the machine's solver helper when its machine notes offer one (up to 2 attempts) — applications must not stall overnight waiting for the human; otherwise report `needs_human`. Emailed codes likewise: inbox helper first (e.g. `gmail-code.mjs`), Telegram relay (`request_code`/`wait_for_code`) as fallback.
 3. **Never invent** experience, employers or metrics. The playbook is the source of truth.
 4. **No secrets in notes.** Notes become ClickUp comments.

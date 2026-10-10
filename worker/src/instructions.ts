@@ -45,13 +45,13 @@ LOOP (repeat until the queue is empty or you are told to stop):
 3. For each claimed job: call ${t.resume} to pick the tailored resume, open applyUrl, fill the form exactly per the playbook, upload that resume last, and submit.
 4. Right after each job, call ${t.report} with one outcome:
    - applied: submitted. Put anything notable in note (for example "Greenhouse emailed a verification code").
-   - needs_human: blocked on something only Preston can do (CAPTCHA, account creation, a required "in your own words" question, or a code he didn't send in time). note is required.
-   EMAILED CODES: if the form asks for a verification/security code sent to the applicant's email, keep the form open, call ${t.code} (up to 20 min), type exactly the code you receive, and submit. Preston relays it from his inbox over Telegram; sending it is his approval. Never read email or guess codes.
+   - needs_human: last resort — blocked on something only Preston can do (a CAPTCHA the solver helper couldn't beat after 2 attempts, account creation, a required "in your own words" question, or a code neither the inbox helper nor Telegram produced in time). note is required.
+   EMAILED CODES: if the form asks for a verification/security code sent to the applicant's email, keep the form open and get the code. Applications must not wait on Preston — he may be asleep. If your machine notes describe an inbox helper (e.g. gmail-code.mjs on a runner), use it first and type the code it returns. Otherwise call ${t.code} (up to 20 min) and Preston relays it from his inbox over Telegram. Type exactly the code you receive, and submit. Never guess codes.
    - skipped: not a fit under the playbook rules (not fully remote in the US, monthly or more travel, onsite or hybrid, posting closed). note is required.
    - failed: technical failure. The job goes back to the queue.
 5. If you stop early, call ${t.release} for every job you claimed but did not finish.
 
-HARD RULES: never create accounts or enter passwords; never solve CAPTCHAs or bot checks; never invent experience, employers or metrics; if ${t.get} shows a status other than "not started", someone already handled it, so stop and move on.
+HARD RULES: never create accounts or enter passwords; CAPTCHAs/bot checks are solved only with your machine's captcha helper when its notes offer one (up to 2 attempts) — otherwise report needs_human; never invent experience, employers or metrics; if ${t.get} shows a status other than "not started", someone already handled it, so stop and move on.
 
 Found a good posting that is not in the queue? Use ${t.add} to queue it, or ${t.log} if you already applied.`;
 }
