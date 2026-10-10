@@ -2,6 +2,8 @@ import { HttpError } from "./clickup";
 import { agentInstructions } from "./instructions";
 import { OUTCOMES, addJob, claimJobs, getJob, logApplication, playbook, queue, isAvailable, releaseJob, renewLease, reportResult, type Outcome } from "./jobs";
 import { pickResume } from "./resumes";
+import { getJob as jobById } from "./jobs";
+import { requestCode, waitForCode } from "./codes";
 import type { Env } from "./types";
 
 /**
@@ -47,6 +49,21 @@ const TOOLS = [
     name: "get_resume",
     description: "Pick the best tailored resume for a job from the resume bank (by role title). On a runner the file is already in ./resumes/<filename>; elsewhere download it from downloadUrl with your bearer token.",
     inputSchema: { type: "object", properties: { role: { type: "string", description: "The job title, e.g. 'Senior Forward Deployed Engineer'" } }, required: ["role"] },
+  },
+  {
+    name: "request_code",
+    description:
+      "The form wants an emailed verification/security code (e.g. Greenhouse 8-character code). This asks Preston on Telegram; he reads it from his inbox and replies. Then call wait_for_code. Never try to read email yourself.",
+    inputSchema: {
+      type: "object",
+      properties: { job_id: str, kind: { type: "string", description: "e.g. 'Greenhouse security code'" }, hint: { type: "string", description: "Anything that helps him find it, e.g. the sender or subject" } },
+      required: ["job_id"],
+    },
+  },
+  {
+    name: "wait_for_code",
+    description: "Wait up to ~25 s for Preston's reply to request_code. Call again while status is 'pending' (codes expire after 20 min). When status is 'answered', type the code exactly and submit; if 'expired', report needs_human.",
+    inputSchema: { type: "object", properties: { request_id: str }, required: ["request_id"] },
   },
   {
     name: "get_job",
@@ -134,6 +151,13 @@ async function callTool(env: Env, agent: string, name: string, args: Args, origi
       if (!pick) return { error: "resume bank is empty; use the resume named in the playbook" };
       return { ...pick, runnerPath: `./resumes/${pick.filename}`, downloadUrl: `${origin}/api/agent/resumes/${pick.id}/file` };
     }
+    case "request_code": {
+      const job = await jobById(env, String(args.job_id)).catch(() => null);
+      const r = await requestCode(env, { agent, jobId: job?.id ?? String(args.job_id), jobName: job?.name ?? null, kind: s(args.kind), hint: s(args.hint) });
+      return { request_id: r.id, status: r.status, expiresAt: new Date(r.expiresAt).toISOString(), next: "call wait_for_code with this request_id until answered" };
+    }
+    case "wait_for_code":
+      return await waitForCode(env, String(args.request_id), agent);
     case "get_job":
       return await getJob(env, String(args.id));
     case "renew_lease":

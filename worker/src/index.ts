@@ -25,7 +25,9 @@ import { handleInbound, recentInbound, type InboundEmail } from "./inbound";
 import { DEFAULT_POLICY, getPolicy, pacingState, pacingSummary, type PacingPolicy } from "./pacing";
 import { deleteResume, listResumes, pickResume, resumeFile, updateResume, uploadResume } from "./resumes";
 import { createSchedule, deleteSchedule, listSchedules, tick, updateSchedule, type ScheduleKind } from "./schedules";
-import { notify, telegramConfigured } from "./telegram";
+import { notify, telegramConfigured, webhookInfo } from "./telegram";
+import { handleTelegramUpdate } from "./telegram-bot";
+import { getCodeRequest, requestCode, waitForCode } from "./codes";
 import { toPublicSummary } from "./sanitize";
 import type { Env } from "./types";
 import { zadarmaGet } from "./zadarma";
@@ -129,6 +131,15 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     return json(await handleInbound(env, { id: String(b.id), from: String(b.from ?? ""), subject: String(b.subject), date: b.date, text: String(b.text ?? "") }));
   }
 
+  // ---------- Telegram: messages from the Job Agent Hub topic, forwarded by Ava's worker ----------
+  if (path === "/api/telegram/update" && method === "POST") {
+    const secret = request.headers.get("X-Hub-Secret") ?? "";
+    if (!env.TELEGRAM_HUB_SECRET || env.TELEGRAM_HUB_SECRET.length < 24 || secret !== env.TELEGRAM_HUB_SECRET) return json({ error: "unauthorized" }, 401);
+    const update = await readJson<Parameters<typeof handleTelegramUpdate>[1]>(request);
+    ctx.waitUntil(handleTelegramUpdate(env, update, url.origin).catch((e) => console.error("telegram update:", e)));
+    return json({ ok: true });
+  }
+
   // ---------- MCP (bearer token) ----------
   if (path === "/mcp" || path === "/api/mcp") {
     const agent = agentName(request, env);
@@ -186,6 +197,12 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     }
     const arf = sub.match(/^\/resumes\/(\d+)\/file$/);
     if (arf && method === "GET") return resumeFile(env, Number(arf[1]));
+    if (sub === "/codes" && method === "POST") {
+      const b = await readJson<{ jobId?: string; jobName?: string; kind?: string; hint?: string }>(request);
+      return json(await requestCode(env, { agent, ...b }), 201);
+    }
+    const cw = sub.match(/^\/codes\/([A-Za-z0-9]{3})(\/wait)?$/);
+    if (cw && method === "GET") return json(cw[2] ? await waitForCode(env, cw[1], agent) : await getCodeRequest(env, cw[1]));
 
     if (sub === "/queue" && method === "GET") {
       const q = await queue(env);
@@ -334,6 +351,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       return json({ ok: !err, error: err });
     }
     if (path === "/api/admin/inbound" && method === "GET") return json({ emails: await recentInbound(env) });
+    if (path === "/api/admin/telegram/webhook-info" && method === "GET") return json(await webhookInfo(env));
 
     // Remote agent runs (executed by runner machines).
     if (path === "/api/admin/runs" && method === "GET") {

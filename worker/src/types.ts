@@ -34,6 +34,8 @@ export interface Env {
   TELEGRAM_BOT_TOKEN?: string;
   /** Shared secret for the Gmail reply-tracker script posting to /api/inbound/email. */
   INBOUND_TOKEN?: string;
+  /** Shared secret Ava's worker sends when forwarding Job Agent Hub topic messages (X-Hub-Secret). */
+  TELEGRAM_HUB_SECRET?: string;
   CLICKUP_TOKEN?: string;
   /** JSON map of agent name -> bearer token, e.g. {"claude":"...","codex":"..."} */
   AGENT_TOKENS?: string;
