@@ -210,7 +210,7 @@ export function About({ repo }: { repo: string }) {
         <a className="btn" href={repo} target="_blank" rel="noreferrer">
           View the code
         </a>
-        <a className="btn alt" href="https://www.linkedin.com/in/prestonzen" target="_blank" rel="noreferrer">
+        <a className="btn alt" href="https://linkedin.com/in/prestonzen" target="_blank" rel="noreferrer">
           LinkedIn
         </a>
         <a className="btn alt" href="mailto:contact@prestonzen.com">
