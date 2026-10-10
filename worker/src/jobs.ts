@@ -79,6 +79,19 @@ export function parseDetails(desc: string) {
 
 const CLAIM_NOTE = /^Claimed by\s+(\S+)\s+until\s+(\S+)/i;
 const NEEDS_HUMAN = /^Needs human:?\s*(.*)$/i;
+/** Markers other agents (the Chrome sessions) leave in names / Next Action for jobs a person must finish. */
+const PARKED_NAME = /\b(NEEDS HUMAN|BLOCKED|PARKED)\b/;
+const PARKED_NOTE = /^(NOT submitted|Retry manually|Blocked|Parked)\b/i;
+
+function parkedReason(t: Task): string | null {
+  const nh = t.nextAction?.match(NEEDS_HUMAN)?.[1];
+  if (nh !== undefined) return nh || "needs a person";
+  if (t.nextAction && PARKED_NOTE.test(t.nextAction)) return t.nextAction;
+  if (PARKED_NAME.test(t.name)) return t.name.match(/\(([^)]*)\)\s*$/)?.[1] ?? "marked in the task name";
+  // Someone already worked this job (Applied By set) without finishing the status: never hand it out again.
+  if (t.appliedBy) return `already worked by ${t.appliedBy}; status not updated`;
+  return null;
+}
 
 /** A ClickUp-side claim ("Claimed by codex until 2026-10-08T03:15:00Z"), if still live. */
 function noteClaim(t: Task): { agent: string; expiresAt: number } | null {
@@ -112,7 +125,7 @@ function toJob(t: Task, claim: Claim | undefined | null): Job {
     clickupUrl: t.url,
     claimedBy: holder?.agent ?? null,
     claimExpiresAt: holder ? new Date(holder.expiresAt).toISOString() : null,
-    needsHuman: t.nextAction?.match(NEEDS_HUMAN)?.[1] ?? null,
+    needsHuman: parkedReason(t),
   };
 }
 
