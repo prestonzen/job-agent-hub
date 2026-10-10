@@ -216,7 +216,7 @@ export async function claimJobs(
     if (out.length >= count) break;
     if (!isAvailableFor(job, agent)) continue;
     if (ats.length && !ats.some((a) => (job.ats ?? "").toLowerCase().includes(a))) continue;
-    const verdict = checkJob(job, pace, policy);
+    const verdict = checkJob(job, pace, policy, Date.now(), job.assignedTo === agent);
     if (!verdict.ok) {
       const k = atsKey(job.ats);
       if (!paced.has(k)) paced.set(k, { ats: k, reason: verdict.reason, retryAt: verdict.retryAt ? new Date(verdict.retryAt).toISOString() : null });

@@ -118,7 +118,8 @@ export async function pacingState(env: Env, jobs: Job[], policy: PacingPolicy): 
 
 export type PaceVerdict = { ok: true } | { ok: false; reason: string; retryAt: number | null };
 
-export function checkJob(job: Job, st: PacingState, p: PacingPolicy, now = Date.now()): PaceVerdict {
+/** `skipGap`: a handed-off job already used its slot when the first agent claimed it, so its assignee doesn't wait the gap again. */
+export function checkJob(job: Job, st: PacingState, p: PacingPolicy, now = Date.now(), skipGap = false): PaceVerdict {
   const ak = atsKey(job.ats);
   const lim = limitFor(p, ak);
   const s = st.ats[ak] ?? { active: 0, lastClaimAt: null, today: 0 };
@@ -131,7 +132,7 @@ export function checkJob(job: Job, st: PacingState, p: PacingPolicy, now = Date.
   }
   if (s.active >= lim.concurrent) return { ok: false, reason: `${ak}: ${s.active}/${lim.concurrent} in progress`, retryAt: null };
   if (s.today + s.active >= lim.perDay) return { ok: false, reason: `${ak}: daily limit ${lim.perDay} reached`, retryAt: null };
-  if (s.lastClaimAt && now - s.lastClaimAt < gapMs(lim.minGapMin, p.gapJitter, s.lastClaimAt)) {
+  if (!skipGap && s.lastClaimAt && now - s.lastClaimAt < gapMs(lim.minGapMin, p.gapJitter, s.lastClaimAt)) {
     const retryAt = s.lastClaimAt + gapMs(lim.minGapMin, p.gapJitter, s.lastClaimAt);
     return { ok: false, reason: `${ak}: next slot in ${Math.ceil((retryAt - now) / 60_000)} min`, retryAt };
   }
