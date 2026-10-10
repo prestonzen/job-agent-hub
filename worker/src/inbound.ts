@@ -89,8 +89,9 @@ async function aiClassify(env: Env, e: InboundEmail): Promise<{ category: Catego
 }
 
 /** Find the application this email is about: company named by the classifier, else any tracked company in the text. */
-function matchTask(tasks: Task[], company: string | null, e: InboundEmail): Task | null {
-  const apps = tasks.filter((t) => t.status !== "not started");
+function matchTask(tasks: Task[], company: string | null, e: InboundEmail, includeQueued = false): Task | null {
+  // Confirmations may be for jobs applied outside the hub (still "not started"); other replies only for applied ones.
+  const apps = includeQueued ? tasks : tasks.filter((t) => t.status !== "not started");
   const byKey = (k: string) => apps.find((t) => companyKey(splitName(t.name).company) === k) ?? null;
   if (company) {
     const hit = byKey(companyKey(company));
@@ -105,7 +106,7 @@ function matchTask(tasks: Task[], company: string | null, e: InboundEmail): Task
   return best;
 }
 
-const NEXT_STATUS: Partial<Record<Category, string>> = { rejection: "rejected / paused", interview: "screening", assessment: "screening", offer: "accepted" };
+const NEXT_STATUS: Partial<Record<Category, string>> = { rejection: "rejected / paused", interview: "screening", assessment: "screening", offer: "accepted", confirmation: "applied" };
 const ICON: Record<Category, string> = { rejection: "❌", interview: "🗓️", assessment: "📝", offer: "🎉", confirmation: "📨", recruiter: "👋", other: "✉️" };
 
 export async function handleInbound(env: Env, e: InboundEmail): Promise<{ duplicate?: boolean; category: Category; taskId: string | null; action: string }> {
@@ -118,13 +119,14 @@ export async function handleInbound(env: Env, e: InboundEmail): Promise<{ duplic
   const category = ai?.category ?? ruleClassify(e);
   const summary = ai?.summary || e.subject;
   const tasks = (await loadTasks(env)).filter((t) => isApplication(t, env));
-  const task = category === "recruiter" || category === "other" ? null : matchTask(tasks, ai?.company ?? null, e);
+  const task = category === "recruiter" || category === "other" ? null : matchTask(tasks, ai?.company ?? null, e, category === "confirmation");
 
   let action = "none";
   if (task) {
     const next = NEXT_STATUS[category];
     // Never move an application backwards (e.g. a late confirmation after an interview invite).
-    const order = ["applied", "screening", "accepted", "earning"];
+    // A confirmation for a queued job means someone applied outside the hub: mark it applied so no agent re-applies.
+    const order = ["not started", "applied", "screening", "accepted", "earning"];
     const forward = next && (next === "rejected / paused" ? task.status !== "rejected / paused" : order.indexOf(next) > order.indexOf(task.status));
     if (env.MOCK !== "true") {
       if (forward) await setStatus(env, task.id, next!);
