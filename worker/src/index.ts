@@ -1,5 +1,6 @@
 import { adminUser, agentName, agentNames, clearedCookie, isAdminToken, sessionCookie } from "./auth";
-import { HttpError, addComment, setStatus } from "./clickup";
+import { HttpError, addComment, getPlaybook, replayWrite, setStatus } from "./clickup";
+import { flushOutbox, mirrorAge, mirrorTasks, outboxSize, usageToday } from "./mirror";
 import { isApplication } from "./classify";
 import { activeClaims, heartbeat, lastEventAt, listEvents, listHeartbeats, loadSnapshot, saveSnapshot, setSetting } from "./db";
 import { agentInstructions } from "./instructions";
@@ -157,6 +158,12 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       if (!b.name) return json({ error: "name is required" }, 400);
       await runnerHeartbeat(env, b);
       ctx.waitUntil(tick(env, () => sendDigest(env, url.origin).then(() => {})).catch((e) => console.error("schedule tick:", e)));
+      // Replay ClickUp writes that were deferred by a rate limit or outage.
+      ctx.waitUntil(
+        outboxSize(env)
+          .then((n) => (n ? flushOutbox(env, (m, p, body) => replayWrite(env, m, p, body)) : 0))
+          .catch((e) => console.error("outbox flush:", e)),
+      );
       return json({ ok: true });
     }
     if (sub === "/resumes" && method === "GET") return json({ resumes: await listResumes(env) });
@@ -352,6 +359,18 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     }
     if (path === "/api/admin/inbound" && method === "GET") return json({ emails: await recentInbound(env) });
     if (path === "/api/admin/telegram/webhook-info" && method === "GET") return json(await webhookInfo(env));
+
+    // ClickUp usage: local copy age, deferred writes, calls today.
+    if (path === "/api/admin/clickup" && method === "GET") {
+      const [age, tasks, outbox, usage] = await Promise.all([mirrorAge(env), mirrorTasks(env), outboxSize(env), usageToday(env)]);
+      return json({ mirrorAgeMin: Number.isFinite(age) ? Math.round(age / 60_000) : null, tasks: tasks.length, outbox, callsToday: usage.clickup ?? 0 });
+    }
+    if (path === "/api/admin/clickup/refresh" && method === "POST") {
+      const tasks = await loadTasks(env, { force: true });
+      await getPlaybook(env, true).catch(() => {});
+      const flushed = await flushOutbox(env, (m, p, body) => replayWrite(env, m, p, body));
+      return json({ tasks: tasks.length, flushed, outbox: await outboxSize(env) });
+    }
     if (path === "/api/admin/telegram/set-webhook" && method === "POST") {
       if (!env.TELEGRAM_HUB_SECRET) return json({ error: "TELEGRAM_HUB_SECRET is not set" }, 400);
       return json(await setHubWebhook(env, `${url.origin}/api/telegram/webhook`));

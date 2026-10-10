@@ -4,6 +4,9 @@ import { db } from "./db";
 import { sendDigest } from "./digest";
 import { isAvailable, queue } from "./jobs";
 import { cancelRun, createRun, listRunners, listRuns } from "./runs";
+import { getPlaybook } from "./clickup";
+import { loadTasks } from "./jobs";
+import { mirrorAge, outboxSize, usageToday } from "./mirror";
 import { listSchedules, updateSchedule } from "./schedules";
 import { esc, isChatAdmin, send, threadId } from "./telegram";
 import type { Env } from "./types";
@@ -30,7 +33,7 @@ const HELP = [
   "/run &lt;agent&gt; [jobs] [xN]: e.g. <code>/run claude 3</code>, <code>/run codex 2 x2</code>",
   "/runs: recent runs · /stop &lt;id|all&gt;",
   "/pause · /resume: all schedules",
-  "/digest: summary now",
+  "/digest: summary now · /refresh: reload ClickUp list + playbook now",
   "/code &lt;code&gt;: answer a code request (or just reply to the 🔐 message)",
 ].join("\n");
 
@@ -98,6 +101,7 @@ export async function handleTelegramUpdate(env: Env, update: { message?: TgMessa
           `✅ Applied in 24 h: <b>${today?.n ?? 0}</b>`,
           `🖥️ ${runners.map((r) => `${esc(r.name)} ${r.online ? "🟢" : "🔴"} ready: ${r.agents.filter((a) => a.ready).map((a) => a.id).join(", ") || "none"}`).join("\n🖥️ ") || "no runners"}`,
           `🏃 Runs: ${running.length} running${running.length ? ` (${running.map((r) => `#${r.id} ${r.agent}`).join(", ")})` : ""} · ${queued.length} queued`,
+          await clickupLine(env),
           pendingLine(await pendingCodes(env)),
         ].filter(Boolean).join("\n"),
       );
@@ -151,9 +155,21 @@ export async function handleTelegramUpdate(env: Env, update: { message?: TgMessa
       await sendDigest(env, origin);
       return;
 
+    case "/refresh": {
+      const tasks = await loadTasks(env, { force: true });
+      await getPlaybook(env, true).catch(() => {});
+      await reply(env, msg, `🔄 Reloaded ${tasks.length} tasks and the playbook from ClickUp.\n${await clickupLine(env)}`);
+      return;
+    }
+
     default:
       await reply(env, msg, HELP);
   }
+}
+
+async function clickupLine(env: Env): Promise<string> {
+  const [age, outbox, usage] = await Promise.all([mirrorAge(env), outboxSize(env), usageToday(env)]);
+  return `🗂️ ClickUp: ${usage.clickup ?? 0} calls today · list copy ${Number.isFinite(age) ? `${Math.round(age / 60_000)} min old` : "not loaded"}${outbox ? ` · ⏳ ${outbox} writes waiting (rate limit)` : ""}`;
 }
 
 function pendingLine(p: { id: string; agent: string; jobName: string | null }[]): string {

@@ -15,6 +15,8 @@ import { atsKey, checkJob, companyKey, getPolicy, noteClaim as notePacedClaim, p
 import { activeClaims, deleteClaim, getClaim, logEvent, tryClaim, type Claim } from "./db";
 import { mockPlaybook, mockTasks } from "./mock";
 import { esc, notify } from "./telegram";
+import { isFresh, mirrorAge, mirrorTasks, patchMirror, replaceMirror, upsertMirror } from "./mirror";
+import { getSetting, setSetting } from "./db";
 import { splitName } from "./sanitize";
 import type { Env, Job, Task } from "./types";
 
@@ -36,16 +38,51 @@ export type Outcome = (typeof OUTCOMES)[number];
 /** "kimi" -> "Kimi" for comments and ClickUp dropdowns. */
 export const displayAgent = (a: string) => (a.length ? a[0].toUpperCase() + a.slice(1) : a);
 
-export async function loadTasks(env: Env): Promise<Task[]> {
-  return mock(env) ? mockTasks(env) : listTasks(env);
+/**
+ * The whole list, from the local copy (task_mirror) when it's under 10 minutes old; otherwise one
+ * full read from ClickUp refreshes it. If ClickUp is down or rate-limited, the last copy is served.
+ * One sync at a time: a sync started in the last 30 s means "serve the copy".
+ */
+export async function loadTasks(env: Env, opts: { force?: boolean } = {}): Promise<Task[]> {
+  if (mock(env)) return mockTasks(env);
+  const age = await mirrorAge(env);
+  if (!opts.force && isFresh(age)) return mirrorTasks(env);
+  const syncing = await getSetting<number>(env, "mirror_syncing").catch(() => null);
+  if (!opts.force && syncing && Date.now() - syncing < 30_000 && age !== Infinity) return mirrorTasks(env);
+  await setSetting(env, "mirror_syncing", Date.now()).catch(() => {});
+  try {
+    const tasks = await listTasks(env);
+    await replaceMirror(env, tasks);
+    return tasks;
+  } catch (e) {
+    const copy = await mirrorTasks(env);
+    if (copy.length) return copy;
+    throw e;
+  } finally {
+    await setSetting(env, "mirror_syncing", 0).catch(() => {});
+  }
 }
 
+/** One task, fresh from ClickUp (correctness matters for claims and reports); updates the copy. */
 async function loadTask(env: Env, id: string): Promise<Task> {
-  if (!mock(env)) return getTask(env, id);
-  const t = mockTasks(env).find((x) => x.id === id);
-  if (!t) throw new HttpError(404, `no task ${id}`);
-  return t;
+  if (mock(env)) {
+    const t = mockTasks(env).find((x) => x.id === id);
+    if (!t) throw new HttpError(404, `no task ${id}`);
+    return t;
+  }
+  try {
+    const t = await getTask(env, id);
+    await upsertMirror(env, t);
+    return t;
+  } catch (e) {
+    const copy = (await mirrorTasks(env)).find((t) => t.id === id);
+    if (copy && e instanceof HttpError && e.status !== 404) return copy; // ClickUp unavailable
+    throw e;
+  }
 }
+
+/** New tasks were created: make the next read sync the list. */
+const invalidateMirror = (env: Env) => (mock(env) ? Promise.resolve() : setSetting(env, "mirror_synced_at", 0));
 
 /** Skip ClickUp writes in demo mode; everything else (D1 claims, events) still runs. */
 async function write(env: Env, fn: () => Promise<unknown>): Promise<void> {
@@ -177,6 +214,11 @@ export async function claimJobs(
       if (!paced.has(k)) paced.set(k, { ats: k, reason: verdict.reason, retryAt: verdict.retryAt ? new Date(verdict.retryAt).toISOString() : null });
       continue;
     }
+    // The list may be up to 10 min old: confirm with one fresh read that nobody (e.g. a Chrome
+    // session working ClickUp directly) applied, parked or claimed it meanwhile.
+    const fresh = mock(env) ? null : await loadTask(env, job.id).catch(() => null);
+    if (fresh && !isAvailable(toJob(fresh, null))) continue;
+    if (fresh && fresh.status !== "not started") continue;
     const expiresAt = await tryClaim(env, job.id, agent, leaseMs(env));
     if (!expiresAt) continue; // another agent won the race
     notePacedClaim(job, pace);
@@ -218,6 +260,7 @@ export async function releaseJob(env: Env, agent: string, id: string, note?: str
   await deleteClaim(env, id);
   if (task.nextAction && (CLAIM_NOTE.test(task.nextAction) || (admin && NEEDS_HUMAN.test(task.nextAction)))) {
     await write(env, () => clearField(env, id, env.FIELD_NEXT_ACTION));
+    if (!mock(env)) await patchMirror(env, id, { nextAction: null });
   }
   if (note) await write(env, () => addComment(env, id, `[hub] Released by ${displayAgent(agent)}: ${note}`));
   await logEvent(env, { agent, taskId: id, taskName: task.name, type: "released", message: note });
@@ -341,6 +384,7 @@ export async function addJob(env: Env, agent: string, j: NewJob): Promise<{ id: 
       status: "not started",
     });
   });
+  await invalidateMirror(env);
   await logEvent(env, { agent, taskId: id, taskName: `${j.company} — ${j.role}`, type: "added", message: j.url ?? null });
   return { id, created: true, status: "not started" };
 }
@@ -377,6 +421,7 @@ export async function logApplication(
       status: "applied",
     });
   });
+  await invalidateMirror(env);
   await logEvent(env, { agent, taskId: id, taskName: `${a.company} — ${a.role}`, type: "applied", message: a.notes ?? null, ats: atsKey(a.platform ?? a.ats), company: companyKey(a.company) });
   return { id, created: true, warnings: [] };
 }

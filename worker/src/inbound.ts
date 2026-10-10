@@ -3,6 +3,7 @@ import { addComment, setStatus } from "./clickup";
 import { db, logEvent } from "./db";
 import { loadTasks } from "./jobs";
 import { companyKey } from "./pacing";
+import { patchMirror } from "./mirror";
 import { splitName } from "./sanitize";
 import { esc, notify } from "./telegram";
 import type { Env, Task } from "./types";
@@ -129,7 +130,10 @@ export async function handleInbound(env: Env, e: InboundEmail): Promise<{ duplic
     const order = ["not started", "applied", "screening", "accepted", "earning"];
     const forward = next && (next === "rejected / paused" ? task.status !== "rejected / paused" : order.indexOf(next) > order.indexOf(task.status));
     if (env.MOCK !== "true") {
-      if (forward) await setStatus(env, task.id, next!);
+      if (forward) {
+        await setStatus(env, task.id, next!);
+        await patchMirror(env, task.id, { status: next! });
+      }
       await addComment(env, task.id, `[hub] ${ICON[category]} Email (${category}) from ${e.from}: "${e.subject}"\n${summary}`);
     }
     action = forward ? `status → ${next}` : "comment";

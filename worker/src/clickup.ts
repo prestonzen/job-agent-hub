@@ -1,3 +1,5 @@
+import { getSetting, setSetting } from "./db";
+import { countCall, enqueueWrite } from "./mirror";
 import type { Env, Task } from "./types";
 
 const API = "https://api.clickup.com/api/v2";
@@ -42,7 +44,14 @@ export class HttpError extends Error {
   }
 }
 
+/**
+ * Every ClickUp call goes through here: it is counted (api_usage), and a write that hits a rate
+ * limit or ClickUp outage is parked in the D1 outbox and replayed later instead of failing the
+ * agent's action. Reads throw (503 when rate-limited) so callers fall back to the local copy.
+ * Task creation is never deferred, because the caller needs the new id.
+ */
 async function cu(env: Env, path: string, init: RequestInit = {}, base = API): Promise<unknown> {
+  const method = (init.method ?? "GET").toUpperCase();
   const res = await fetch(`${base}${path}`, {
     ...init,
     headers: {
@@ -51,11 +60,27 @@ async function cu(env: Env, path: string, init: RequestInit = {}, base = API): P
       ...(init.headers ?? {}),
     },
   });
+  await countCall(env);
   if (!res.ok) {
-    throw new HttpError(502, `ClickUp ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const detail = `ClickUp ${res.status}: ${(await res.text()).slice(0, 200)}`;
+    const transient = res.status === 429 || res.status >= 500;
+    const creates = method === "POST" && /^\/list\/[^/]+\/task$/.test(path);
+    if (transient && method !== "GET" && base === API && !creates) {
+      await enqueueWrite(env, method, path, typeof init.body === "string" ? init.body : null, detail);
+      return { deferred: true };
+    }
+    throw new HttpError(res.status === 429 ? 503 : 502, detail);
   }
   const text = await res.text();
   return text ? JSON.parse(text) : {};
+}
+
+/** Replay one deferred write (from the outbox). Throws if ClickUp still refuses it. */
+export async function replayWrite(env: Env, method: string, path: string, body: string | null): Promise<void> {
+  const res = await fetch(`${API}${path}`, { method, headers: { Authorization: token(env), "Content-Type": "application/json" }, body: body ?? undefined });
+  await countCall(env);
+  if (!res.ok && (res.status === 429 || res.status >= 500)) throw new Error(`ClickUp ${res.status}`);
+  // 4xx (e.g. task deleted since): drop it rather than retry forever.
 }
 
 /** Resolve a dropdown custom field to its option name (ClickUp returns the option's orderindex). */
@@ -244,13 +269,32 @@ interface DocPage {
 }
 
 let playbookCache: { at: number; text: string } | null = null;
+const PLAYBOOK_TTL_MS = 4 * 3_600_000; // refresh from ClickUp a few times a day
 
 /**
  * The playbook lives in a ClickUp Doc (standard answers, EEO, salary, rules). It holds personal
  * data, so it is only ever returned to authenticated agents and admins, and cached in memory only.
  */
-export async function getPlaybook(env: Env): Promise<string> {
-  if (playbookCache && Date.now() - playbookCache.at < 300_000) return playbookCache.text;
+export async function getPlaybook(env: Env, force = false): Promise<string> {
+  if (!force && playbookCache && Date.now() - playbookCache.at < 300_000) return playbookCache.text;
+  // Shared cache in D1 so every isolate doesn't fetch the doc; refreshed every few hours.
+  const saved = await getSetting<{ at: number; text: string }>(env, "playbook_cache").catch(() => null);
+  if (!force && saved && Date.now() - saved.at < PLAYBOOK_TTL_MS) {
+    playbookCache = saved;
+    return saved.text;
+  }
+  try {
+    const text = await fetchPlaybook(env);
+    playbookCache = { at: Date.now(), text };
+    await setSetting(env, "playbook_cache", playbookCache).catch(() => {});
+    return text;
+  } catch (e) {
+    if (saved) return saved.text; // ClickUp down or rate-limited: serve the last copy
+    throw e;
+  }
+}
+
+async function fetchPlaybook(env: Env): Promise<string> {
   const data = (await cu(
     env,
     `/workspaces/${env.CLICKUP_WORKSPACE_ID}/docs/${encodeURIComponent(env.PLAYBOOK_DOC_ID)}/pages?max_page_depth=-1&content_format=text%2Fmd`,
@@ -269,7 +313,5 @@ export async function getPlaybook(env: Env): Promise<string> {
     }
   };
   walk(pages);
-  const text = out.join("\n\n");
-  playbookCache = { at: Date.now(), text };
-  return text;
+  return out.join("\n\n");
 }
