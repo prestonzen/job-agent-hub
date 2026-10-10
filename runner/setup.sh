@@ -26,7 +26,7 @@ fi
 install -d -o "$RUN_USER" -g "$RUN_USER" -m 700 "$RUN_HOME/resume" /var/lib/job-agent-runner /var/lib/job-agent-runner/runs
 install -d -m 755 /opt/job-agent-runner
 install -m 644 "$HERE/runner.mjs" "$HERE/configure-agents.mjs" /opt/job-agent-runner/
-install -m 755 "$HERE/update.sh" /opt/job-agent-runner/
+install -m 755 "$HERE/update.sh" "$HERE/captcha-solve.mjs" "$HERE/gmail-code.mjs" /opt/job-agent-runner/
 chown "root:$RUN_USER" "$CONFIG" && chmod 640 "$CONFIG"
 
 # Python CLIs and the browser must live outside /root so the run user can use them.

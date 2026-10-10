@@ -16,3 +16,4 @@ vite.preview-prod.config.ts
 .runner-token.local.txt
 .inbound-token.local.txt
 .telegram-hub-secret.local.txt
+desktop.ini

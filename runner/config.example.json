@@ -6,10 +6,20 @@
   "timeoutMinutes": 90,
   "workDir": "/var/lib/job-agent-runner/runs",
   "files": ["/home/agent/resume/Preston_Zen_Resume_AI_2026-10-08.pdf"],
-  "machineNotes": "This is a Linux runner. Use the playwright MCP tools for the browser (a real Chromium on a virtual display). For each job call get_resume with the job title; the chosen file is in ./resumes/<filename> in your current directory (fallback: ./Preston_Zen_Resume_AI_2026-10-08.pdf). Upload that file and ignore the Windows path in the playbook. You cannot receive email or SMS codes here: report needs_human for those.",
+  "machineNotes": "This is a Linux runner. Use the playwright MCP tools for the browser (a real Chromium on a virtual display). For each job call get_resume with the job title; the chosen file is in ./resumes/<filename> in your current directory (fallback: ./Preston_Zen_Resume_AI_2026-10-08.pdf). Upload that file and ignore the Windows path in the playbook. This machine has helpers for the two things that used to block you. (1) CAPTCHA/bot check (e.g. Cloudflare Turnstile on Greenhouse): run `node /opt/job-agent-runner/captcha-solve.mjs --url <current page url>` in the shell, then apply the returned token in the page with browser_evaluate following the JSON's `inject` instructions, then continue. (2) Greenhouse emailed a login/2FA code: run `node /opt/job-agent-runner/gmail-code.mjs --wait 120` in the shell and type the returned code into the form. If a helper is missing its credentials, errors, or the check still fails after 2 attempts, report needs_human with the details.",
   "agentTokens": {
     "claude": "<hub token>", "codex": "<hub token>", "gemini": "<hub token>",
     "qwen": "<hub token>", "kimi": "<hub token>", "mistral": "<hub token>"
+  },
+  "captcha": {
+    "provider": "2captcha",
+    "apiKey": "<2Captcha or CapSolver API key; used by captcha-solve.mjs>"
+  },
+  "gmail": {
+    "clientId": "<Google OAuth client id (Web)>",
+    "clientSecret": "<Google OAuth client secret>",
+    "refreshToken": "<refresh token with gmail.readonly scope; see gmail-code.mjs header>",
+    "query": "from:greenhouse.io newer_than:10m"
   },
   "agents": {
     "claude":  { "cmd": ["claude", "-p", "{PROMPT}", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"], "format": "claude-stream", "auth": ["~/.claude/.credentials.json"] },
