@@ -4,6 +4,7 @@ import { OUTCOMES, addJob, claimJobs, getJob, logApplication, playbook, queue, i
 import { pickResume } from "./resumes";
 import { getJob as jobById } from "./jobs";
 import { requestCode, waitForCode } from "./codes";
+import { handoffJob } from "./jobs";
 import type { Env } from "./types";
 
 /**
@@ -49,6 +50,12 @@ const TOOLS = [
     name: "get_resume",
     description: "Pick the best tailored resume for a job from the resume bank (by role title). On a runner the file is already in ./resumes/<filename>; elsewhere download it from downloadUrl with your bearer token.",
     inputSchema: { type: "object", properties: { role: { type: "string", description: "The job title, e.g. 'Senior Forward Deployed Engineer'" } }, required: ["role"] },
+  },
+  {
+    name: "handoff_job",
+    description:
+      "Give a claimed job to another agent (default Kimi) when you truly can't finish it: an essay or question with no verified facts to build an answer from, or something outside your tools. Do this instead of skipping. The assignee gets it ahead of the queue for 6 hours. If you are Kimi, report needs_human instead.",
+    inputSchema: { type: "object", properties: { id: str, reason: { type: "string", description: "What you couldn't do, specifically (the question text, the blocker)" }, to: { type: "string", description: "Agent to hand it to; default kimi" } }, required: ["id", "reason"] },
   },
   {
     name: "request_code",
@@ -151,6 +158,8 @@ async function callTool(env: Env, agent: string, name: string, args: Args, origi
       if (!pick) return { error: "resume bank is empty; use the resume named in the playbook" };
       return { ...pick, runnerPath: `./resumes/${pick.filename}`, downloadUrl: `${origin}/api/agent/resumes/${pick.id}/file` };
     }
+    case "handoff_job":
+      return await handoffJob(env, agent, String(args.id), String(args.reason ?? ""), s(args.to) ?? undefined);
     case "request_code": {
       const job = await jobById(env, String(args.job_id)).catch(() => null);
       const r = await requestCode(env, { agent, jobId: job?.id ?? String(args.job_id), jobName: job?.name ?? null, kind: s(args.kind), hint: s(args.hint) });

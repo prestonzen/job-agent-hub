@@ -269,6 +269,35 @@ interface DocPage {
 }
 
 let playbookCache: { at: number; text: string } | null = null;
+
+const pagePath = (env: Env, pageId: string) => `/workspaces/${env.CLICKUP_WORKSPACE_ID}/docs/${encodeURIComponent(env.PLAYBOOK_DOC_ID)}/pages/${encodeURIComponent(pageId)}`;
+
+export async function getDocPage(env: Env, pageId: string): Promise<{ name: string; content: string }> {
+  const p = (await cu(env, `${pagePath(env, pageId)}?content_format=text%2Fmd`, {}, API_V3)) as { name?: string; content?: string };
+  return { name: p.name ?? "", content: p.content ?? "" };
+}
+
+async function forgetPlaybookCache(env: Env): Promise<void> {
+  playbookCache = null;
+  await setSetting(env, "playbook_cache", null).catch(() => {});
+}
+
+/** Exact find/replace on one page: every `find` must occur exactly once, otherwise nothing is written. */
+export async function patchDocPage(env: Env, pageId: string, edits: { find: string; replace: string }[], dry = false) {
+  const page = await getDocPage(env, pageId);
+  let content = page.content;
+  const report = edits.map((e) => ({ find: e.find.slice(0, 70), matches: content.split(e.find).length - 1 }));
+  if (report.some((r) => r.matches !== 1) || dry) return { applied: false, report };
+  for (const e of edits) content = content.replace(e.find, () => e.replace);
+  await cu(env, pagePath(env, pageId), { method: "PUT", body: JSON.stringify({ content, content_format: "text/md", content_edit_mode: "replace" }) }, API_V3);
+  await forgetPlaybookCache(env);
+  return { applied: true, report, chars: content.length };
+}
+
+export async function appendDocPage(env: Env, pageId: string, markdown: string): Promise<void> {
+  await cu(env, pagePath(env, pageId), { method: "PUT", body: JSON.stringify({ content: markdown, content_format: "text/md", content_edit_mode: "append" }) }, API_V3);
+  await forgetPlaybookCache(env);
+}
 const PLAYBOOK_TTL_MS = 4 * 3_600_000; // refresh from ClickUp a few times a day
 
 /**

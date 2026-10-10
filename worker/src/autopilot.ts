@@ -1,5 +1,5 @@
 import { db, getSetting, setSetting } from "./db";
-import { isAvailable, queue } from "./jobs";
+import { isAvailable, isAvailableFor, queue } from "./jobs";
 import { checkJob, getPolicy, pacingState } from "./pacing";
 import { createRun, listRunners, listRuns } from "./runs";
 import { esc, notify } from "./telegram";
@@ -120,6 +120,8 @@ export async function autopilotTick(env: Env): Promise<string | null> {
   const order = readyAgents.sort((a, b) => (next.get(a) ?? 0) - (next.get(b) ?? 0));
 
   const now = Date.now();
+  const assignedTo = new Set(jobs.filter((j) => j.assignedTo && isAvailableFor(j, j.assignedTo)).map((j) => j.assignedTo as string));
+  order.sort((a, b) => Number(assignedTo.has(b)) - Number(assignedTo.has(a)));
   for (const agent of order) {
     if (inFlight.some((r) => r.agent === agent)) continue;
     const streak = failStreak(runs, agent);
@@ -135,7 +137,9 @@ export async function autopilotTick(env: Env): Promise<string | null> {
     // Win this agent's slot atomically so concurrent ticks can't launch it twice.
     await d.prepare("INSERT OR IGNORE INTO autopilot_state (agent, next_after) VALUES (?, 0)").bind(agent).run();
     const nextAfter = now + s.minGapMin * 60_000 * (1 + 0.6 * Math.random());
-    const won = await d.prepare("UPDATE autopilot_state SET next_after = ?1 WHERE agent = ?2 AND next_after <= ?3").bind(Math.round(nextAfter), agent, now).run();
+    // A handed-off job (e.g. an essay another agent couldn't write) starts its assignee right away.
+    const urgent = assignedTo.has(agent) ? 1 : 0;
+    const won = await d.prepare("UPDATE autopilot_state SET next_after = ?1 WHERE agent = ?2 AND (next_after <= ?3 OR ?4 = 1)").bind(Math.round(nextAfter), agent, now, urgent).run();
     if (won.meta.changes !== 1) continue;
     const run = await createRun(env, { agent, kind: "queue", count: Math.min(s.jobsPerRun, claimable) });
     return `launched run #${run.id} for ${agent}`;

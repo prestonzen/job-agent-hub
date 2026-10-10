@@ -81,6 +81,8 @@ export interface Job {
   claimExpiresAt: string | null;
   /** "Needs human: …" notes park a job until a person handles it. */
   needsHuman: string | null;
+  /** Handed to a specific agent (e.g. kimi): only that agent can claim it, ahead of the queue. */
+  assignedTo: string | null;
 }
 
 export interface AgentEvent {

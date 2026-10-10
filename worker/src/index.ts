@@ -1,11 +1,12 @@
 import { adminUser, agentName, agentNames, clearedCookie, isAdminToken, sessionCookie } from "./auth";
-import { HttpError, addComment, getPlaybook, replayWrite, setStatus } from "./clickup";
+import { HttpError, addComment, appendDocPage, getDocPage, getPlaybook, patchDocPage, replayWrite, setStatus } from "./clickup";
 import { flushOutbox, mirrorAge, mirrorTasks, outboxSize, usageToday } from "./mirror";
 import { isApplication } from "./classify";
 import { activeClaims, heartbeat, lastEventAt, listEvents, listHeartbeats, loadSnapshot, saveSnapshot, setSetting } from "./db";
 import { agentInstructions } from "./instructions";
 import {
   addJob,
+  handoffJob,
   claimJobs,
   getJob,
   isAvailable,
@@ -238,12 +239,16 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       return json({ ok: true, agent, ...(await logApplication(env, agent, newJob(await readJson(request)))) }, 201);
     }
 
-    const job = sub.match(/^\/jobs\/([^/]+)(?:\/(renew|report|release))?$/);
+    const job = sub.match(/^\/jobs\/([^/]+)(?:\/(renew|report|release|handoff))?$/);
     if (job) {
       const id = decodeURIComponent(job[1]);
       if (!job[2] && method === "GET") return json(await getJob(env, id));
       if (job[2] === "renew" && method === "POST") return json(await renewLease(env, agent, id));
       if (job[2] === "report" && method === "POST") return json(await reportResult(env, agent, id, await readJson<Report>(request)));
+      if (job[2] === "handoff" && method === "POST") {
+        const b = await readJson<{ reason?: string; to?: string }>(request);
+        return json(await handoffJob(env, agent, id, String(b.reason ?? ""), b.to));
+      }
       if (job[2] === "release" && method === "POST") {
         const { note } = await readJson<{ note?: string }>(request).catch(() => ({}) as { note?: string });
         await releaseJob(env, agent, id, note);
@@ -306,6 +311,15 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     }
 
     if (path === "/api/admin/playbook" && method === "GET") return text(await playbook(env));
+    // Exact in-place edits of a playbook page (each `find` must match exactly once, or nothing is written).
+    if (path === "/api/admin/playbook/page" && method === "GET") return text((await getDocPage(env, url.searchParams.get("id") ?? "")).content);
+    if (path === "/api/admin/playbook/patch" && method === "POST") {
+      const b = await readJson<{ page?: string; edits?: { find: string; replace: string }[]; append?: string; dry?: boolean }>(request);
+      if (!b.page) return json({ error: "page is required" }, 400);
+      const res = b.edits?.length ? await patchDocPage(env, b.page, b.edits, !!b.dry) : { applied: false, report: [] as unknown[] };
+      if (b.append && !b.dry && (res.applied || !b.edits?.length)) await appendDocPage(env, b.page, b.append);
+      return json({ ...res, appended: !!b.append && !b.dry });
+    }
 
     // Pacing (per-ATS / per-company limits across all agents).
     if (path === "/api/admin/autopilot" && method === "GET") return json(await autopilotStatus(env));

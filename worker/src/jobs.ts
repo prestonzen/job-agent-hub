@@ -12,6 +12,8 @@ import {
 } from "./clickup";
 import { isApplication } from "./classify";
 import { inferPlatform } from "./platform";
+import { activeAssignments, assignJob, clearAssignment, getAssignment, FALLBACK_AGENT, type Assignment } from "./assign";
+import { agentNames } from "./auth";
 import { atsKey, checkJob, companyKey, getPolicy, noteClaim as notePacedClaim, pacingState } from "./pacing";
 import { activeClaims, deleteClaim, getClaim, logEvent, tryClaim, type Claim } from "./db";
 import { mockPlaybook, mockTasks } from "./mock";
@@ -142,7 +144,7 @@ function noteClaim(t: Task): { agent: string; expiresAt: number } | null {
 const claimNote = (agent: string, expiresAt: number) =>
   `Claimed by ${agent} until ${new Date(expiresAt).toISOString().slice(0, 16)}Z (Job Agent Hub)`;
 
-function toJob(t: Task, claim: Claim | undefined | null): Job {
+function toJob(t: Task, claim: Claim | undefined | null, assigned?: Assignment | null): Job {
   const { company, role } = splitName(t.name);
   const d = parseDetails(t.description);
   const note = noteClaim(t);
@@ -164,6 +166,7 @@ function toJob(t: Task, claim: Claim | undefined | null): Job {
     claimedBy: holder?.agent ?? null,
     claimExpiresAt: holder ? new Date(holder.expiresAt).toISOString() : null,
     needsHuman: parkedReason(t),
+    assignedTo: assigned?.agent ?? null,
   };
 }
 
@@ -180,14 +183,16 @@ function byBestFirst(a: Job, b: Job): number {
 // ---------- Queue ----------
 
 export async function queue(env: Env): Promise<Job[]> {
-  const [tasks, claims] = await Promise.all([loadTasks(env), activeClaims(env)]);
+  const [tasks, claims, assigned] = await Promise.all([loadTasks(env), activeClaims(env), activeAssignments(env).catch(() => new Map<string, Assignment>())]);
   return tasks
     .filter((t) => isApplication(t, env) && t.status === "not started")
-    .map((t) => toJob(t, claims.get(t.id)))
+    .map((t) => toJob(t, claims.get(t.id), assigned.get(t.id)))
     .sort(byBestFirst);
 }
 
 export const isAvailable = (j: Job) => !j.claimedBy && !j.needsHuman && !!j.applyUrl;
+/** Claimable by this agent: a job handed to another agent doesn't count. */
+export const isAvailableFor = (j: Job, agent: string) => isAvailable(j) && (!j.assignedTo || j.assignedTo === agent);
 
 export async function claimJobs(
   env: Env,
@@ -205,9 +210,11 @@ export async function claimJobs(
   const mine = all.filter((j) => j.claimedBy === agent);
   const out: Job[] = mine.slice(0, count);
 
-  for (const job of all) {
+  // Jobs handed to this agent come first.
+  const ordered = [...all.filter((j) => j.assignedTo === agent), ...all.filter((j) => j.assignedTo !== agent)];
+  for (const job of ordered) {
     if (out.length >= count) break;
-    if (!isAvailable(job)) continue;
+    if (!isAvailableFor(job, agent)) continue;
     if (ats.length && !ats.some((a) => (job.ats ?? "").toLowerCase().includes(a))) continue;
     const verdict = checkJob(job, pace, policy);
     if (!verdict.ok) {
@@ -228,13 +235,40 @@ export async function claimJobs(
     out.push({ ...job, claimedBy: agent, claimExpiresAt: new Date(expiresAt).toISOString() });
   }
 
-  const remaining = all.filter(isAvailable).length - (out.length - mine.length);
+  const remaining = all.filter((j) => isAvailableFor(j, agent)).length - (out.length - mine.length);
   return { jobs: out, remaining: Math.max(0, remaining), paced: [...paced.values()] };
 }
 
 export async function getJob(env: Env, id: string): Promise<Job> {
+  const [task, claim, assigned] = await Promise.all([loadTask(env, id), getClaim(env, id), getAssignment(env, id).catch(() => null)]);
+  return toJob(task, claim, assigned);
+}
+
+/**
+ * Give a job you can't finish to another agent (default Kimi) instead of skipping it.
+ * Only the holder (or an admin) can hand it off; the assignee gets it ahead of the queue for 6 h.
+ */
+export async function handoffJob(env: Env, agent: string, id: string, reason: string, to: string = FALLBACK_AGENT, admin = false): Promise<{ ok: true; assignedTo: string }> {
+  const target = to.toLowerCase();
+  const why = reason?.trim();
+  if (!why) throw new HttpError(400, "reason is required: say what you couldn't do");
+  if (!agentNames(env).includes(target)) throw new HttpError(400, `unknown agent "${to}"`);
+  if (target === agent) throw new HttpError(400, `you are ${agent}: report needs_human instead of handing it to yourself`);
   const [task, claim] = await Promise.all([loadTask(env, id), getClaim(env, id)]);
-  return toJob(task, claim);
+  const job = toJob(task, claim);
+  assertHolder(job, agent, admin);
+  if (task.status !== "not started") throw new HttpError(409, `${task.name} is already "${task.status}"`);
+  await deleteClaim(env, id);
+  await assignJob(env, id, target, why, agent);
+  const today = new Date().toISOString().slice(0, 10);
+  await write(env, async () => {
+    await setField(env, id, env.FIELD_NEXT_ACTION, `Assigned to ${target}: ${why}`.slice(0, 250));
+    await addComment(env, id, `[hub] ${today}: ${displayAgent(agent)} handed this to ${displayAgent(target)}: ${why}`);
+  });
+  if (!mock(env)) await patchMirror(env, id, { nextAction: `Assigned to ${target}: ${why}`.slice(0, 250) });
+  await logEvent(env, { agent, taskId: id, taskName: task.name, type: "handoff", message: `→ ${target}: ${why}` });
+  await notify(env, `🔀 <b>${esc(displayAgent(agent))}</b> handed <a href="${task.url}">${esc(task.name)}</a> to <b>${esc(displayAgent(target))}</b>: ${esc(why.slice(0, 200))}`, { silent: true });
+  return { ok: true, assignedTo: target };
 }
 
 /** Throws 409 if someone else holds the job. Admins ("human") may act on anything. */
@@ -259,7 +293,8 @@ export async function releaseJob(env: Env, agent: string, id: string, note?: str
   const job = toJob(task, claim);
   assertHolder(job, agent, admin);
   await deleteClaim(env, id);
-  if (task.nextAction && (CLAIM_NOTE.test(task.nextAction) || (admin && NEEDS_HUMAN.test(task.nextAction)))) {
+  await clearAssignment(env, id);
+  if (task.nextAction && (CLAIM_NOTE.test(task.nextAction) || /^Assigned to /i.test(task.nextAction) || (admin && NEEDS_HUMAN.test(task.nextAction)))) {
     await write(env, () => clearField(env, id, env.FIELD_NEXT_ACTION));
     if (!mock(env)) await patchMirror(env, id, { nextAction: null });
   }
@@ -336,6 +371,7 @@ export async function reportResult(
   }
 
   await deleteClaim(env, id);
+  await clearAssignment(env, id);
   if (r.outcome === "needs_human") {
     await notify(env, `🙋 <b>${esc(who)} needs you</b> on <a href="${task.url}">${esc(task.name)}</a>\n${esc(note ?? "")}${job.applyUrl ? `\n<a href="${job.applyUrl}">Open the posting</a>` : ""}`);
   }

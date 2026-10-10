@@ -58,6 +58,7 @@ export interface Job {
   claimedBy: string | null;
   claimExpiresAt: string | null;
   needsHuman: string | null;
+  assignedTo?: string | null;
 }
 
 export interface AgentEvent {

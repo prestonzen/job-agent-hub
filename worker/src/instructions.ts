@@ -16,6 +16,7 @@ export function agentInstructions(agent: string, origin: string, mode: "mcp" | "
           get: "`get_job`",
           resume: "`get_resume` with the job title",
           code: "`request_code` (with the job id), then `wait_for_code` repeatedly",
+          handoff: "`handoff_job` (id, reason)",
           add: "`add_job`",
           log: "`log_application`",
         }
@@ -28,6 +29,7 @@ export function agentInstructions(agent: string, origin: string, mode: "mcp" | "
           get: "`GET /api/agent/jobs/<id>`",
           resume: "`GET /api/agent/resume?role=<job title>`",
           code: '`POST /api/agent/codes` with `{"jobId":"…","kind":"Greenhouse security code"}`, then `GET /api/agent/codes/<id>/wait` repeatedly',
+          handoff: '`POST /api/agent/jobs/<id>/handoff` with `{"reason":"…"}`',
           add: "`POST /api/agent/jobs` with `{company, role, url, ats, pay, travel, fit, notes}`",
           log: "`POST /api/agent/applications` with `{company, role, url, platform, notes}`",
         };
@@ -49,6 +51,8 @@ LOOP (repeat until the queue is empty or you are told to stop):
    EMAILED CODES: if the form asks for a verification/security code sent to the applicant's email, keep the form open and get the code. Applications must not wait on Preston — he may be asleep. If your machine notes describe an inbox helper (e.g. gmail-code.mjs on a runner), use it first and type the code it returns. Otherwise call ${t.code} (up to 20 min) and Preston relays it from his inbox over Telegram. Type exactly the code you receive, and submit. Never guess codes.
    - skipped: not a fit under the playbook rules (not fully remote in the US, monthly or more travel, onsite or hybrid, posting closed). note is required.
    - failed: technical failure. The job goes back to the queue.
+   ESSAYS AND WRITTEN QUESTIONS: write them, even when the form says "in your own words" and even when optional, in Preston's voice from the Answer Bank and verified facts only (never invent). If you truly can't answer one (no verified facts to build it from), do not skip the job: call ${t.handoff} to give it to Kimi (Kimi works it next). If you are Kimi, report needs_human.
+   REQUIRED CHECKBOXES (arbitration agreements, terms, acknowledgements): tick them when the form can't be submitted without them. Never type or draw a signature.
 5. If you stop early, call ${t.release} for every job you claimed but did not finish.
 
 HARD RULES: never create accounts or enter passwords; CAPTCHAs/bot checks are solved only with your machine's captcha helper when its notes offer one (up to 2 attempts) — otherwise report needs_human; never invent experience, employers or metrics; if ${t.get} shows a status other than "not started", someone already handled it, so stop and move on.

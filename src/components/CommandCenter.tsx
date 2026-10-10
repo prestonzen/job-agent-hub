@@ -224,6 +224,8 @@ export default function CommandCenter() {
                       <AgentDot name={j.claimedBy} />
                       {cap(j.claimedBy)} until {j.claimExpiresAt ? time(j.claimExpiresAt) : "?"}
                     </span>
+                  ) : j.assignedTo ? (
+                    <span className="pill live idle" title="Handed to this agent; it gets it first">for {cap(j.assignedTo)}</span>
                   ) : j.applyUrl ? (
                     <span className="pill s-not-started">ready</span>
                   ) : (
