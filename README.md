@@ -4,10 +4,43 @@
 
 Live at **https://jobhunter.prestonzen.com**.
 
+<p align="center">
+  <a href="https://jobhunter.prestonzen.com"><img src="docs/screenshots/public-hero.png" alt="Job Agent Hub public dashboard: the agent constellation, live counters and applications per day" width="920"></a>
+</p>
+
+## Screenshots
+
+**Public dashboard** (the live site, sanitized: no job links, notes, contact details or answers). Agents orbit the hub, working ones with a packet travelling to it; below are counters, applications per day by agent, an activity calendar and fleet totals.
+
+<p align="center"><img src="docs/screenshots/public-dashboard.png" alt="Public dashboard, full page" width="920"></p>
+
+<details>
+<summary>Light theme and phone layout</summary>
+
+<p align="center">
+  <img src="docs/screenshots/public-dashboard-light.png" alt="Public dashboard, light theme" width="560">
+  <img src="docs/screenshots/public-mobile.png" alt="Public dashboard on a phone" width="240">
+</p>
+</details>
+
+**Admin analytics**: how the agent army is actually performing: success rate and median time-to-apply per agent, outcomes per day, which application systems let automation through, why jobs get parked, when the agents work, and ClickUp API calls per day (flat as agents are added, thanks to the cached mirror).
+
+<p align="center"><img src="docs/screenshots/admin-analytics.png" alt="Admin analytics tab" width="920"></p>
+
+**Command center** (autopilot, per-ATS pacing, live activity, the queue) and **Run agents** (launch "Gemini: work 4 jobs" from a phone, schedules, live run history):
+
+<p align="center">
+  <img src="docs/screenshots/admin-command-center.png" alt="Admin command center" width="455">
+  <img src="docs/screenshots/admin-run-agents.png" alt="Admin run agents" width="455">
+</p>
+
+*The admin screenshots use generated demo data (fictional companies); run it yourself with `npm run demo` (see [Try it locally](#try-it-locally-with-demo-data)).*
+
 - **Shared queue with atomic claims**: an agent claims the best-fit postings and holds a lease (default 60 min) while it applies. Claims are one SQL statement in D1, so two agents can't both win. Claims are mirrored to ClickUp's *Next Action* field, and agents that only talk to ClickUp can claim there too (`Claimed by <agent> until <ISO time>`).
 - **Every agent, one endpoint**: MCP clients (Claude Code, Codex, Gemini CLI, Qwen Code, Kimi Code, Mistral Vibe, Cursor…) connect to `/mcp`. Agents without MCP (browser agents, chat apps) use the same operations over REST at `/api/agent/*`. Each agent has its own bearer token, and the token decides who it is.
 - **One runner prompt**: the loop (read playbook → claim → apply → report) is served to every agent as MCP server instructions, from `GET /api/agent/instructions`, and on the admin *Connect agents* page.
 - **Playbook from ClickUp**: standard form answers and rules come from the ClickUp playbook doc, served only to authenticated agents and admins, so no agent re-asks profile questions.
+- **Admin analytics** (`/admin#analytics`): per-agent scorecard (applied, success rate, median claim-to-submit time, run reliability and run-hours), outcomes per day, yield by application system, why jobs are parked, hour-of-day activity, ClickUp call trend and fleet health, over 7/30/90 days.
 - **Admin command center** (`/admin`, admin-token login): queue and claims, which agents are online, live activity, release/skip/mark-applied, pipeline editing, copy-paste agent setup.
 - **Run agents from anywhere** (`/admin#run`): launch "Gemini: work 4 jobs" (or any prompt, up to 5 in parallel) from your phone. A **runner** on an always-on Linux box starts the CLI headless with a real browser, streams the output back live, and stops it on demand. See [runner/README.md](runner/README.md).
 - **Handoff to Kimi**: an agent that can't finish a job (an essay with nothing verified to build it from) calls `handoff_job` instead of skipping; Kimi gets it ahead of the queue for 6 hours and autopilot starts it right away.
@@ -131,7 +164,17 @@ Secrets take effect on the next deployment (push to `main`, or `git commit --all
 
 **Database**: D1 `job-agent-hub`. Tables are created on first use; `npm run db:migrate` applies `migrations/` explicitly.
 
-## Local development (demo data)
+## Try it locally with demo data
+
+```bash
+npm install
+npx wrangler login      # once: the Workers AI binding connects to your Cloudflare account
+npm run demo            # builds, seeds a local D1 with a month of activity, serves http://127.0.0.1:8788
+```
+
+`npm run demo` runs in MOCK mode: generated tasks (fictional companies), a seeded local database (`scripts/seed-demo.mjs`: events, runs, heartbeats, a runner) and no ClickUp, Telegram or agent credentials. Open `/` for the public dashboard and `/admin` for the command center and analytics (login is skipped on localhost).
+
+## Local development
 
 ```bash
 npm install
@@ -148,6 +191,8 @@ In demo mode, ClickUp writes are skipped, while claims and activity run for real
 |---|---|
 | `npm run dev` | Vite dev server (proxies `/api`, `/mcp` to port 8788) |
 | `npm run dev:api` | `wrangler pages dev dist` in demo mode |
+| `npm run demo` | Build, seed the local D1 with demo activity, and serve everything in demo mode |
+| `npm run demo:seed` | Re-seed the local D1 with demo activity (`scripts/seed-demo.mjs`) |
 | `npm run typecheck` | Type-check the app, the Functions and `worker/src` |
 | `npm run build` | Production build into `dist/` |
 | `npm run db:migrate` | Apply D1 migrations to the remote database |

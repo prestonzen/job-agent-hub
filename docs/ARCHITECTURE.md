@@ -29,6 +29,7 @@ flowchart LR
 | `POST /mcp` | agent bearer token | MCP server (stateless Streamable HTTP, JSON responses) |
 | `/api/agent/*` | agent bearer token | Same operations over REST (see AGENTS.md) |
 | `POST /api/admin/login` | `ADMIN_TOKEN` in body | Sets the admin session cookie |
+| `GET /api/admin/analytics?days=30` | admin | Per-agent stats, outcomes per day, yield by ATS, parked reasons, hour-of-day, API-call trend (`worker/src/analytics.ts`) |
 | `/api/admin/*` | admin session cookie or `Bearer <ADMIN_TOKEN>` | Command center, pipeline edits, admin release/report |
 | everything else | none | Static SPA (`dist/`, single-page fallback) |
 

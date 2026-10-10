@@ -6,7 +6,11 @@ import { Card } from "./Panels";
 
 /** Agents orbiting the hub. Working agents get a packet travelling to the hub; idle-but-ready ones breathe. */
 export function Constellation({ byAgent, working, ready }: { byAgent: Record<string, number>; working: string[]; ready: string[] }) {
-  const names = sortAgents(Object.keys(byAgent).filter((a) => agentKey(a) !== "unknown" && agentKey(a) !== "human"));
+  // Everyone who has applied, plus agents that are logged in and standing by (they haven't sent anything yet).
+  const seen = new Map<string, string>();
+  for (const a of [...Object.keys(byAgent), ...working, ...ready]) if (!["unknown", "human"].includes(agentKey(a))) seen.set(agentKey(a), a);
+  const names = sortAgents([...seen.values()]);
+  const sent = (a: string) => byAgent[a] ?? byAgent[agentLabel(a)] ?? Object.entries(byAgent).find(([k]) => agentKey(k) === agentKey(a))?.[1] ?? 0;
   const isWorking = (a: string) => working.map(agentKey).includes(agentKey(a));
   const isReady = (a: string) => ready.map(agentKey).includes(agentKey(a));
   const W = 440;
@@ -52,7 +56,7 @@ export function Constellation({ byAgent, working, ready }: { byAgent: Record<str
               {agentLabel(name)}
             </text>
             <text x={x} y={lblY + 14} textAnchor="middle" className="node-n">
-              {byAgent[name]} sent
+              {sent(name) ? `${sent(name)} sent` : "standing by"}
             </text>
           </g>
         );
@@ -76,6 +80,8 @@ const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 
 export function CalendarHeat({ days }: { days: PublicSummary["byDay"] }) {
   const WEEKS = 14;
+  const span = days.length ? (Date.now() - Date.parse(`${days[0].date}T12:00:00`)) / 86_400_000 : 0;
+  if (span < 12) return null; // a calendar of four filled cells says less than the daily chart above it
   const counts = new Map(days.map((d) => [d.date, d.count]));
   const today = new Date();
   today.setHours(12, 0, 0, 0);
