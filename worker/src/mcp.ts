@@ -116,7 +116,7 @@ const TOOLS = [
         pay: str,
         travel: str,
         fit: { type: "string", description: 'e.g. "4/5 (voice agents)"' },
-        notes: str,
+        notes: { type: "string", description: "Anything useful. For a posting you apply to by emailing the employer, include a line `Apply by email: jobs@company.com`." },
       },
       required: ["company", "role", "url"],
     },

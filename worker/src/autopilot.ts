@@ -1,5 +1,6 @@
 import { db, getSetting, setSetting } from "./db";
 import { isAvailableFor, queue } from "./jobs";
+import { DEFAULT_LANES, inLane, type Lane } from "./lanes";
 import { checkJob, getPolicy, pacingState } from "./pacing";
 import { createRun, listRunners, listRuns } from "./runs";
 import { esc, notify } from "./telegram";
@@ -26,14 +27,18 @@ export interface AutopilotSettings {
    * were handed to them (failures, essays), or when no front-line agent can work. Default: Kimi.
    */
   backlog: string[];
+  /** Agents limited to one kind of job (free-tier Gemini: email applications only). null = any job. */
+  lanes: Record<string, Lane | null>;
 }
 
-const DEFAULTS: AutopilotSettings = { enabled: true, maxConcurrent: 2, jobsPerRun: 3, minGapMin: 25, agents: {}, backlog: ["kimi"] };
+const DEFAULTS: AutopilotSettings = { enabled: true, maxConcurrent: 2, jobsPerRun: 3, minGapMin: 25, agents: {}, backlog: ["kimi"], lanes: DEFAULT_LANES };
 const FAIL_STREAK_PAUSE = 3;
+/** Exit code recorded on a run that stopped because the agent's quota or rate limit ran out (see runs.ts). */
+export const QUOTA_EXIT = 429;
 
 export async function getAutopilot(env: Env): Promise<AutopilotSettings> {
   const saved = await getSetting<Partial<AutopilotSettings>>(env, "autopilot").catch(() => null);
-  return { ...DEFAULTS, ...(saved ?? {}), agents: { ...(saved?.agents ?? {}) }, backlog: saved?.backlog ?? DEFAULTS.backlog };
+  return { ...DEFAULTS, ...(saved ?? {}), agents: { ...(saved?.agents ?? {}) }, backlog: saved?.backlog ?? DEFAULTS.backlog, lanes: { ...DEFAULT_LANES, ...(saved?.lanes ?? {}) } };
 }
 
 export async function saveAutopilot(env: Env, patch: Partial<AutopilotSettings>): Promise<AutopilotSettings> {
@@ -46,6 +51,7 @@ export async function saveAutopilot(env: Env, patch: Partial<AutopilotSettings>)
     minGapMin: num(patch.minGapMin, 5, 720, cur.minGapMin),
     agents: { ...cur.agents, ...(patch.agents ?? {}) },
     backlog: Array.isArray(patch.backlog) ? patch.backlog.map((a) => String(a).toLowerCase()).slice(0, 10) : cur.backlog,
+    lanes: { ...cur.lanes, ...(patch.lanes ?? {}) },
   };
   await setSetting(env, "autopilot", next);
   return next;
@@ -78,6 +84,7 @@ const finished = (runs: Awaited<ReturnType<typeof listRuns>>, agent: string) =>
 function failStreak(runs: Awaited<ReturnType<typeof listRuns>>, agent: string): number {
   let n = 0;
   for (const r of finished(runs, agent)) {
+    if (r.exitCode === QUOTA_EXIT) continue; // out of quota is a rest, not a failure
     if (r.status === "failed") n++;
     else if (r.status === "succeeded") break;
   }
@@ -92,6 +99,7 @@ export async function autopilotStatus(env: Env) {
   const known = new Set([...readySet, ...runners.flatMap((r) => r.agents.map((a) => a.id))]);
   const agents: AgentAutopilot[] = [...known].sort().map((agent): AgentAutopilot => {
     const role = s.backlog.includes(agent) ? "backlog" : "front-line";
+    const lane = s.lanes[agent] ?? null;
     const active = runs.find((r) => r.agent === agent && r.kind !== "login" && (r.status === "running" || r.status === "queued"));
     const streak = failStreak(runs, agent);
     const n = next.get(agent) ?? 0;
@@ -99,8 +107,8 @@ export async function autopilotStatus(env: Env) {
     if (!readySet.has(agent)) return { agent, role, state: "not-ready", nextAt: null, detail: "not logged in on a runner" };
     if (streak >= FAIL_STREAK_PAUSE) return { agent, role, state: "paused", nextAt: null, detail: `${streak} failed runs in a row` };
     if (active) return { agent, role, state: active.status === "running" ? "working" : "queued", nextAt: null, detail: `run #${active.id}` };
-    if (n > Date.now()) return { agent, role, state: "waiting", nextAt: new Date(n).toISOString(), detail: null };
-    return { agent, role, state: "ready", nextAt: null, detail: null };
+    if (n > Date.now()) return { agent, role, state: "waiting", nextAt: new Date(n).toISOString(), detail: lane ? `${lane} applications only` : null };
+    return { agent, role, state: "ready", nextAt: null, detail: lane ? `${lane} applications only` : null };
   });
   return { settings: s, agents };
 }
@@ -119,7 +127,8 @@ export async function autopilotTick(env: Env): Promise<string | null> {
 
   // What could this agent claim right now (not parked, not paced, under the daily cap, not handed to someone else)?
   const pace = await pacingState(env, jobs, policy);
-  const claimableFor = (agent: string) => jobs.filter((j) => isAvailableFor(j, agent) && checkJob(j, pace, policy, Date.now(), j.assignedTo === agent).ok).length;
+  const claimableFor = (agent: string) =>
+    jobs.filter((j) => isAvailableFor(j, agent) && inLane(j, s.lanes[agent] ?? null) && checkJob(j, pace, policy, Date.now(), j.assignedTo === agent).ok).length;
 
   const d = await adb(env);
   const readyAgents = [...new Set(online.flatMap((r) => r.agents.filter((a) => a.ready).map((a) => a.id)))].filter((a) => s.agents[a] !== false);
@@ -154,7 +163,8 @@ export async function autopilotTick(env: Env): Promise<string | null> {
     const urgent = assignedTo.has(agent) ? 1 : 0;
     const won = await d.prepare("UPDATE autopilot_state SET next_after = ?1 WHERE agent = ?2 AND (next_after <= ?3 OR ?4 = 1)").bind(Math.round(nextAfter), agent, now, urgent).run();
     if (won.meta.changes !== 1) continue;
-    const run = await createRun(env, { agent, kind: "queue", count: Math.min(s.jobsPerRun, claimable) });
+    // A lane agent (free tier) gets a short run: its daily request budget is tiny.
+    const run = await createRun(env, { agent, kind: "queue", count: Math.min(s.lanes[agent] ? 2 : s.jobsPerRun, claimable) });
     return `launched run #${run.id} for ${agent}`;
   }
   return null;

@@ -83,6 +83,8 @@ export interface Job {
   needsHuman: string | null;
   /** Handed to a specific agent (e.g. kimi): only that agent can claim it, ahead of the queue. */
   assignedTo: string | null;
+  /** The employer's address when the posting is applied to by email ("Apply by email: jobs@company.com"). */
+  applyEmail: string | null;
   /** Earlier attempts at this job (another agent's log), oldest first. Only present when there are some. */
   previousAttempts?: { agent: string; at: string; outcome: string; note: string | null; log: string | null }[];
 }

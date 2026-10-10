@@ -260,11 +260,24 @@ export async function finishRun(env: Env, id: number, runner: string, f: { exitC
   const r = await (await db(env))
     .prepare(
       `UPDATE runs SET status = ?1, exit_code = ?2, finished_at = ?3 WHERE id = ?4 AND runner = ?5 AND status = 'running'
-       RETURNING agent, kind, count, started_at, finished_at, substr(log, -1500) AS tail`,
+       RETURNING agent, kind, count, started_at, finished_at, substr(log, -3000) AS tail`,
     )
     .bind(status, f.exitCode, Date.now(), id, runner)
     .first<{ agent: string; kind: string; count: number | null; started_at: number; finished_at: number; tail: string }>();
-  if (r) {
+  // Out of quota (a free API tier's daily limit, a rate limit): not a bug, so rest that agent until it resets
+  // and keep the run out of the failure streak that pauses autopilot.
+  const quota = r && status === "failed" ? quotaStop(r.tail) : null;
+  if (r && quota) {
+    const d = await db(env);
+    await d.prepare("UPDATE runs SET exit_code = 429 WHERE id = ?").bind(id).run();
+    await d.prepare("CREATE TABLE IF NOT EXISTS autopilot_state (agent TEXT PRIMARY KEY, next_after INTEGER NOT NULL DEFAULT 0)").run();
+    await d
+      .prepare("INSERT INTO autopilot_state (agent, next_after) VALUES (?1, ?2) ON CONFLICT (agent) DO UPDATE SET next_after = MAX(next_after, ?2)")
+      .bind(r.agent, Date.now() + quota.restMs)
+      .run();
+    await notify(env, `⏳ <b>${esc(r.agent)}</b> ran out of quota (run #${id}); resting until about ${new Date(Date.now() + quota.restMs).toISOString().slice(11, 16)} UTC. Not counted as a failure.`, { silent: true });
+  }
+  if (r && !quota) {
     const mins = Math.max(1, Math.round((r.finished_at - r.started_at) / 60_000));
     const icon = status === "succeeded" ? "✅" : status === "cancelled" ? "⏹️" : "⚠️";
     const tail = r.tail.trim().split("\n").slice(-12).join("\n");
@@ -275,4 +288,13 @@ export async function finishRun(env: Env, id: number, runner: string, f: { exitC
       { silent: status === "succeeded" },
     );
   }
+}
+
+/** "You exceeded your current quota … Please retry in 24m28.02s" and the like. Returns how long to rest the agent. */
+export function quotaStop(tail: string): { restMs: number } | null {
+  if (!/exceeded your (current )?quota|quota exceeded|RESOURCE_EXHAUSTED|TerminalQuotaError|insufficient_quota|rate.?limit(ed)? (reached|exceeded)|usage limit/i.test(tail)) return null;
+  const m = tail.match(/retry in (?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:([\d.]+)s)?/i);
+  const ms = m ? ((Number(m[1] ?? 0) * 60 + Number(m[2] ?? 0)) * 60 + Number(m[3] ?? 0)) * 1000 : 0;
+  // Daily free-tier limits often report only the short wait; rest at least three hours, at most a day.
+  return { restMs: Math.min(24 * 3_600_000, Math.max(3 * 3_600_000, ms + 120_000)) };
 }

@@ -14,6 +14,7 @@ import { isApplication } from "./classify";
 import { inferPlatform } from "./platform";
 import { activeAssignments, assignJob, clearAssignment, getAssignment, FALLBACK_AGENT, type Assignment } from "./assign";
 import { countFailures, listAttempts, saveAttempt } from "./attempts";
+import { agentLane, inLane } from "./lanes";
 import { parkedCategory } from "./park";
 import { agentNames } from "./auth";
 import { atsKey, checkJob, companyKey, getPolicy, noteClaim as notePacedClaim, pacingState } from "./pacing";
@@ -107,10 +108,17 @@ export function parseDetails(desc: string) {
     return m ? m[1].trim() : null;
   };
   const applyUrl = desc.match(/Apply:\s*\[?(https?:\/\/[^\s\]\)]+)/i)?.[1] ?? desc.match(/https?:\/\/[^\s\]\)]+/)?.[0] ?? null;
+  // Only explicit phrasings, so the applicant's own address in a description is never mistaken for the employer's.
+  const addr = "([A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,})";
+  const applyEmail =
+    desc.match(new RegExp(`(?:apply\\s+(?:by\\s+)?e-?mail|e-?mail\\s+(?:your\\s+)?(?:resume|cv|application)\\s+to|send\\s+(?:your\\s+)?(?:resume|cv|application)\\s+to)\\s*:?\\s*(?:mailto:)?${addr}`, "i"))?.[1] ??
+    desc.match(new RegExp(`mailto:${addr}`, "i"))?.[1] ??
+    null;
   const fitRaw = grab("Fit");
   const fitNum = fitRaw?.match(/(\d+(?:\.\d+)?)\s*\/\s*5/);
   return {
     applyUrl,
+    applyEmail: applyEmail && !/prestonzen|kaizenapps/i.test(applyEmail) ? applyEmail : null,
     pay: grab("Pay"),
     travel: grab("Travel"),
     ats: grab("ATS"),
@@ -169,6 +177,7 @@ function toJob(t: Task, claim: Claim | undefined | null, assigned?: Assignment |
     claimExpiresAt: holder ? new Date(holder.expiresAt).toISOString() : null,
     needsHuman: parkedReason(t),
     assignedTo: assigned?.agent ?? null,
+    applyEmail: d.applyEmail,
   };
 }
 
@@ -192,7 +201,7 @@ export async function queue(env: Env): Promise<Job[]> {
     .sort(byBestFirst);
 }
 
-export const isAvailable = (j: Job) => !j.claimedBy && !j.needsHuman && !!j.applyUrl;
+export const isAvailable = (j: Job) => !j.claimedBy && !j.needsHuman && (!!j.applyUrl || !!j.applyEmail);
 /** Claimable by this agent: a job handed to another agent doesn't count. */
 export const isAvailableFor = (j: Job, agent: string) => isAvailable(j) && (!j.assignedTo || j.assignedTo === agent);
 
@@ -204,6 +213,7 @@ export async function claimJobs(
   const count = Math.min(10, Math.max(1, Math.floor(opts.count ?? 1)));
   const ats = (opts.ats ?? []).map((a) => a.toLowerCase()).filter(Boolean);
   const all = await queue(env);
+  const lane = await agentLane(env, agent);
   const policy = await getPolicy(env);
   const pace = await pacingState(env, all, policy);
   const paced = new Map<string, { ats: string; reason: string; retryAt: string | null }>();
@@ -216,7 +226,7 @@ export async function claimJobs(
   const ordered = [...all.filter((j) => j.assignedTo === agent), ...all.filter((j) => j.assignedTo !== agent)];
   for (const job of ordered) {
     if (out.length >= count) break;
-    if (!isAvailableFor(job, agent)) continue;
+    if (!isAvailableFor(job, agent) || !inLane(job, lane)) continue;
     if (ats.length && !ats.some((a) => (job.ats ?? "").toLowerCase().includes(a))) continue;
     const verdict = checkJob(job, pace, policy, Date.now(), job.assignedTo === agent);
     if (!verdict.ok) {
@@ -237,7 +247,7 @@ export async function claimJobs(
     out.push({ ...job, claimedBy: agent, claimExpiresAt: new Date(expiresAt).toISOString() });
   }
 
-  const remaining = all.filter((j) => isAvailableFor(j, agent)).length - (out.length - mine.length);
+  const remaining = all.filter((j) => isAvailableFor(j, agent) && inLane(j, lane)).length - (out.length - mine.length);
   return { jobs: await Promise.all(out.map((j) => withAttempts(env, j))), remaining: Math.max(0, remaining), paced: [...paced.values()] };
 }
 
