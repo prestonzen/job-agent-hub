@@ -15,6 +15,8 @@ Live at **https://jobhunter.prestonzen.com**.
 - **Resume bank**: tailored resume variants (R2) tagged with role keywords; agents call `get_resume` with the job title and upload the best match.
 - **Reply tracking**: a Gmail Apps Script forwards recruiter mail; the hub classifies it (Workers AI), matches the application and moves its status (rejected / screening / accepted).
 - **Telegram control room**: the hub posts to its own "🤖 Job Agent Hub" topic in the Kaizen Apps Operations group (jobs that need you, finished runs, interview invites and offers, daily digest) and takes commands there: `/status`, `/needs`, `/run claude 3`, `/runs`, `/stop`, `/pause`, `/resume`, `/digest`. Only the group's owner/admins are obeyed.
+- **Phone logins**: `/login codex` or `/login kimi` in the topic starts that CLI's device-code login on the runner and posts the link and code there.
+- **ClickUp-friendly**: agents never call ClickUp. The hub keeps a local copy of the list in D1 (refreshed at most every 10 min, single-flight), re-reads just the one task before handing it out, caches the playbook for 4 h, and parks writes that hit a rate limit in an outbox that is replayed on runner check-ins. `/status` shows ClickUp calls today; `/refresh` forces a reload.
 - **Emailed codes over Telegram**: when a form asks for an emailed verification code (Greenhouse), the agent keeps the form open and asks on Telegram; you read the code in your inbox and reply to the 🔐 message, and the agent types it and submits. Sending the code is your approval for that application; nothing reads the inbox for codes.
 - **Public dashboard** (`/`): a sanitized live view: funnel, who applied, applications per day, platforms. No contact details, notes, links, answers or queued targets.
 
