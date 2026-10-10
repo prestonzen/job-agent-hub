@@ -71,6 +71,7 @@ export default function Autopilot() {
           <li key={a.agent} className={`st-${a.state}`} title={a.detail ?? undefined}>
             <i className="key" style={{ background: agentColor(a.agent) }} aria-hidden="true" />
             <b>{agentLabel(a.agent)}</b>
+            {a.role === "backlog" && <span className="chip" title="Works jobs other agents handed over (failures, essays), with their action log">backlog</span>}
             <span className="muted">
               {STATE[a.state].icon} {STATE[a.state].text}
               {a.state === "waiting" && a.nextAt ? ` · next in ${mins(a.nextAt)} min` : ""}

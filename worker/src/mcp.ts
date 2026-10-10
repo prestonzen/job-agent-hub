@@ -55,7 +55,7 @@ const TOOLS = [
     name: "handoff_job",
     description:
       "Give a claimed job to another agent (default Kimi) when you truly can't finish it: an essay or question with no verified facts to build an answer from, or something outside your tools. Do this instead of skipping. The assignee gets it ahead of the queue for 6 hours. If you are Kimi, report needs_human instead.",
-    inputSchema: { type: "object", properties: { id: str, reason: { type: "string", description: "What you couldn't do, specifically (the question text, the blocker)" }, to: { type: "string", description: "Agent to hand it to; default kimi" } }, required: ["id", "reason"] },
+    inputSchema: { type: "object", properties: { id: str, reason: { type: "string", description: "What you couldn't do, specifically (the question text, the blocker)" }, to: { type: "string", description: "Agent to hand it to; default kimi" }, log: { type: "string", description: "Your action log so far: URL reached, fields filled, answers given (essays in full), where you stopped. The assignee reads it first." } }, required: ["id", "reason"] },
   },
   {
     name: "request_code",
@@ -85,7 +85,7 @@ const TOOLS = [
   {
     name: "report_result",
     description:
-      "Report the outcome of a claimed job. applied = submitted; needs_human = blocked on something only Preston can do (note required); skipped = not a fit per the playbook rules (note required); failed = technical failure, returns to queue.",
+      "Report the outcome of a claimed job. applied = submitted; needs_human = blocked on something only Preston can do (note required); skipped = not a fit per the playbook rules (note required); failed = technical failure: the hub hands the job to Kimi with your log (a second failure parks it for Preston). For failed / needs_human also send `log`.",
     inputSchema: {
       type: "object",
       properties: {
@@ -93,6 +93,7 @@ const TOOLS = [
         outcome: { type: "string", enum: [...OUTCOMES] },
         platform: { type: "string", description: "The site/ATS where the form was actually submitted, e.g. Greenhouse, Ashby, Lever, Workable, Rippling, Workday, SmartRecruiters, Breezy, JazzHR, Work at a Startup, Email to employer, or \"Company site\" for the company's own custom form. Never \"Other\". Defaults to the job's ATS or apply link." },
         note: { type: "string", description: "Anything notable: skipped questions, verification code pending, blocker details." },
+        log: { type: "string", description: "For failed / needs_human: your action log (URL reached, each field and the answer you gave, essays in full, exactly where and why you stopped). A failed job goes to Kimi automatically and Kimi reads this first." },
       },
       required: ["id", "outcome"],
     },
@@ -159,7 +160,7 @@ async function callTool(env: Env, agent: string, name: string, args: Args, origi
       return { ...pick, runnerPath: `./resumes/${pick.filename}`, downloadUrl: `${origin}/api/agent/resumes/${pick.id}/file` };
     }
     case "handoff_job":
-      return await handoffJob(env, agent, String(args.id), String(args.reason ?? ""), s(args.to) ?? undefined);
+      return await handoffJob(env, agent, String(args.id), String(args.reason ?? ""), s(args.to) ?? undefined, false, s(args.log));
     case "request_code": {
       const job = await jobById(env, String(args.job_id)).catch(() => null);
       const r = await requestCode(env, { agent, jobId: job?.id ?? String(args.job_id), jobName: job?.name ?? null, kind: s(args.kind), hint: s(args.hint) });
@@ -176,6 +177,7 @@ async function callTool(env: Env, agent: string, name: string, args: Args, origi
         outcome: String(args.outcome) as Outcome,
         platform: s(args.platform),
         note: s(args.note),
+        log: s(args.log),
       });
     case "release_job":
       await releaseJob(env, agent, String(args.id), s(args.note));

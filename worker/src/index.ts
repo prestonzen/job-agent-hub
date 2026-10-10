@@ -247,8 +247,8 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       if (job[2] === "renew" && method === "POST") return json(await renewLease(env, agent, id));
       if (job[2] === "report" && method === "POST") return json(await reportResult(env, agent, id, await readJson<Report>(request)));
       if (job[2] === "handoff" && method === "POST") {
-        const b = await readJson<{ reason?: string; to?: string }>(request);
-        return json(await handoffJob(env, agent, id, String(b.reason ?? ""), b.to));
+        const b = await readJson<{ reason?: string; to?: string; log?: string }>(request);
+        return json(await handoffJob(env, agent, id, String(b.reason ?? ""), b.to, false, typeof b.log === "string" ? b.log : null));
       }
       if (job[2] === "release" && method === "POST") {
         const { note } = await readJson<{ note?: string }>(request).catch(() => ({}) as { note?: string });

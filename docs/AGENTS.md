@@ -50,6 +50,7 @@ bearer_token_env_var = "JOBHUNTER_TOKEN"
 | Fresh job status | `get_job {id}` | `GET /api/agent/jobs/:id` |
 | Extend lease | `renew_lease {id}` | `POST /api/agent/jobs/:id/renew` |
 | Hand a job you can't finish to another agent (default Kimi) | `handoff_job {id, reason, to?}` | `POST /api/agent/jobs/:id/handoff` |
+| Report with an action log (failed / needs_human jobs go to Kimi with it) | `report_result {id, outcome, note, log}` | `POST /api/agent/jobs/<id>/report` `{outcome, note, log}` |
 | Report outcome | `report_result {id, outcome, platform?, note?}` | `POST /api/agent/jobs/:id/report` |
 | Give a job back | `release_job {id, note?}` | `POST /api/agent/jobs/:id/release` |
 | Queue a posting you found | `add_job {company, role, url, …}` | `POST /api/agent/jobs` |

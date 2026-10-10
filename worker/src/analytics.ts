@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { parkedCategory } from "./park";
 import { queue } from "./jobs";
 import { mdb } from "./mirror";
 import { listRunners } from "./runs";
@@ -88,19 +89,6 @@ const median = (xs: number[]): number | null => {
 };
 const round1 = (n: number | null) => (n === null ? null : Math.round(n * 10) / 10);
 const rate = (applied: number, other: number) => (applied + other ? applied / (applied + other) : null);
-
-/** Why a parked job is parked, as a short stable category. */
-export function parkedCategory(reason: string): string {
-  const r = reason.toLowerCase();
-  if (/already worked/.test(r)) return "Already worked (status not updated)";
-  if (/code|verif|otp|2fa/.test(r)) return "Emailed / SMS code";
-  if (/essay|cover letter|written|statement|short answer|question/.test(r)) return "Essay or written answers";
-  if (/captcha|bot|cloudflare|turnstile|human check|recaptcha|blocked/.test(r)) return "CAPTCHA / bot check";
-  if (/account|sign.?up|log.?in|register|password/.test(r)) return "Needs an account";
-  if (/location|travel|relocat|onsite|on-site|hybrid|visa|citizen|clearance/.test(r)) return "Location, travel or eligibility";
-  if (/duplicate|dupe|already applied/.test(r)) return "Duplicate";
-  return "Other";
-}
 
 interface Ev {
   at: number;

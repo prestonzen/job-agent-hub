@@ -13,6 +13,8 @@ import {
 import { isApplication } from "./classify";
 import { inferPlatform } from "./platform";
 import { activeAssignments, assignJob, clearAssignment, getAssignment, FALLBACK_AGENT, type Assignment } from "./assign";
+import { countFailures, listAttempts, saveAttempt } from "./attempts";
+import { parkedCategory } from "./park";
 import { agentNames } from "./auth";
 import { atsKey, checkJob, companyKey, getPolicy, noteClaim as notePacedClaim, pacingState } from "./pacing";
 import { activeClaims, deleteClaim, getClaim, logEvent, tryClaim, type Claim } from "./db";
@@ -236,19 +238,46 @@ export async function claimJobs(
   }
 
   const remaining = all.filter((j) => isAvailableFor(j, agent)).length - (out.length - mine.length);
-  return { jobs: out, remaining: Math.max(0, remaining), paced: [...paced.values()] };
+  return { jobs: await Promise.all(out.map((j) => withAttempts(env, j))), remaining: Math.max(0, remaining), paced: [...paced.values()] };
+}
+
+/** Attach what earlier agents already tried (their action logs), so the next one doesn't start from zero. */
+async function withAttempts(env: Env, j: Job): Promise<Job> {
+  const previousAttempts = await listAttempts(env, j.id, 3).catch(() => []);
+  return previousAttempts.length ? { ...j, previousAttempts } : j;
 }
 
 export async function getJob(env: Env, id: string): Promise<Job> {
   const [task, claim, assigned] = await Promise.all([loadTask(env, id), getClaim(env, id), getAssignment(env, id).catch(() => null)]);
-  return toJob(task, claim, assigned);
+  return withAttempts(env, toJob(task, claim, assigned));
+}
+
+/**
+ * Route a job to the fallback agent (Kimi) with the reason and the failing agent's action log.
+ * Kimi is the backlog: Codex, Claude, Mistral and Gemini take fresh jobs first, and anything they can't finish lands here.
+ */
+async function routeToFallback(env: Env, agent: string, task: Task, why: string, log: string | null): Promise<void> {
+  const today = new Date().toISOString().slice(0, 10);
+  await assignJob(env, task.id, FALLBACK_AGENT, why, agent);
+  const next = `Assigned to ${FALLBACK_AGENT}: ${why}`.slice(0, 250);
+  await write(env, async () => {
+    await setField(env, task.id, env.FIELD_NEXT_ACTION, next);
+    await addComment(
+      env,
+      task.id,
+      `[hub] ${today}: ${displayAgent(agent)} couldn't finish this, so it went to ${displayAgent(FALLBACK_AGENT)}: ${why}${log ? `\n--- ${displayAgent(agent)}'s action log ---\n${log.slice(0, 2500)}` : ""}`,
+    );
+  });
+  if (!mock(env)) await patchMirror(env, task.id, { nextAction: next });
+  await logEvent(env, { agent, taskId: task.id, taskName: task.name, type: "handoff", message: `→ ${FALLBACK_AGENT}: ${why}` });
+  await notify(env, `🔀 <b>${esc(displayAgent(agent))}</b> couldn't finish <a href="${task.url}">${esc(task.name)}</a>; sent to <b>${esc(displayAgent(FALLBACK_AGENT))}</b>${log ? " with its log" : ""}: ${esc(why.slice(0, 160))}`, { silent: true });
 }
 
 /**
  * Give a job you can't finish to another agent (default Kimi) instead of skipping it.
  * Only the holder (or an admin) can hand it off; the assignee gets it ahead of the queue for 6 h.
  */
-export async function handoffJob(env: Env, agent: string, id: string, reason: string, to: string = FALLBACK_AGENT, admin = false): Promise<{ ok: true; assignedTo: string }> {
+export async function handoffJob(env: Env, agent: string, id: string, reason: string, to: string = FALLBACK_AGENT, admin = false, log: string | null = null): Promise<{ ok: true; assignedTo: string }> {
   const target = to.toLowerCase();
   const why = reason?.trim();
   if (!why) throw new HttpError(400, "reason is required: say what you couldn't do");
@@ -260,6 +289,7 @@ export async function handoffJob(env: Env, agent: string, id: string, reason: st
   if (task.status !== "not started") throw new HttpError(409, `${task.name} is already "${task.status}"`);
   await deleteClaim(env, id);
   await assignJob(env, id, target, why, agent);
+  await saveAttempt(env, id, agent, "handoff", why, log?.trim() || null).catch(() => {});
   const today = new Date().toISOString().slice(0, 10);
   await write(env, async () => {
     await setField(env, id, env.FIELD_NEXT_ACTION, `Assigned to ${target}: ${why}`.slice(0, 250));
@@ -306,6 +336,8 @@ export interface Report {
   outcome: Outcome;
   platform?: string | null;
   note?: string | null;
+  /** What the agent did: fields, answers, where it stopped. Kept for the next agent when the job failed or is handed on. */
+  log?: string | null;
 }
 
 export async function reportResult(
@@ -317,6 +349,7 @@ export async function reportResult(
 ): Promise<{ job: Job; warnings: string[] }> {
   if (!OUTCOMES.includes(r.outcome)) throw new HttpError(400, `outcome must be one of ${OUTCOMES.join(", ")}`);
   const note = r.note?.trim().slice(0, 4000) || null;
+  const log = r.log?.trim().slice(0, 12_000) || null;
   if ((r.outcome === "skipped" || r.outcome === "needs_human") && !note) {
     throw new HttpError(400, `a note explaining why is required for outcome "${r.outcome}"`);
   }
@@ -334,6 +367,15 @@ export async function reportResult(
   const today = new Date().toISOString().slice(0, 10);
   const warnings: string[] = [];
 
+  // Failures and parked jobs keep the agent's action log. A first failure by a front-line agent, or an essay it
+  // couldn't write, goes to the fallback agent (Kimi) with that log; a second failure parks it for Preston.
+  if (r.outcome === "failed" || r.outcome === "needs_human") await saveAttempt(env, id, agent, r.outcome, note, log).catch(() => {});
+  const failures = r.outcome === "failed" ? await countFailures(env, id).catch(() => 1) : 0;
+  const canFallback = !admin && agent !== FALLBACK_AGENT && agentNames(env).includes(FALLBACK_AGENT);
+  const toFallback = canFallback && ((r.outcome === "failed" && failures <= 1) || (r.outcome === "needs_human" && parkedCategory(note ?? "") === "Essay or written answers"));
+  const parkFailed = r.outcome === "failed" && failures >= 2;
+  let routed = false;
+
   switch (r.outcome) {
     case "applied": {
       await write(env, async () => {
@@ -347,9 +389,14 @@ export async function reportResult(
       break;
     }
     case "needs_human": {
+      if (toFallback) {
+        await routeToFallback(env, agent, task, note ?? "needs a written answer", log);
+        routed = true;
+        break;
+      }
       await write(env, async () => {
         await setField(env, id, env.FIELD_NEXT_ACTION, `Needs human: ${note}`.slice(0, 250));
-        await addComment(env, id, `[hub] ${today}: ${who} needs a human: ${note}`);
+        await addComment(env, id, `[hub] ${today}: ${who} needs a human: ${note}${log ? `\n--- action log ---\n${log.slice(0, 2500)}` : ""}`);
       });
       break;
     }
@@ -362,6 +409,19 @@ export async function reportResult(
       break;
     }
     case "failed": {
+      if (toFallback) {
+        await routeToFallback(env, agent, task, note ?? "failed; see the log", log);
+        routed = true;
+        break;
+      }
+      if (parkFailed) {
+        // Two agents already failed this one: stop burning runs on it and ask a person.
+        await write(env, async () => {
+          await setField(env, id, env.FIELD_NEXT_ACTION, `Needs human: failed ${failures}x (${note ?? "see the hub comments"})`.slice(0, 250));
+          await addComment(env, id, `[hub] ${today}: ${who} failed this too (attempt ${failures}); parked for Preston.${note ? `\n${note}` : ""}${log ? `\n--- action log ---\n${log.slice(0, 2500)}` : ""}`);
+        });
+        break;
+      }
       await write(env, async () => {
         await clearField(env, id, env.FIELD_NEXT_ACTION);
         await addComment(env, id, `[hub] ${today}: ${who} could not finish; back in the queue.${note ? `\n${note}` : ""}`);
@@ -371,9 +431,9 @@ export async function reportResult(
   }
 
   await deleteClaim(env, id);
-  await clearAssignment(env, id);
-  if (r.outcome === "needs_human") {
-    await notify(env, `🙋 <b>${esc(who)} needs you</b> on <a href="${task.url}">${esc(task.name)}</a>\n${esc(note ?? "")}${job.applyUrl ? `\n<a href="${job.applyUrl}">Open the posting</a>` : ""}`);
+  if (!routed) await clearAssignment(env, id);
+  if ((r.outcome === "needs_human" && !routed) || parkFailed) {
+    await notify(env, `🙋 <b>${esc(who)} needs you</b> on <a href="${task.url}">${esc(task.name)}</a>${parkFailed ? " (failed twice)" : ""}\n${esc(note ?? "")}${job.applyUrl ? `\n<a href="${job.applyUrl}">Open the posting</a>` : ""}`);
   }
   await logEvent(env, { agent, taskId: id, taskName: task.name, type: r.outcome, message: note, ats: atsKey(platform), company: companyKey(job.company) });
   return { job: await getJob(env, id).catch(() => job), warnings };

@@ -33,6 +33,10 @@ flowchart LR
 | `/api/admin/*` | admin session cookie or `Bearer <ADMIN_TOKEN>` | Command center, pipeline edits, admin release/report |
 | everything else | none | Static SPA (`dist/`, single-page fallback) |
 
+## Failure routing
+
+`reportResult` saves a `failed` / `needs_human` outcome and the agent's action log to the D1 `attempts` table (`worker/src/attempts.ts`). A first failure by a front-line agent, or a written-answer blocker (`parkedCategory` in `worker/src/park.ts`), assigns the job to Kimi (`assignments`, 6 h, ahead of the queue) and posts the log excerpt to the ClickUp task. Claims and `get_job` return `previousAttempts` so Kimi starts from the log. A second failure, or a Kimi failure on a handed-over job, parks the task (`Needs human: …`). Autopilot treats Kimi as a *backlog* agent (`settings.backlog`): it starts a Kimi run only when jobs are assigned to it, or when no front-line agent can work.
+
 ## Queue and claims
 
 - **Flat list rule:** applications are top-level tasks, never subtasks (convert any nested task); *Platform Applied* names the ATS actually used and has no "Other" option.

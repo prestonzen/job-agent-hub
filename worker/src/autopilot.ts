@@ -1,5 +1,5 @@
 import { db, getSetting, setSetting } from "./db";
-import { isAvailable, isAvailableFor, queue } from "./jobs";
+import { isAvailableFor, queue } from "./jobs";
 import { checkJob, getPolicy, pacingState } from "./pacing";
 import { createRun, listRunners, listRuns } from "./runs";
 import { esc, notify } from "./telegram";
@@ -21,14 +21,19 @@ export interface AutopilotSettings {
   minGapMin: number;
   /** Per-agent switch; missing = on. */
   agents: Record<string, boolean>;
+  /**
+   * Backlog agents don't take fresh jobs while a front-line agent is available: they run only when jobs
+   * were handed to them (failures, essays), or when no front-line agent can work. Default: Kimi.
+   */
+  backlog: string[];
 }
 
-const DEFAULTS: AutopilotSettings = { enabled: true, maxConcurrent: 2, jobsPerRun: 3, minGapMin: 25, agents: {} };
+const DEFAULTS: AutopilotSettings = { enabled: true, maxConcurrent: 2, jobsPerRun: 3, minGapMin: 25, agents: {}, backlog: ["kimi"] };
 const FAIL_STREAK_PAUSE = 3;
 
 export async function getAutopilot(env: Env): Promise<AutopilotSettings> {
   const saved = await getSetting<Partial<AutopilotSettings>>(env, "autopilot").catch(() => null);
-  return { ...DEFAULTS, ...(saved ?? {}), agents: { ...(saved?.agents ?? {}) } };
+  return { ...DEFAULTS, ...(saved ?? {}), agents: { ...(saved?.agents ?? {}) }, backlog: saved?.backlog ?? DEFAULTS.backlog };
 }
 
 export async function saveAutopilot(env: Env, patch: Partial<AutopilotSettings>): Promise<AutopilotSettings> {
@@ -40,6 +45,7 @@ export async function saveAutopilot(env: Env, patch: Partial<AutopilotSettings>)
     jobsPerRun: num(patch.jobsPerRun, 1, 10, cur.jobsPerRun),
     minGapMin: num(patch.minGapMin, 5, 720, cur.minGapMin),
     agents: { ...cur.agents, ...(patch.agents ?? {}) },
+    backlog: Array.isArray(patch.backlog) ? patch.backlog.map((a) => String(a).toLowerCase()).slice(0, 10) : cur.backlog,
   };
   await setSetting(env, "autopilot", next);
   return next;
@@ -61,6 +67,8 @@ export interface AgentAutopilot {
   state: "working" | "queued" | "waiting" | "ready" | "paused" | "off" | "not-ready";
   nextAt: string | null;
   detail: string | null;
+  /** "backlog" agents (Kimi) work handed-over jobs; front-line agents take fresh ones. */
+  role: "front-line" | "backlog";
 }
 
 /** Most recent finished agent runs (queue/prompt kinds), newest first. */
@@ -82,16 +90,17 @@ export async function autopilotStatus(env: Env) {
   const next = new Map(results.map((r) => [r.agent, r.next_after]));
   const readySet = new Set(runners.filter((r) => r.online).flatMap((r) => r.agents.filter((a) => a.ready).map((a) => a.id)));
   const known = new Set([...readySet, ...runners.flatMap((r) => r.agents.map((a) => a.id))]);
-  const agents: AgentAutopilot[] = [...known].sort().map((agent) => {
+  const agents: AgentAutopilot[] = [...known].sort().map((agent): AgentAutopilot => {
+    const role = s.backlog.includes(agent) ? "backlog" : "front-line";
     const active = runs.find((r) => r.agent === agent && r.kind !== "login" && (r.status === "running" || r.status === "queued"));
     const streak = failStreak(runs, agent);
     const n = next.get(agent) ?? 0;
-    if (s.agents[agent] === false) return { agent, state: "off", nextAt: null, detail: "switched off" };
-    if (!readySet.has(agent)) return { agent, state: "not-ready", nextAt: null, detail: "not logged in on a runner" };
-    if (streak >= FAIL_STREAK_PAUSE) return { agent, state: "paused", nextAt: null, detail: `${streak} failed runs in a row` };
-    if (active) return { agent, state: active.status === "running" ? "working" : "queued", nextAt: null, detail: `run #${active.id}` };
-    if (n > Date.now()) return { agent, state: "waiting", nextAt: new Date(n).toISOString(), detail: null };
-    return { agent, state: "ready", nextAt: null, detail: null };
+    if (s.agents[agent] === false) return { agent, role, state: "off", nextAt: null, detail: "switched off" };
+    if (!readySet.has(agent)) return { agent, role, state: "not-ready", nextAt: null, detail: "not logged in on a runner" };
+    if (streak >= FAIL_STREAK_PAUSE) return { agent, role, state: "paused", nextAt: null, detail: `${streak} failed runs in a row` };
+    if (active) return { agent, role, state: active.status === "running" ? "working" : "queued", nextAt: null, detail: `run #${active.id}` };
+    if (n > Date.now()) return { agent, role, state: "waiting", nextAt: new Date(n).toISOString(), detail: null };
+    return { agent, role, state: "ready", nextAt: null, detail: null };
   });
   return { settings: s, agents };
 }
@@ -108,10 +117,9 @@ export async function autopilotTick(env: Env): Promise<string | null> {
   const inFlight = runs.filter((r) => r.kind !== "login" && (r.status === "running" || r.status === "queued"));
   if (inFlight.length >= s.maxConcurrent || freeSlots <= inFlight.filter((r) => r.status === "queued").length) return null;
 
-  // Is anything claimable right now (not parked, not paced, under the daily cap)?
+  // What could this agent claim right now (not parked, not paced, under the daily cap, not handed to someone else)?
   const pace = await pacingState(env, jobs, policy);
-  const claimable = jobs.filter((j) => isAvailable(j) && checkJob(j, pace, policy).ok).length;
-  if (claimable === 0) return null;
+  const claimableFor = (agent: string) => jobs.filter((j) => isAvailableFor(j, agent) && checkJob(j, pace, policy, Date.now(), j.assignedTo === agent).ok).length;
 
   const d = await adb(env);
   const readyAgents = [...new Set(online.flatMap((r) => r.agents.filter((a) => a.ready).map((a) => a.id)))].filter((a) => s.agents[a] !== false);
@@ -122,8 +130,13 @@ export async function autopilotTick(env: Env): Promise<string | null> {
   const now = Date.now();
   const assignedTo = new Set(jobs.filter((j) => j.assignedTo && isAvailableFor(j, j.assignedTo)).map((j) => j.assignedTo as string));
   order.sort((a, b) => Number(assignedTo.has(b)) - Number(assignedTo.has(a)));
+  const frontLineAvailable = order.some((a) => !s.backlog.includes(a));
   for (const agent of order) {
     if (inFlight.some((r) => r.agent === agent)) continue;
+    const claimable = claimableFor(agent);
+    if (claimable === 0) continue;
+    // Backlog agents (Kimi) only start when jobs were handed to them, or when no front-line agent can work.
+    if (s.backlog.includes(agent) && !assignedTo.has(agent) && frontLineAvailable) continue;
     const streak = failStreak(runs, agent);
     if (streak >= FAIL_STREAK_PAUSE) {
       const last = finished(runs, agent)[0]?.id ?? 0;

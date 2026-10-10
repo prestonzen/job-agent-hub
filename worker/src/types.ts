@@ -83,6 +83,8 @@ export interface Job {
   needsHuman: string | null;
   /** Handed to a specific agent (e.g. kimi): only that agent can claim it, ahead of the queue. */
   assignedTo: string | null;
+  /** Earlier attempts at this job (another agent's log), oldest first. Only present when there are some. */
+  previousAttempts?: { agent: string; at: string; outcome: string; note: string | null; log: string | null }[];
 }
 
 export interface AgentEvent {
