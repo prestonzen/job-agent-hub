@@ -86,7 +86,8 @@ if (tokens.kimi) {
   const s = readJson(p);
   s.mcpServers = {
     ...(s.mcpServers ?? {}),
-    jobhunter: { transport: "http", url: MCP_URL, bearerTokenEnvVar: "JOBHUNTER_TOKEN" },
+    // Generous startup/tool timeouts: the hub connection fails ("fetch failed") with the defaults over this uplink.
+    jobhunter: { transport: "http", url: MCP_URL, bearerTokenEnvVar: "JOBHUNTER_TOKEN", startupTimeoutMs: 60000, toolTimeoutMs: 120000 },
     playwright: { transport: "stdio", command: BROWSER.command, args: BROWSER.args },
   };
   write(p, JSON.stringify(s, null, 2) + "\n");

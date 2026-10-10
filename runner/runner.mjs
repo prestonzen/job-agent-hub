@@ -9,7 +9,15 @@ import { basename, join } from "node:path";
 
 const VERSION = "0.1.0";
 const CONFIG_PATH = process.env.RUNNER_CONFIG ?? "/etc/job-agent-runner/config.json";
-const cfg = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+let cfg = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+/** Re-read the config file so edits (commands, models, notes, tokens) apply to the next run without a restart. */
+function reloadCfg() {
+  try {
+    cfg = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+  } catch (e) {
+    log("config reload failed, keeping the previous one:", e.message);
+  }
+}
 const NAME = cfg.name ?? hostname();
 const SLOTS = Math.max(1, cfg.slots ?? 2);
 const TIMEOUT_MS = (cfg.timeoutMinutes ?? 90) * 60_000;
@@ -17,7 +25,7 @@ const WORK = cfg.workDir ?? "/var/lib/job-agent-runner/runs";
 // Read by update.sh: it only restarts the runner when nothing is running.
 const STATE = cfg.stateFile ?? join(WORK, "..", "state.json");
 
-const log = (...a) => console.log(new Date().toISOString(), ...a);
+function log(...a) { console.log(new Date().toISOString(), ...a); }
 const expand = (p) => (p?.startsWith("~/") ? join(homedir(), p.slice(2)) : p);
 // eslint-disable-next-line no-control-regex
 const stripAnsi = (s) => s.replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]|\x1b\][^\x07]*\x07|\r(?!\n)/g, "");
@@ -56,6 +64,7 @@ async function hub(path, body) {
 // ---------- which agents can run here ----------
 
 function probe() {
+  reloadCfg();
   return Object.entries(cfg.agents ?? {}).map(([id, a]) => {
     const bin = a.cmd?.[0];
     const installed = !!bin && spawnSync("sh", ["-c", `command -v "${bin}"`]).status === 0;
@@ -117,6 +126,7 @@ const FORMATTERS = { "claude-stream": formatClaudeEvent };
 // ---------- running one job ----------
 
 async function startRun(run) {
+  reloadCfg();
   const a = cfg.agents[run.agent];
   const prompt = cfg.machineNotes ? `${run.fullPrompt}\n\nNOTES FOR THIS MACHINE:\n${cfg.machineNotes}` : run.fullPrompt;
   const LOGIN = { codex: ["codex", "login", "--device-auth"], kimi: ["kimi", "login"] };

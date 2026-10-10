@@ -26,7 +26,7 @@
     "codex":   { "cmd": ["codex", "exec", "-c", "model_reasoning_effort=\"low\"", "--dangerously-bypass-approvals-and-sandbox", "--skip-git-repo-check", "{PROMPT}"], "auth": ["~/.codex/auth.json"], "env": { "JOBHUNTER_TOKEN": "<codex hub token>" } },
     "gemini":  { "cmd": ["gemini", "--yolo", "-p", "{PROMPT}"], "auth": ["~/.gemini/oauth_creds.json", "~/.gemini/.env"] },
     "qwen":    { "cmd": ["qwen", "--yolo", "{PROMPT}"], "auth": ["~/.qwen/oauth_creds.json"] },
-    "kimi":    { "cmd": ["kimi", "--auto", "-p", "{PROMPT}"], "auth": ["~/.kimi-code/credentials", "~/.kimi-code/auth.json"], "env": { "JOBHUNTER_TOKEN": "<kimi hub token>" } },
+    "kimi":    { "cmd": ["kimi", "-m", "kimi-code/kimi-for-coding-highspeed", "-p", "{PROMPT}"], "auth": ["~/.kimi-code/credentials", "~/.kimi-code/auth.json"], "env": { "JOBHUNTER_TOKEN": "<kimi hub token>" } },
     "mistral": { "cmd": ["vibe", "-p", "{PROMPT}", "--auto-approve", "--trust"], "auth": ["~/.vibe/.env"], "versionArgs": ["--version"] }
   }
 }

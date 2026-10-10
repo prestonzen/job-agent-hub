@@ -11,6 +11,7 @@ import {
   stampApplied,
 } from "./clickup";
 import { isApplication } from "./classify";
+import { inferPlatform } from "./platform";
 import { atsKey, checkJob, companyKey, getPolicy, noteClaim as notePacedClaim, pacingState } from "./pacing";
 import { activeClaims, deleteClaim, getClaim, logEvent, tryClaim, type Claim } from "./db";
 import { mockPlaybook, mockTasks } from "./mock";
@@ -293,7 +294,8 @@ export async function reportResult(
   }
 
   const who = displayAgent(agent);
-  const platform = r.platform ?? job.ats ?? "Other";
+  // The real submitting platform: what the agent said, else the job's ATS / apply link, else "Company site". Never "Other".
+  const platform = inferPlatform({ platform: r.platform, ats: job.ats, url: job.applyUrl, text: note });
   const today = new Date().toISOString().slice(0, 10);
   const warnings: string[] = [];
 
@@ -302,6 +304,7 @@ export async function reportResult(
       await write(env, async () => {
         await setStatus(env, id, "applied");
         const stamped = await stampApplied(env, id, { agent, platform, on: today });
+        if (!stamped.platform) warnings.push(`ClickUp "Platform Applied" has no option "${platform}"; add it in ClickUp (the comment records it meanwhile).`);
         if (!stamped.appliedBy) warnings.push(`ClickUp "Applied By" has no option "${who}"; add it in ClickUp to tag these.`);
         await clearField(env, id, env.FIELD_NEXT_ACTION);
         await addComment(env, id, `[hub] ${today}: applied by ${who} via ${platform}.${note ? `\n${note}` : ""}`);

@@ -1,4 +1,5 @@
 import { isApplication, isPlatform } from "./classify";
+import { taskPlatform } from "./platform";
 import type { Env, PublicApplication, PublicSummary, Task } from "./types";
 
 /** "Company — Role" -> { company, role }. Falls back to the whole name as the role. */
@@ -29,12 +30,15 @@ export function toPublicSummary(tasks: Task[], env: Env, demo = false): PublicSu
 
   // Queued postings are counted but not listed: the public view shows what was done, not targets.
   const queued = apps.filter((t) => t.status === "not started").length;
-  const recent: PublicApplication[] = apps.filter((t) => t.status !== "not started").map((t) => {
+  const skipped = apps.filter((t) => t.status === "rejected / paused" && !t.appliedOn && !t.appliedBy).length;
+  // "rejected / paused" with no Applied By / Applied On means a job someone skipped, not one that was sent.
+  const sent = (t: Task) => t.status !== "not started" && (t.status !== "rejected / paused" || !!t.appliedOn || !!t.appliedBy);
+  const recent: PublicApplication[] = apps.filter(sent).map((t) => {
     const { company, role } = splitName(t.name);
     return {
       company,
       role,
-      platform: t.platform,
+      platform: taskPlatform(t),
       status: t.status,
       appliedBy: t.appliedBy,
       appliedOn: t.appliedOn,
@@ -44,7 +48,7 @@ export function toPublicSummary(tasks: Task[], env: Env, demo = false): PublicSu
   byStatus["not started"] = queued;
   for (const a of recent) {
     bump(byStatus, a.status);
-    bump(byPlatform, a.platform, "Other");
+    bump(byPlatform, a.platform, "Company site");
     bump(byAgent, a.appliedBy, "Unknown");
     if (a.appliedOn) bump((byDayMap[a.appliedOn] ??= {}), a.appliedBy, "Unknown");
   }
@@ -54,7 +58,7 @@ export function toPublicSummary(tasks: Task[], env: Env, demo = false): PublicSu
   return {
     generatedAt: new Date().toISOString(),
     demo,
-    totals: { applications: apps.length - queued, platforms: platforms.length, queued },
+    totals: { applications: apps.length - queued - skipped, platforms: platforms.length, queued },
     byStatus,
     byPlatform,
     byAgent,

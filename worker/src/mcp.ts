@@ -84,7 +84,7 @@ const TOOLS = [
       properties: {
         id: str,
         outcome: { type: "string", enum: [...OUTCOMES] },
-        platform: { type: "string", description: "Where you applied: Greenhouse, Ashby, Lever, Company site, LinkedIn, Wellfound, Upwork, Other. Defaults to the job's ATS." },
+        platform: { type: "string", description: "The site/ATS where the form was actually submitted, e.g. Greenhouse, Ashby, Lever, Workable, Rippling, Workday, SmartRecruiters, Breezy, JazzHR, Work at a Startup, Email to employer, or \"Company site\" for the company's own custom form. Never \"Other\". Defaults to the job's ATS or apply link." },
         note: { type: "string", description: "Anything notable: skipped questions, verification code pending, blocker details." },
       },
       required: ["id", "outcome"],
