@@ -19,7 +19,7 @@
     "clientId": "<Google OAuth client id (Web)>",
     "clientSecret": "<Google OAuth client secret>",
     "refreshToken": "<refresh token with gmail.readonly scope; see gmail-code.mjs header>",
-    "query": "from:greenhouse.io newer_than:10m"
+    "query": "{from:greenhouse.io from:greenhouse-mail.io} newer_than:10m"
   },
   "agents": {
     "claude":  { "cmd": ["claude", "-p", "{PROMPT}", "--model", "claude-sonnet-5-5", "--max-turns", "150", "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"], "format": "claude-stream", "auth": ["~/.claude/.credentials.json"] },

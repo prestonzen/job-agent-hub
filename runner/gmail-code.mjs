@@ -13,7 +13,9 @@ import { readFileSync } from "node:fs";
 
 const HELP = `gmail-code.mjs — read a verification/2FA code out of Gmail
 
-  --query <q>          Gmail search query (default: from:greenhouse.io newer_than:10m)
+  --query <q>          Gmail search query (default: {from:greenhouse.io from:greenhouse-mail.io}
+                       newer_than:10m — Greenhouse security codes come from
+                       no-reply@us.greenhouse-mail.io)
   --wait <sec>         keep polling until a code arrives (default 90)
   --every <sec>        poll interval (default 5)
   --pattern <regex>    code matcher; first capture group is the code (default: 6-10 char
@@ -91,27 +93,28 @@ async function gmailModify(messageId, body, cfg) {
   if (!res.ok) throw new Error(`gmail modify ${messageId}: ${res.status}`);
 }
 
-// Score candidates: must look like a code (has a digit or is all-caps), prefer "code-ish"
-// context (near "code", "security", "expire"…), then return the best one. Covers both 6-digit
-// OTPs and Greenhouse's 8-character alphanumeric security codes.
+// Score candidates and return the best one. Codes are 6-10 char alphanumeric tokens that look
+// non-prose: contain a digit, are ALL-CAPS, or are mixed-case (real Greenhouse security codes are
+// mixed-case 8-char, e.g. "sQfL6JbK" — never change case, they may be case-sensitive). HTML tags
+// (with their style attributes) are stripped first so color hexes like F9FAF9 don't compete.
 const DEFAULT_PATTERN = "\\b([A-Za-z0-9]{6,10})\\b";
 function extractCode(text, patternSrc) {
-  const re = new RegExp(patternSrc, "gi");
+  const clean = text.replace(/<[^>]*>/g, " ").replace(/&[a-z]+;/gi, " ");
+  const re = new RegExp(patternSrc, "g");
   const seen = new Set();
   let best = null;
-  for (const m of text.matchAll(re)) {
-    const raw = m[1] ?? m[0];
-    const code = raw.toUpperCase();
+  for (const m of clean.matchAll(re)) {
+    const code = m[1] ?? m[0];
     if (seen.has(code)) continue;
     seen.add(code);
-    // Plausible codes only: contains a digit or is all-caps (drops ordinary words like "please").
-    if (!/\d/.test(code) && raw !== code) continue;
-    const around = text.slice(Math.max(0, m.index - 60), m.index + 60).toLowerCase();
+    const plausible = /\d/.test(code) || /^[A-Z0-9]+$/.test(code) || (/[a-z]/.test(code) && /[A-Z]/.test(code));
+    if (!plausible) continue;
+    const around = clean.slice(Math.max(0, m.index - 60), m.index + 60).toLowerCase();
     const score =
       (/code|verif|otp|confirm|pin|token|pass|security/.test(around) ? 10 : 0) +
-      (/expire|valid|minutes/.test(around) ? 2 : 0) +
+      (/expire|valid|minutes|resubmit/.test(around) ? 2 : 0) +
       (/^\d{6}$/.test(code) ? 1 : 0) +
-      (code.length === 8 && /\d/.test(code) ? 1 : 0);
+      (code.length === 8 ? 1 : 0);
     if (!best || score > best.score) best = { code, score };
   }
   return best;
@@ -142,7 +145,7 @@ async function findCode(cfg, args) {
 
 const args = parseArgs(process.argv);
 const cfg = loadConfig(args.config);
-const query = args.query ?? cfg.gmail?.query ?? "from:greenhouse.io newer_than:10m";
+const query = args.query ?? cfg.gmail?.query ?? "{from:greenhouse.io from:greenhouse-mail.io} newer_than:10m";
 
 const started = Date.now();
 const deadline = started + args.wait * 1000;
