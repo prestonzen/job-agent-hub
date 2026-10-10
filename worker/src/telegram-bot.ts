@@ -34,6 +34,7 @@ const HELP = [
   "/runs: recent runs · /stop &lt;id|all&gt;",
   "/pause · /resume: all schedules",
   "/digest: summary now · /refresh: reload ClickUp list + playbook now",
+  "/login codex|kimi: sign an agent in on the runner (link posts here)",
   "/code &lt;code&gt;: answer a code request (or just reply to the 🔐 message)",
 ].join("\n");
 
@@ -124,6 +125,18 @@ export async function handleTelegramUpdate(env: Env, update: { message?: TgMessa
       const runners = await listRunners(env);
       const readyOn = runners.filter((r) => r.online && r.agents.some((a) => a.id === agent && a.ready));
       await reply(env, msg, `🏃 Queued ${ids.map((i) => `#${i}`).join(", ")}: ${esc(agent)} works ${count} job${count > 1 ? "s" : ""}${copies > 1 ? ` ×${copies}` : ""}.${readyOn.length ? "" : `\n⚠️ ${esc(agent)} isn't ready on any runner yet (not logged in?), so it will wait.`}`);
+      return;
+    }
+
+    case "/login": {
+      const agent = (args[0] ?? "").toLowerCase();
+      if (!["codex", "kimi"].includes(agent)) return void (await reply(env, msg, "Usage: <code>/login codex</code> or <code>/login kimi</code>. Claude, Gemini and Vibe need a terminal or an API key."));
+      const runs = await listRuns(env, 30);
+      if (runs.some((r) => r.kind === "login" && r.agent === agent && (r.status === "queued" || r.status === "running"))) {
+        return void (await reply(env, msg, `A ${esc(agent)} login is already in progress: use its link above.`));
+      }
+      const run = await createRun(env, { agent, kind: "login" });
+      await reply(env, msg, `🔑 Starting ${esc(agent)} login (run #${run.id}). The link and code will appear here in a few seconds.`);
       return;
     }
 

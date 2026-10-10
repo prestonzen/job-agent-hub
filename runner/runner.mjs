@@ -119,7 +119,8 @@ const FORMATTERS = { "claude-stream": formatClaudeEvent };
 async function startRun(run) {
   const a = cfg.agents[run.agent];
   const prompt = cfg.machineNotes ? `${run.fullPrompt}\n\nNOTES FOR THIS MACHINE:\n${cfg.machineNotes}` : run.fullPrompt;
-  const [bin, ...rest] = a.cmd;
+  const LOGIN = { codex: ["codex", "login", "--device-auth"], kimi: ["kimi", "login"] };
+  const [bin, ...rest] = run.kind === "login" ? (a.loginCmd ?? LOGIN[run.agent] ?? ["false"]) : a.cmd;
   const args = rest.map((x) => (x === "{PROMPT}" ? prompt : x));
   const cwd = join(WORK, String(run.id));
   mkdirSync(cwd, { recursive: true });
@@ -180,6 +181,7 @@ async function startRun(run) {
     }
     active.delete(run.id);
     saveState();
+    if (run.kind === "login") { agents = probe(); void heartbeat(); } // show the new login right away
     log(`run #${run.id} done (${code ?? signal})`);
   });
 }
@@ -204,9 +206,10 @@ async function flush(id) {
 async function claimLoop() {
   if (active.size >= SLOTS) return;
   const ready = agents.filter((a) => a.ready).map((a) => a.id);
-  if (!ready.length) return;
+  const installed = agents.filter((a) => a.installed).map((a) => a.id);
+  if (!installed.length) return;
   try {
-    const { run } = await hub("/api/runner/claim", { agents: ready });
+    const { run } = await hub("/api/runner/claim", { agents: ready, installed });
     if (run) {
       active.set(run.id, { child: null, buf: "", cancelled: false, timedOut: false, kill: () => {} }); // reserve the slot
       await startRun(run);

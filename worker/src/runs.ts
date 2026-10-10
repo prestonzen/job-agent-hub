@@ -50,7 +50,8 @@ async function db(env: Env): Promise<D1Database> {
 
 /** Keep the tail of the log; runs can be chatty. */
 const LOG_CAP = 200_000;
-export const RUN_KINDS = ["queue", "prompt"] as const;
+/** "login" starts an agent CLI's device-code login on the runner; the link is posted to Telegram. */
+export const RUN_KINDS = ["queue", "prompt", "login"] as const;
 export type RunKind = (typeof RUN_KINDS)[number];
 
 export interface RunRow {
@@ -116,6 +117,7 @@ const COLS = "id, agent, kind, prompt, count, status, runner, created_at, starte
 export async function createRun(env: Env, r: { agent: string; kind: RunKind; prompt?: string; count?: number; notBefore?: number }): Promise<RunRow> {
   if (!RUN_KINDS.includes(r.kind)) throw new HttpError(400, `kind must be one of ${RUN_KINDS.join(", ")}`);
   if (r.kind === "prompt" && !r.prompt?.trim()) throw new HttpError(400, "prompt is required for a custom run");
+  if (r.kind === "login" && !["codex", "kimi"].includes(r.agent.toLowerCase())) throw new HttpError(400, "phone login works for codex and kimi (device-code flow)");
   const count = r.kind === "queue" ? Math.min(10, Math.max(1, Math.floor(r.count ?? 4))) : null;
   const row = await (await db(env))
     .prepare(`INSERT INTO runs (agent, kind, prompt, count, created_at, not_before) VALUES (?, ?, ?, ?, ?, ?) RETURNING ${COLS}`)
@@ -214,22 +216,27 @@ export async function runnerHeartbeat(
 }
 
 /** Atomically hand the oldest queued run for one of `agents` to this runner, with its full prompt. */
-export async function claimRun(env: Env, runner: string, agents: string[], origin: string): Promise<(RunRow & { fullPrompt: string }) | null> {
+export async function claimRun(env: Env, runner: string, agents: string[], origin: string, installed: string[] = []): Promise<(RunRow & { fullPrompt: string }) | null> {
   const list = agents.map((a) => a.toLowerCase()).filter(Boolean);
-  if (!list.length) return null;
+  const inst = installed.map((a) => a.toLowerCase()).filter(Boolean);
+  if (!list.length && !inst.length) return null;
   const r = await (await db(env))
     .prepare(
       `UPDATE runs SET status = 'running', runner = ?1, started_at = ?2
-       WHERE id = (SELECT id FROM runs WHERE status = 'queued' AND agent IN (SELECT value FROM json_each(?3))
-                   AND (not_before IS NULL OR not_before <= ?2) ORDER BY id LIMIT 1)
+       WHERE id = (SELECT id FROM runs WHERE status = 'queued' AND (not_before IS NULL OR not_before <= ?2)
+                   AND ((kind != 'login' AND agent IN (SELECT value FROM json_each(?3)))
+                     OR (kind = 'login' AND agent IN (SELECT value FROM json_each(?4))))
+                   ORDER BY id LIMIT 1)
        RETURNING ${COLS}`,
     )
-    .bind(runner.slice(0, 60), Date.now(), JSON.stringify(list))
+    .bind(runner.slice(0, 60), Date.now(), JSON.stringify(list), JSON.stringify(inst))
     .first<DbRun>();
   if (!r) return null;
   const row = toRow(r);
   const fullPrompt =
-    row.kind === "queue"
+    row.kind === "login"
+      ? ""
+      : row.kind === "queue"
       ? `${agentInstructions(row.agent, origin, "mcp")}\n\nTHIS RUN: work up to ${row.count} jobs from the queue (claim them with claim_jobs), report each one, then stop and print a one-line summary per job.`
       : row.prompt!;
   return { ...row, fullPrompt };
@@ -237,10 +244,14 @@ export async function claimRun(env: Env, runner: string, agents: string[], origi
 
 export async function appendLog(env: Env, id: number, runner: string, chunk: string): Promise<{ cancel: boolean }> {
   const r = await (await db(env))
-    .prepare(`UPDATE runs SET log = substr(log || ?1, -${LOG_CAP}) WHERE id = ?2 AND runner = ?3 RETURNING cancel, status`)
+    .prepare(`UPDATE runs SET log = substr(log || ?1, -${LOG_CAP}) WHERE id = ?2 AND runner = ?3 RETURNING cancel, status, kind, agent`)
     .bind(chunk.slice(-LOG_CAP), id, runner)
-    .first<{ cancel: number; status: string }>();
+    .first<{ cancel: number; status: string; kind: string; agent: string }>();
   if (!r) throw new HttpError(404, `run ${id} is not held by ${runner}`);
+  if (r.kind === "login" && /https?:\/\//.test(chunk)) {
+    const lines = chunk.split("\n").map((l) => l.trim()).filter((l) => /https?:\/\/|\b[A-Z0-9]{4}-[A-Z0-9]{4,}\b|code|expires/i.test(l));
+    await notify(env, `🔑 <b>${esc(r.agent)} login</b> on ${esc(runner)}: open the link and approve.\n${lines.map((l) => esc(l)).join("\n")}\n\n<i>Don't use /login again until this one finishes; that would cancel this code.</i>`);
+  }
   return { cancel: !!r.cancel || r.status !== "running" };
 }
 

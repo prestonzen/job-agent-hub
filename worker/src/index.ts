@@ -170,9 +170,9 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     const rf = sub.match(/^\/resumes\/(\d+)\/file$/);
     if (rf && method === "GET") return resumeFile(env, Number(rf[1]));
     if (sub === "/claim" && method === "POST") {
-      const b = await readJson<{ name?: string; agents?: string[] }>(request);
+      const b = await readJson<{ name?: string; agents?: string[]; installed?: string[] }>(request);
       if (!b.name) return json({ error: "name is required" }, 400);
-      return json({ run: await claimRun(env, b.name, Array.isArray(b.agents) ? b.agents : [], url.origin) });
+      return json({ run: await claimRun(env, b.name, Array.isArray(b.agents) ? b.agents : [], url.origin, Array.isArray(b.installed) ? b.installed : []) });
     }
     const m = sub.match(/^\/runs\/(\d+)\/(log|finish)$/);
     if (m && method === "POST") {
