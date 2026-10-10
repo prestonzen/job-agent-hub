@@ -14,7 +14,8 @@ Live at **https://jobhunter.prestonzen.com**.
 - **Schedules**: recurring runs such as "weekdays 08:00: Gemini works 4 jobs, Claude sources new roles", plus a daily Telegram digest.
 - **Resume bank**: tailored resume variants (R2) tagged with role keywords; agents call `get_resume` with the job title and upload the best match.
 - **Reply tracking**: a Gmail Apps Script forwards recruiter mail; the hub classifies it (Workers AI), matches the application and moves its status (rejected / screening / accepted).
-- **Telegram alerts** in the Kaizen Apps Operations group: jobs that need you, finished runs, interview invites and offers, daily digest.
+- **Telegram control room**: the hub posts to its own "🤖 Job Agent Hub" topic in the Kaizen Apps Operations group (jobs that need you, finished runs, interview invites and offers, daily digest) and takes commands there: `/status`, `/needs`, `/run claude 3`, `/runs`, `/stop`, `/pause`, `/resume`, `/digest`. Only the group's owner/admins are obeyed.
+- **Emailed codes over Telegram**: when a form asks for an emailed verification code (Greenhouse), the agent keeps the form open and asks on Telegram; you read the code in your inbox and reply to the 🔐 message, and the agent types it and submits. Sending the code is your approval for that application; nothing reads the inbox for codes.
 - **Public dashboard** (`/`): a sanitized live view: funnel, who applied, applications per day, platforms. No contact details, notes, links, answers or queued targets.
 
 ```
@@ -114,6 +115,7 @@ Secrets take effect on the next deployment (push to `main`, or `git commit --all
 | `RUNNER_TOKEN` | Shared secret for runner machines (`runner/`). |
 | `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather. The bot must be in the chat set by `TELEGRAM_CHAT_ID` (a var), and admin with "Manage topics" so it can create its own topic. |
 | `INBOUND_TOKEN` | Shared secret for the Gmail reply tracker (`integrations/gmail-reply-tracker.gs`). |
+| `TELEGRAM_HUB_SECRET` | Telegram webhook `secret_token` for `/api/telegram/webhook`. After setting it, `POST /api/admin/telegram/set-webhook` registers the webhook and the topic's command menu. |
 | `ZADARMA_KEY`, `ZADARMA_SECRET` | Optional, experimental phone stats |
 
 **Bindings**: D1 `job-agent-hub` (`DB`), R2 `job-agent-hub-resumes` (`RESUMES`), Workers AI (`AI`).
