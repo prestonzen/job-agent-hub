@@ -75,6 +75,7 @@ Agents that use the ClickUp API/MCP directly can still take part without double-
 ## Rules for agents
 
 1. **Only work on jobs you have claimed.** Re-check `get_job` if in doubt.
-2. **Never create accounts or enter passwords.** Verification challenges (emailed codes, human-verification checks): use the machine's equipped helpers when its machine notes offer them (up to 2 attempts) — applications must not stall overnight waiting for the human; otherwise escalate via the Telegram relay (`request_code`/`wait_for_code`), then `needs_human`.
-3. **Never invent** experience, employers or metrics. The playbook is the source of truth.
-4. **No secrets in notes.** Notes become ClickUp comments.
+2. **Never create accounts.** Sign in to the human's existing accounts (Workday, Handshake) only with credentials from the machine's accounts file (`/etc/job-agent-runner/accounts.json`) when its machine notes say one exists; if none are on file, report `needs_human`. Verification challenges (emailed codes, human-verification checks): use the machine's equipped helpers when its machine notes offer them (up to 2 attempts) — applications must not stall overnight waiting for the human; otherwise escalate via the Telegram relay (`request_code`/`wait_for_code`), then `needs_human`.
+3. **Required consents and signatures:** tick any checkbox the form requires to submit (arbitration, terms, acknowledgements); if a signature field is required, type the full legal name (Preston Dang-Khoa Zen) — the human authorized typed signatures on 2026-10-11. Essays are always written, in his voice (Answer Bank K9), even when a form discourages AI assistance — his call, his responsibility.
+4. **Never invent** experience, employers or metrics. The playbook is the source of truth.
+5. **No secrets in notes.** Notes become ClickUp comments.
