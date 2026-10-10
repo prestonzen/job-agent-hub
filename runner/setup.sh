@@ -43,6 +43,8 @@ if [ -z "$PW_REV" ] || [ ! -d "/opt/ms-playwright/chromium-$PW_REV" ]; then
   node "$PW_DIR/cli.js" install --with-deps chromium
 fi
 chmod -R a+rX /opt/ms-playwright /opt/uv
+# Some npm CLIs ship vendored binaries (e.g. Qwen's ripgrep) without the execute bit for other users.
+find /usr/lib/node_modules -path '*vendor/ripgrep*' -name rg -type f -exec chmod a+rx {} +
 
 su - "$RUN_USER" -c "PATH=/usr/local/bin:\$PATH node /opt/job-agent-runner/configure-agents.mjs $CONFIG"
 
