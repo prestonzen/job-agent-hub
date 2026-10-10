@@ -78,7 +78,7 @@ function Public() {
 
       <div className="grid two">
         <DailyChart days={data.byDay} />
-        <AgentBoard byAgent={data.byAgent} online={data.live?.agentsOnline ?? []} />
+        <AgentBoard byAgent={data.byAgent} working={data.live?.agentsOnline ?? []} ready={data.live?.agentsReady ?? []} />
         <PlatformBars byPlatform={data.byPlatform} />
       </div>
 
@@ -103,14 +103,22 @@ function ago(iso: string): string {
 
 function LivePill({ live, generatedAt }: { live: PublicSummary["live"]; generatedAt: string }) {
   const online = live?.agentsOnline ?? [];
+  const ready = live?.agentsReady ?? [];
   const working = online.length > 0;
+  const standby = ready.filter((a) => !online.map((x) => x.toLowerCase()).includes(a.toLowerCase())).length;
   return (
-    <p className={`live-pill${working ? " on" : ""}`}>
+    <p className={`live-pill${working || ready.length ? " on" : ""}`}>
       <i className="pulse" aria-hidden="true" />
       {working ? (
         <>
           <b>{online.length}</b> agent{online.length === 1 ? "" : "s"} working now
+          {standby > 0 && <> · {standby} ready</>}
           {live.inProgress > 0 && <> · {live.inProgress} applications in progress</>}
+        </>
+      ) : ready.length ? (
+        <>
+          <b>{ready.length}</b> agent{ready.length === 1 ? "" : "s"} online and ready
+          {live?.lastActivityAt && <> · last application run {ago(live.lastActivityAt)}</>}
         </>
       ) : live?.lastActivityAt ? (
         <>Last agent activity {ago(live.lastActivityAt)}</>

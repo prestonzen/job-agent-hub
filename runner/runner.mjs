@@ -188,7 +188,12 @@ async function startRun(run) {
 
 async function flush(id) {
   const s = active.get(id);
-  if (!s || !s.buf) return;
+  if (!s) return;
+  if (!s.buf) {
+    // Silent agent: still ask the hub every 10 s whether the run was cancelled.
+    if (Date.now() - (s.lastPoll ?? 0) < 10_000) return;
+    s.lastPoll = Date.now();
+  }
   const chunk = s.buf;
   s.buf = "";
   try {

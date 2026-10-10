@@ -265,3 +265,8 @@ button.danger { color: #e5484d; border-color: color-mix(in srgb, #e5484d 40%, va
 .probe input { background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; font: inherit; min-width: 260px; }
 .launcher input[type="file"], .launcher input:not([type]) { background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; font-weight: 400; }
 .launcher label.check { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+
+.live-tag.idle { color: var(--muted); }
+.live-tag.idle .pulse { background: #22c55e; }
+.live-tag.idle .pulse::after { display: none; }
+.pill.live.idle { background: transparent; border: 1px solid color-mix(in srgb, #22c55e 45%, var(--line)); color: #16a34a; }

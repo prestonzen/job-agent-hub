@@ -61,7 +61,7 @@ export function toPublicSummary(tasks: Task[], env: Env, demo = false): PublicSu
     byDay: Object.entries(byDayMap)
       .map(([date, byAgent]) => ({ date, count: Object.values(byAgent).reduce((s, n) => s + n, 0), byAgent }))
       .sort((a, b) => a.date.localeCompare(b.date)),
-    live: { agentsOnline: [], inProgress: 0, lastActivityAt: null },
+    live: { agentsOnline: [], agentsReady: [], inProgress: 0, lastActivityAt: null },
     recent: recent.slice(0, 60),
     platforms: platforms.map((p) => ({ name: p.name, status: p.status })),
   };

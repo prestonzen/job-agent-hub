@@ -11,7 +11,8 @@ import { dirname, join } from "node:path";
 const cfg = JSON.parse(readFileSync(process.argv[2] ?? "/etc/job-agent-runner/config.json", "utf8"));
 const MCP_URL = `${cfg.hub}/mcp`;
 const tokens = cfg.agentTokens ?? {};
-const BROWSER = { command: "playwright-mcp", args: ["--isolated", "--browser", "chromium", "--output-dir", ".playwright"] };
+// --image-responses omit: the accessibility snapshot is enough for forms, and screenshots cost many tokens per step.
+const BROWSER = { command: "playwright-mcp", args: ["--isolated", "--browser", "chromium", "--image-responses", "omit", "--output-dir", ".playwright"] };
 const H = homedir();
 
 const write = (p, s) => {
@@ -67,6 +68,10 @@ for (const [agent, dir] of [["gemini", ".gemini"], ["qwen", ".qwen"]]) {
     jobhunter: { httpUrl: MCP_URL, headers: { Authorization: bearer(agent) }, timeout: 30000 },
     playwright: { command: BROWSER.command, args: BROWSER.args },
   };
+  // With GEMINI_API_KEY in ~/.gemini/.env (Gemini only), run headless on the API key instead of Google login.
+  if (agent === "gemini" && existsSync(join(H, ".gemini", ".env")) && /GEMINI_API_KEY=\S+/.test(readFileSync(join(H, ".gemini", ".env"), "utf8"))) {
+    s.security = { ...(s.security ?? {}), auth: { ...(s.security?.auth ?? {}), selectedType: "gemini-api-key" } };
+  }
   write(p, JSON.stringify(s, null, 2) + "\n");
   // Gemini-family CLIs disable MCP servers in untrusted folders; each run gets a fresh dir under workDir.
   const tf = join(H, dir, "trustedFolders.json");

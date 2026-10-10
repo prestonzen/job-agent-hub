@@ -284,7 +284,9 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
           applied[k] = (applied[k] ?? 0) + 1;
         }
       }
+      const runnerList = await listRunners(env).catch(() => []);
       return json({
+        ready: [...new Set(runnerList.filter((r) => r.online).flatMap((r) => r.agents.filter((a) => a.ready).map((a) => a.id)))],
         demo: env.MOCK === "true",
         agents: agentNames(env),
         queue: q,
@@ -446,15 +448,18 @@ const ONLINE_MS = 15 * 60_000;
 
 /** Compute the public summary from ClickUp + hub activity, and save it as the latest snapshot. */
 async function buildPublicSummary(env: Env): Promise<string> {
-  const [tasks, beats, claims, last] = await Promise.all([
+  const [tasks, beats, claims, last, runners] = await Promise.all([
     loadTasks(env),
     listHeartbeats(env).catch(() => []),
     activeClaims(env).catch(() => new Map()),
     lastEventAt(env).catch(() => null),
+    listRunners(env).catch(() => []),
   ]);
   const summary = toPublicSummary(tasks, env, env.MOCK === "true");
   summary.live = {
     agentsOnline: beats.filter((b) => Date.now() - Date.parse(b.lastSeen) < ONLINE_MS).map((b) => b.agent),
+    // Logged in and on a live runner: available for the next run even if idle right now.
+    agentsReady: [...new Set(runners.filter((r) => r.online).flatMap((r) => r.agents.filter((a) => a.ready).map((a) => a.id)))],
     inProgress: claims.size,
     lastActivityAt: last,
   };

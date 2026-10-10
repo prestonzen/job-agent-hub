@@ -235,11 +235,12 @@ function DayTooltip({ day, agents, x, y, width }: { day: Day; agents: string[]; 
 
 // ---------- Agent leaderboard ----------
 
-export function AgentBoard({ byAgent, online }: { byAgent: Record<string, number>; online: string[] }) {
+export function AgentBoard({ byAgent, working, ready }: { byAgent: Record<string, number>; working: string[]; ready: string[] }) {
   const entries = Object.entries(byAgent).sort((a, b) => b[1] - a[1]);
   const total = entries.reduce((s, [, n]) => s + n, 0) || 1;
   const max = Math.max(1, ...entries.map(([, n]) => n));
-  const isOnline = (a: string) => online.map(agentKey).includes(agentKey(a));
+  const isWorking = (a: string) => working.map(agentKey).includes(agentKey(a));
+  const isReady = (a: string) => ready.map(agentKey).includes(agentKey(a));
   return (
     <Card title="The agents">
       <ol className="board">
@@ -249,12 +250,17 @@ export function AgentBoard({ byAgent, online }: { byAgent: Record<string, number
             <span className="who">
               <Key name={name} />
               {agentLabel(name)}
-              {isOnline(name) && (
+              {isWorking(name) ? (
                 <span className="live-tag">
                   <i className="pulse" aria-hidden="true" />
                   working
                 </span>
-              )}
+              ) : isReady(name) ? (
+                <span className="live-tag idle">
+                  <i className="pulse" aria-hidden="true" />
+                  ready
+                </span>
+              ) : null}
             </span>
             <span className="meter" title={`${n} applications (${Math.round((n / total) * 100)}%)`}>
               <span style={{ width: `${(n / max) * 100}%`, background: agentColor(name) }} />

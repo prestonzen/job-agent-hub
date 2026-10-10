@@ -114,7 +114,7 @@ export interface PublicSummary {
   byAgent: Record<string, number>;
   byDay: { date: string; count: number; byAgent: Record<string, number> }[];
   /** Agent activity from the hub (names of agents seen in the last 15 min, jobs claimed right now). */
-  live: { agentsOnline: string[]; inProgress: number; lastActivityAt: string | null };
+  live: { agentsOnline: string[]; agentsReady: string[]; inProgress: number; lastActivityAt: string | null };
   recent: PublicApplication[];
   platforms: { name: string; status: string }[];
 }

@@ -17,7 +17,7 @@ export interface PublicSummary {
   byPlatform: Record<string, number>;
   byAgent: Record<string, number>;
   byDay: { date: string; count: number; byAgent: Record<string, number> }[];
-  live: { agentsOnline: string[]; inProgress: number; lastActivityAt: string | null };
+  live: { agentsOnline: string[]; agentsReady: string[]; inProgress: number; lastActivityAt: string | null };
   recent: PublicApplication[];
   platforms: { name: string; status: string }[];
 }
@@ -71,6 +71,8 @@ export interface AgentEvent {
 }
 
 export interface HubState {
+  /** Agents logged in on an online runner (available even when idle). */
+  ready: string[];
   demo: boolean;
   agents: string[];
   queue: Job[];
