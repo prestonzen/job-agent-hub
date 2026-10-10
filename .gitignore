@@ -18,3 +18,4 @@ vite.preview-prod.config.ts
 .telegram-hub-secret.local.txt
 desktop.ini
 .demo-seed.sql
+.mailer-token.local.txt

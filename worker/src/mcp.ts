@@ -1,3 +1,4 @@
+import { sendApplicationEmail } from "./emailer";
 import { HttpError } from "./clickup";
 import { agentInstructions } from "./instructions";
 import { OUTCOMES, addJob, claimJobs, getJob, logApplication, playbook, queue, isAvailable, releaseJob, renewLease, reportResult, type Outcome } from "./jobs";
@@ -56,6 +57,21 @@ const TOOLS = [
     description:
       "Give a claimed job to another agent (default Kimi) when you truly can't finish it: an essay or question with no verified facts to build an answer from, or something outside your tools. Do this instead of skipping. The assignee gets it ahead of the queue for 6 hours. If you are Kimi, report needs_human instead.",
     inputSchema: { type: "object", properties: { id: str, reason: { type: "string", description: "What you couldn't do, specifically (the question text, the blocker)" }, to: { type: "string", description: "Agent to hand it to; default kimi" }, log: { type: "string", description: "Your action log so far: URL reached, fields filled, answers given (essays in full), where you stopped. The assignee reads it first." } }, required: ["id", "reason"] },
+  },
+  {
+    name: "send_application_email",
+    description:
+      "One-shot email application for a job that has `applyEmail`: write a short cover note in Preston's voice (3-5 sentences, specific to the role, from the Answer Bank); the hub attaches the best resume from the bank, emails the employer address on the job, and marks the job applied. Nothing else to do for that job. Fails if you don't hold the job or the job has no applyEmail.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: str,
+        body: { type: "string", description: "The cover note (the hub adds the signature). 3-5 sentences, no placeholders." },
+        subject: { type: "string", description: "Optional; default 'Application: <role> — Preston Zen'" },
+        resume_id: { type: "number", description: "Optional resume bank id; default is the best match for the role" },
+      },
+      required: ["id", "body"],
+    },
   },
   {
     name: "request_code",
@@ -161,6 +177,8 @@ async function callTool(env: Env, agent: string, name: string, args: Args, origi
     }
     case "handoff_job":
       return await handoffJob(env, agent, String(args.id), String(args.reason ?? ""), s(args.to) ?? undefined, false, s(args.log));
+    case "send_application_email":
+      return await sendApplicationEmail(env, agent, String(args.id), { body: s(args.body), subject: s(args.subject), resumeId: Number(args.resume_id) || null });
     case "request_code": {
       const job = await jobById(env, String(args.job_id)).catch(() => null);
       const r = await requestCode(env, { agent, jobId: job?.id ?? String(args.job_id), jobName: job?.name ?? null, kind: s(args.kind), hint: s(args.hint) });

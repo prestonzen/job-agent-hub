@@ -1,0 +1,9 @@
+{
+  // Tiny Worker that owns the Cloudflare Email Sending binding. Pages projects can't hold a send_email binding,
+  // so the hub (Pages Functions) calls this over HTTPS with a shared secret.
+  // Deploy: npx wrangler deploy -c mailer/wrangler.jsonc   Secret: npx wrangler secret put MAILER_TOKEN -c mailer/wrangler.jsonc
+  "name": "job-agent-hub-mailer",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "send_email": [{ "name": "EMAIL" }]
+}

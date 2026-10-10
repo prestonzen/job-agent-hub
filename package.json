@@ -8,7 +8,7 @@
     "dev": "vite",
     "dev:api": "wrangler pages dev dist --port 8788 --binding MOCK=true",
     "build": "tsc -b && vite build",
-    "typecheck": "tsc -b && tsc -p worker/tsconfig.json --noEmit",
+    "typecheck": "tsc -b && tsc -p worker/tsconfig.json --noEmit && tsc -p mailer/tsconfig.json",
     "preview": "vite preview",
     "db:migrate": "wrangler d1 migrations apply job-agent-hub --remote",
     "deploy": "npm run build && wrangler pages deploy dist --project-name job-agent-hub",

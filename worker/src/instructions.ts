@@ -17,6 +17,7 @@ export function agentInstructions(agent: string, origin: string, mode: "mcp" | "
           resume: "`get_resume` with the job title",
           code: "`request_code` (with the job id), then `wait_for_code` repeatedly",
           handoff: "`handoff_job` (id, reason)",
+          email: "`send_application_email` (id, body)",
           add: "`add_job`",
           log: "`log_application`",
         }
@@ -30,6 +31,7 @@ export function agentInstructions(agent: string, origin: string, mode: "mcp" | "
           resume: "`GET /api/agent/resume?role=<job title>`",
           code: '`POST /api/agent/codes` with `{"jobId":"…","kind":"Greenhouse security code"}`, then `GET /api/agent/codes/<id>/wait` repeatedly',
           handoff: '`POST /api/agent/jobs/<id>/handoff` with `{"reason":"…"}`',
+          email: '`POST /api/agent/jobs/<id>/email` with `{"body":"…"}`',
           add: "`POST /api/agent/jobs` with `{company, role, url, ats, pay, travel, fit, notes}`",
           log: "`POST /api/agent/applications` with `{company, role, url, platform, notes}`",
         };
@@ -55,7 +57,7 @@ LOOP (repeat until the queue is empty or you are told to stop):
    ACTION LOG: while you work, keep a short running log: the URL you reached, each field or question with the answer you gave (essays in full), files uploaded, and exactly where and why you stopped. Send it as \`log\` with ${t.report} when the outcome is failed or needs_human, and with ${t.handoff} when you hand a job over, so the next agent doesn't start from zero.
    PREVIOUS ATTEMPTS: if a job you claimed has \`previousAttempts\`, another agent already tried it. Read their log first, reuse their answers, and carry on from where they stopped instead of repeating the work. Kimi is the fallback agent: handed-over and failed jobs reach Kimi first, while Codex, Claude, Mistral and Gemini take fresh jobs.
    REQUIRED CHECKBOXES (arbitration agreements, terms, acknowledgements): tick them when the form can't be submitted without them. If a signature field is required to submit, type the full legal name Preston Dang-Khoa Zen — Preston authorized typed signatures on 2026-10-11 and takes responsibility.
-   EMAIL APPLICATIONS: a job with \`applyEmail\` is applied to by emailing that address with the resume attached. Free-tier agents (Gemini) are limited to these one-shot jobs, so ${t.claim} only returns email jobs to them. If you have no way to send an email with an attachment, do not improvise: call ${t.release} and stop.
+   EMAIL APPLICATIONS: a job with \`applyEmail\` is applied to by emailing that address. Do it in one shot: call ${t.email} with a short cover note in Preston's voice (3-5 sentences, specific to the role, built from the Answer Bank and verified facts). The hub attaches the best resume, sends from apply@mail.prestonzen.com, and marks the job applied, so there is nothing more to do for it. Free-tier agents (Gemini) are limited to these jobs: ${t.claim} only returns email jobs to them. If the tool says email sending is off or the daily cap is reached, call ${t.release} and stop.
 5. If you stop early, call ${t.release} for every job you claimed but did not finish.
 
 HARD RULES: sign in to Preston's existing accounts (Workday, Handshake; Snorkel/Outlier/DataAnnotation exist but need sign-in discovery) only with credentials from your machine's accounts file when its machine notes say one exists — if there are no credentials for the platform, report needs_human. Creating accounts is allowed ONLY for platforms in the accounts file's create_if_missing list, using the credentials stored there (Preston, 2026-10-11); anywhere else, never create accounts; human-verification challenges are completed only with your machine's equipped helper when its notes offer one (up to 2 attempts) — otherwise report needs_human; never invent experience, employers or metrics; if ${t.get} shows a status other than "not started", someone already handled it, so stop and move on.

@@ -107,6 +107,15 @@ export async function deleteResume(env: Env, id: number): Promise<void> {
   await d.prepare("DELETE FROM resumes WHERE id = ?").bind(id).run();
 }
 
+/** The file itself, for attaching to an email. */
+export async function resumeBytes(env: Env, id: number): Promise<{ filename: string; contentType: string; bytes: ArrayBuffer }> {
+  const cur = await (await rdb(env)).prepare("SELECT * FROM resumes WHERE id = ?").bind(id).first<Row>();
+  if (!cur) throw new HttpError(404, `no resume ${id}`);
+  const obj = await bucket(env).get(cur.r2_key);
+  if (!obj) throw new HttpError(404, "file missing from storage");
+  return { filename: cur.filename, contentType: cur.content_type, bytes: await obj.arrayBuffer() };
+}
+
 export async function resumeFile(env: Env, id: number): Promise<Response> {
   const cur = await (await rdb(env)).prepare("SELECT * FROM resumes WHERE id = ?").bind(id).first<Row>();
   if (!cur) throw new HttpError(404, `no resume ${id}`);

@@ -34,6 +34,8 @@
     "PLAYBOOK_DOC_ID": "kkr4k-6751",
     "LEASE_MINUTES": "60",
     // Kaizen Apps Operations (forum supergroup); the hub creates its own topic there.
-    "TELEGRAM_CHAT_ID": "-1002407890552"
+    "TELEGRAM_CHAT_ID": "-1002407890552",
+    // The mailer Worker (mailer/): one-shot email applications through Cloudflare Email Sending.
+    "MAILER_URL": "https://job-agent-hub-mailer.kaizencloud.workers.dev"
   }
 }

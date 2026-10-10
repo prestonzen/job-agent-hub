@@ -1,4 +1,5 @@
 import { buildAnalytics } from "./analytics";
+import { sendApplicationEmail, sendTestEmail } from "./emailer";
 import { adminUser, agentName, agentNames, clearedCookie, isAdminToken, sessionCookie } from "./auth";
 import { HttpError, addComment, appendDocPage, getDocPage, getPlaybook, patchDocPage, replayWrite, setStatus } from "./clickup";
 import { flushOutbox, mirrorAge, mirrorTasks, outboxSize, usageToday } from "./mirror";
@@ -240,10 +241,14 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       return json({ ok: true, agent, ...(await logApplication(env, agent, newJob(await readJson(request)))) }, 201);
     }
 
-    const job = sub.match(/^\/jobs\/([^/]+)(?:\/(renew|report|release|handoff))?$/);
+    const job = sub.match(/^\/jobs\/([^/]+)(?:\/(renew|report|release|handoff|email))?$/);
     if (job) {
       const id = decodeURIComponent(job[1]);
       if (!job[2] && method === "GET") return json(await getJob(env, id));
+      if (job[2] === "email" && method === "POST") {
+        const b = await readJson<{ body?: string; subject?: string; resumeId?: number }>(request);
+        return json(await sendApplicationEmail(env, agent, id, { body: b.body, subject: b.subject, resumeId: b.resumeId }));
+      }
       if (job[2] === "renew" && method === "POST") return json(await renewLease(env, agent, id));
       if (job[2] === "report" && method === "POST") return json(await reportResult(env, agent, id, await readJson<Report>(request)));
       if (job[2] === "handoff" && method === "POST") {
@@ -281,6 +286,12 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
 
     if (path === "/api/admin/tasks" && method === "GET") {
       return json({ demo: env.MOCK === "true", tasks: await loadTasks(env) });
+    }
+
+    // Email sending check: sends a test message (resume attached) to Preston's own address.
+    if (path === "/api/admin/email/test" && method === "POST") {
+      const b = await readJson<{ to?: string }>(request).catch(() => ({}) as { to?: string });
+      return json(await sendTestEmail(env, b.to ?? "prestonzen@kaizenapps.com"));
     }
 
     // Analytics: per-agent success, time to apply, ATS yield, queue health (rolling window).

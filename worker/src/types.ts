@@ -7,6 +7,10 @@ export interface Env {
   RESUMES?: R2Bucket;
   /** Workers AI: classifies inbound recruiter email. */
   AI?: Ai;
+  /** The mailer Worker (mailer/): owns the Cloudflare Email Sending binding for mail.prestonzen.com. */
+  MAILER_URL?: string;
+  /** Pages secret shared with the mailer Worker. */
+  MAILER_TOKEN?: string;
 
   // --- non-secret vars (wrangler.jsonc) ---
   MOCK: string;
