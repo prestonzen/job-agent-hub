@@ -88,7 +88,19 @@ export async function isChatAdmin(env: Env, userId: number): Promise<boolean> {
   return ok;
 }
 
-/** Where the bot's updates go (the webhook belongs to Ava's worker). */
+/** Point the bot's webhook at the hub (only message updates) and register the topic's command menu. */
+export async function setHubWebhook(env: Env, url: string): Promise<unknown> {
+  const hook = await api(env, "setWebhook", { url, secret_token: env.TELEGRAM_HUB_SECRET, allowed_updates: ["message", "edited_message"], drop_pending_updates: false });
+  const commands = [
+    ["status", "Queue, runners and runs"], ["needs", "Jobs waiting on you"], ["run", "Queue a run: /run claude 3"], ["runs", "Recent runs"],
+    ["stop", "Stop a run: /stop 12 or /stop all"], ["pause", "Pause all schedules"], ["resume", "Resume all schedules"],
+    ["digest", "Summary now"], ["code", "Answer a code request"], ["help", "Hub commands"],
+  ].map(([command, description]) => ({ command, description }));
+  const menu = await api(env, "setMyCommands", { commands, scope: { type: "chat", chat_id: env.TELEGRAM_CHAT_ID } });
+  return { webhook: hook.ok ? "set" : hook.description, commands: menu.ok ? "set" : menu.description };
+}
+
+/** Where the bot's updates go. */
 export async function webhookInfo(env: Env): Promise<unknown> {
   const r = await api(env, "getWebhookInfo", {});
   const w = (r.result ?? {}) as { url?: string; pending_update_count?: number; last_error_message?: string; last_error_date?: number; allowed_updates?: string[] };

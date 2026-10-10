@@ -25,7 +25,7 @@ import { handleInbound, recentInbound, type InboundEmail } from "./inbound";
 import { DEFAULT_POLICY, getPolicy, pacingState, pacingSummary, type PacingPolicy } from "./pacing";
 import { deleteResume, listResumes, pickResume, resumeFile, updateResume, uploadResume } from "./resumes";
 import { createSchedule, deleteSchedule, listSchedules, tick, updateSchedule, type ScheduleKind } from "./schedules";
-import { notify, telegramConfigured, webhookInfo } from "./telegram";
+import { notify, setHubWebhook, telegramConfigured, webhookInfo } from "./telegram";
 import { handleTelegramUpdate } from "./telegram-bot";
 import { getCodeRequest, requestCode, waitForCode } from "./codes";
 import { toPublicSummary } from "./sanitize";
@@ -131,9 +131,9 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     return json(await handleInbound(env, { id: String(b.id), from: String(b.from ?? ""), subject: String(b.subject), date: b.date, text: String(b.text ?? "") }));
   }
 
-  // ---------- Telegram: messages from the Job Agent Hub topic, forwarded by Ava's worker ----------
-  if (path === "/api/telegram/update" && method === "POST") {
-    const secret = request.headers.get("X-Hub-Secret") ?? "";
+  // ---------- Telegram webhook (bot updates; acts only on the Job Agent Hub topic) ----------
+  if ((path === "/api/telegram/webhook" || path === "/api/telegram/update") && method === "POST") {
+    const secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? request.headers.get("X-Hub-Secret") ?? "";
     if (!env.TELEGRAM_HUB_SECRET || env.TELEGRAM_HUB_SECRET.length < 24 || secret !== env.TELEGRAM_HUB_SECRET) return json({ error: "unauthorized" }, 401);
     const update = await readJson<Parameters<typeof handleTelegramUpdate>[1]>(request);
     ctx.waitUntil(handleTelegramUpdate(env, update, url.origin).catch((e) => console.error("telegram update:", e)));
@@ -352,6 +352,10 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     }
     if (path === "/api/admin/inbound" && method === "GET") return json({ emails: await recentInbound(env) });
     if (path === "/api/admin/telegram/webhook-info" && method === "GET") return json(await webhookInfo(env));
+    if (path === "/api/admin/telegram/set-webhook" && method === "POST") {
+      if (!env.TELEGRAM_HUB_SECRET) return json({ error: "TELEGRAM_HUB_SECRET is not set" }, 400);
+      return json(await setHubWebhook(env, `${url.origin}/api/telegram/webhook`));
+    }
 
     // Remote agent runs (executed by runner machines).
     if (path === "/api/admin/runs" && method === "GET") {

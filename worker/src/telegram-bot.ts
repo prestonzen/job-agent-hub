@@ -5,12 +5,13 @@ import { sendDigest } from "./digest";
 import { isAvailable, queue } from "./jobs";
 import { cancelRun, createRun, listRunners, listRuns } from "./runs";
 import { listSchedules, updateSchedule } from "./schedules";
-import { esc, isChatAdmin, send } from "./telegram";
+import { esc, isChatAdmin, send, threadId } from "./telegram";
 import type { Env } from "./types";
 
 /**
- * Commands from the "Job Agent Hub" topic. Ava's worker owns the bot webhook and forwards every
- * message from that topic here (X-Hub-Secret). Only the group's owner/admins are obeyed.
+ * Commands from the "Job Agent Hub" topic. The bot's webhook points at the hub
+ * (/api/telegram/webhook); only messages in that topic are handled and only the group's
+ * owner/admins are obeyed. Everything else in the group is ignored.
  */
 
 interface TgMessage {
@@ -38,6 +39,7 @@ const reply = (env: Env, msg: TgMessage, html: string) => send(env, html, { repl
 export async function handleTelegramUpdate(env: Env, update: { message?: TgMessage; edited_message?: TgMessage }, origin: string): Promise<void> {
   const msg = update.message ?? update.edited_message;
   if (!msg?.text || !msg.from || msg.from.is_bot || String(msg.chat.id) !== String(env.TELEGRAM_CHAT_ID)) return;
+  if (msg.message_thread_id !== (await threadId(env))) return; // only the hub's own topic
   const text = msg.text.trim();
   const isCommand = text.startsWith("/");
   const repliedTo = msg.reply_to_message?.message_id;
