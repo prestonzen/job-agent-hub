@@ -70,3 +70,9 @@ export interface InboundEmail { message_id: string; at: number; from_addr: strin
 export const getInbound = () => request<{ emails: InboundEmail[] }>("/api/admin/inbound");
 export const testTelegram = () => request<{ ok: boolean; error: string | null; configured: boolean }>("/api/admin/telegram/test", { method: "POST" });
 export const sendDigestNow = () => request<{ ok: boolean; error: string | null }>("/api/admin/digest", { method: "POST" });
+
+export interface AutopilotSettings { enabled: boolean; maxConcurrent: number; jobsPerRun: number; minGapMin: number; agents: Record<string, boolean> }
+export interface AgentAutopilot { agent: string; state: "working" | "queued" | "waiting" | "ready" | "paused" | "off" | "not-ready"; nextAt: string | null; detail: string | null }
+export const getAutopilot = () => request<{ settings: AutopilotSettings; agents: AgentAutopilot[] }>("/api/admin/autopilot");
+export const saveAutopilot = (p: Partial<AutopilotSettings>) =>
+  request<{ settings: AutopilotSettings; agents: AgentAutopilot[] }>("/api/admin/autopilot", { method: "PUT", body: JSON.stringify(p) });

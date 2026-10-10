@@ -21,6 +21,7 @@ import {
 } from "./jobs";
 import { handleMcp } from "./mcp";
 import { appendLog, cancelRun, claimRun, createRun, finishRun, getRun, isRunnerToken, listRunners, listRuns, runnerHeartbeat, type RunKind } from "./runs";
+import { autopilotStatus, autopilotTick, saveAutopilot } from "./autopilot";
 import { sendDigest } from "./digest";
 import { handleInbound, recentInbound, type InboundEmail } from "./inbound";
 import { DEFAULT_POLICY, getPolicy, pacingState, pacingSummary, type PacingPolicy } from "./pacing";
@@ -158,6 +159,8 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       if (!b.name) return json({ error: "name is required" }, 400);
       await runnerHeartbeat(env, b);
       ctx.waitUntil(tick(env, () => sendDigest(env, url.origin).then(() => {})).catch((e) => console.error("schedule tick:", e)));
+      // Autopilot: keep every ready agent working while it is Active.
+      ctx.waitUntil(autopilotTick(env).then((n) => n && console.log("autopilot:", n)).catch((e) => console.error("autopilot tick:", e)));
       // Replay ClickUp writes that were deferred by a rate limit or outage.
       ctx.waitUntil(
         outboxSize(env)
@@ -305,6 +308,11 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     if (path === "/api/admin/playbook" && method === "GET") return text(await playbook(env));
 
     // Pacing (per-ATS / per-company limits across all agents).
+    if (path === "/api/admin/autopilot" && method === "GET") return json(await autopilotStatus(env));
+    if (path === "/api/admin/autopilot" && method === "PUT") {
+      await saveAutopilot(env, await readJson(request));
+      return json(await autopilotStatus(env));
+    }
     if (path === "/api/admin/pacing" && method === "GET") {
       const policy = await getPolicy(env);
       return json({ policy, defaults: DEFAULT_POLICY, live: pacingSummary(await pacingState(env, await queue(env), policy), policy) });

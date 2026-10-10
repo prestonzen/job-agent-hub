@@ -7,6 +7,7 @@ import { cancelRun, createRun, listRunners, listRuns } from "./runs";
 import { getPlaybook } from "./clickup";
 import { loadTasks } from "./jobs";
 import { mirrorAge, outboxSize, usageToday } from "./mirror";
+import { autopilotStatus, saveAutopilot } from "./autopilot";
 import { listSchedules, updateSchedule } from "./schedules";
 import { esc, isChatAdmin, send, threadId } from "./telegram";
 import type { Env } from "./types";
@@ -32,7 +33,8 @@ const HELP = [
   "/needs: jobs waiting on you",
   "/run &lt;agent&gt; [jobs] [xN]: e.g. <code>/run claude 3</code>, <code>/run codex 2 x2</code>",
   "/runs: recent runs · /stop &lt;id|all&gt;",
-  "/pause · /resume: all schedules",
+  "/pause · /resume: switch autopilot (all agents) and schedules off / on",
+  "/autopilot: what each agent is doing",
   "/digest: summary now · /refresh: reload ClickUp list + playbook now",
   "/login codex|kimi: sign an agent in on the runner (link posts here)",
   "/code &lt;code&gt;: answer a code request (or just reply to the 🔐 message)",
@@ -158,9 +160,17 @@ export async function handleTelegramUpdate(env: Env, update: { message?: TgMessa
     case "/pause":
     case "/resume": {
       const on = cmd.toLowerCase().startsWith("/resume");
+      await saveAutopilot(env, { enabled: on });
       const scheds = await listSchedules(env);
-      for (const s of scheds) if (s.enabled !== on) await updateSchedule(env, s.id, { enabled: on });
-      await reply(env, msg, scheds.length ? `${on ? "▶️ Resumed" : "⏸️ Paused"} ${scheds.length} schedule${scheds.length > 1 ? "s" : ""}.` : "No schedules yet.");
+      for (const s of scheds) if (s.enabled !== on && s.kind !== "digest") await updateSchedule(env, s.id, { enabled: on });
+      await reply(env, msg, on ? "▶️ Autopilot <b>ACTIVE</b>: ready agents will keep applying." : "⏸️ Autopilot <b>DISABLED</b>. Runs already in progress finish; use <code>/stop all</code> to end them now.");
+      return;
+    }
+
+    case "/autopilot": {
+      const { settings, agents } = await autopilotStatus(env);
+      const icon: Record<string, string> = { working: "🏃", queued: "⏳", waiting: "⏱️", ready: "🟢", paused: "⚠️", off: "⚪", "not-ready": "🔑" };
+      await reply(env, msg, [`Autopilot: <b>${settings.enabled ? "ACTIVE" : "DISABLED"}</b> · ${settings.jobsPerRun} jobs/run · ≥${settings.minGapMin} min between an agent's runs · max ${settings.maxConcurrent} at once`, ...agents.map((a) => `${icon[a.state] ?? "•"} ${esc(a.agent)}: ${a.state}${a.detail ? ` (${esc(a.detail)})` : ""}`)].join("\n"));
       return;
     }
 

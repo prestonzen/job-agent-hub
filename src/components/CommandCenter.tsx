@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getHub, releaseJob, reportJob } from "../api";
 import type { HubState, Job } from "../types";
 import { agentColor } from "../agents";
+import Autopilot from "./Autopilot";
 import Pacing from "./Pacing";
 
 const ONLINE_MS = 15 * 60_000;
@@ -107,6 +108,7 @@ export default function CommandCenter() {
   return (
     <>
       {hub.demo && <p className="badge">Demo data</p>}
+      <Autopilot />
       <section className="kpis">
         <Kpi label="Ready to claim" value={available.length} onClick={() => setFilter("available")} active={filter === "available"} />
         <Kpi label="In progress" value={claimed.length} onClick={() => setFilter("claimed")} active={filter === "claimed"} />
