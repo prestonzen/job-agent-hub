@@ -44,7 +44,7 @@ Which agents can join the hub, as of October 2026 (vendor docs plus hands-on che
 | **Gemini CLI** | Yes | ✅ Verified on runner | Free tier. Needs the runs folder trusted and a 30 s MCP timeout (set by `configure-agents.mjs`). The Gemini desktop/web app can't send a custom token header, so it can't connect. |
 | **Qwen Code** | Yes | ✅ Verified on runner | Gemini CLI fork; same config format |
 | **Kimi Code CLI** | Yes | 🟡 Installed + configured; verify after login | Replaces the deprecated `kimi-cli`. Headless: `kimi --auto -p` |
-| **Mistral Vibe CLI** | Yes | 🟡 Installed + configured; verify after login | Le Chat was renamed "Vibe" in August 2026. No desktop app, and the web app can't drive a browser, so use the CLI. |
+| **Mistral Vibe CLI** | Yes | 🟠 Installed and configured, key accepted, but Mistral's API gives free-tier keys 0 requests/min: needs a paid plan (disabled in the runner config until then) | Le Chat was renamed "Vibe" in August 2026. No desktop app, and the web app can't drive a browser, so use the CLI. |
 | **Manus** (Browser Operator) | Yes (not set up) | ⚪ Possible | The only consumer app confirmed to do both: work in your own logged-in browser and connect to a custom MCP server with a bearer token |
 | Goose, Cline/Roo, Cursor, Windsurf, Ollama + Playwright MCP | Yes (not set up) | ⚪ Possible | Any MCP client that sends a header works; Ollama gives a fully local agent |
 | **ChatGPT app**, **Gemini web app**, **Perplexity Comet** | Not yet | 🔴 Needs OAuth on the hub | ChatGPT can't automate file uploads and only connects through OAuth login; the Gemini web app looks the same (unconfirmed). Supporting them means adding OAuth 2.1 to `/mcp`. |

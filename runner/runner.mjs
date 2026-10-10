@@ -74,7 +74,7 @@ function probe() {
       const v = spawnSync(bin, a.versionArgs ?? ["--version"], { encoding: "utf8", timeout: 15_000 });
       version = (v.stdout || v.stderr || "").trim().split("\n")[0]?.slice(0, 80) || null;
     }
-    return { id, installed, ready: installed && authOk && a.enabled !== false, version, note: installed ? (authOk ? null : "not logged in") : "not installed" };
+    return { id, installed, ready: installed && authOk && a.enabled !== false, version, note: !installed ? "not installed" : !authOk ? "not logged in" : a.enabled === false ? (a.note ?? "disabled in config") : null };
   });
 }
 
