@@ -30,6 +30,10 @@ export interface AgentStats {
   avgRunMin: number | null;
   /** Total minutes the agent's CLI spent running. */
   runMinutes: number;
+  /** Total reported run cost in USD (CLIs that report it; subscriptions/free tiers report 0). */
+  costUsd: number;
+  /** Total tokens burned, when the CLI reports them. */
+  tokens: number;
 }
 
 export interface AtsStats {
@@ -120,10 +124,10 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
       .bind(since)
       .all<Ev>(),
     d
-      .prepare("SELECT agent, status, created_at, started_at, finished_at FROM runs WHERE created_at >= ? AND kind != 'login'")
+      .prepare("SELECT agent, status, created_at, started_at, finished_at, cost_usd, tokens FROM runs WHERE created_at >= ? AND kind != 'login'")
       .bind(since)
-      .all<{ agent: string; status: string; created_at: number; started_at: number | null; finished_at: number | null }>()
-      .catch(() => ({ results: [] as { agent: string; status: string; created_at: number; started_at: number | null; finished_at: number | null }[] })),
+      .all<{ agent: string; status: string; created_at: number; started_at: number | null; finished_at: number | null; cost_usd: number | null; tokens: number | null }>()
+      .catch(() => ({ results: [] as { agent: string; status: string; created_at: number; started_at: number | null; finished_at: number | null; cost_usd: number | null; tokens: number | null }[] })),
     queue(env).catch(() => []),
     listRunners(env).catch(() => []),
     (await mdb(env))
@@ -138,7 +142,7 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
     const k = (name || "unknown").toLowerCase();
     let a = agents.get(k);
     if (!a) {
-      a = { agent: k, claimed: 0, applied: 0, skipped: 0, needsHuman: 0, failed: 0, released: 0, successRate: null, medianMinToApply: null, runs: 0, runsOk: 0, runsFailed: 0, avgRunMin: null, runMinutes: 0, _toApply: [] };
+      a = { agent: k, claimed: 0, applied: 0, skipped: 0, needsHuman: 0, failed: 0, released: 0, successRate: null, medianMinToApply: null, runs: 0, runsOk: 0, runsFailed: 0, avgRunMin: null, runMinutes: 0, costUsd: 0, tokens: 0, _toApply: [] };
       agents.set(k, a);
     }
     return a;
@@ -213,6 +217,8 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
     if (r.started_at && r.finished_at && r.finished_at > r.started_at && (r.status === "succeeded" || r.status === "failed")) {
       a.runMinutes += (r.finished_at - r.started_at) / 60_000;
     }
+    a.costUsd += r.cost_usd ?? 0;
+    a.tokens += r.tokens ?? 0;
   }
 
   const byAgent: AgentStats[] = [...agents.values()]

@@ -42,14 +42,33 @@ curl -s -X POST {hub}/api/agent/bounty -H "Authorization: Bearer $JOBHUNTER_TOKE
 
 This is a DRAFT for Preston's review only — never submit anything to the platform itself. Print the hub event id when done."""
 
-# One fixed task, identical for every agent, so results are comparable.
-MATRIX_TMPL = """Cyber triage benchmark (tag: {tag}). You are one of several agents given the IDENTICAL input; your output is compared for accuracy and usefulness. Triage this real scanner output from an authorized bug bounty asset (program "acme-bugcrowd-demo", host https://demo.acme-example.com):
-
-[+] nuclei: ssl-tls-version-mismatch (info): TLS 1.0/1.1 enabled
+# One fixed task per scenario, identical for every agent, so results are comparable.
+# Each scenario has a deliberate trap: a scary-looking scanner hit that does NOT hold up,
+# mixed with quieter findings that do. Calibration (noise rejection) is what we score.
+SCENARIOS = [
+    # 1: infra noise vs real exposure
+    """[+] nuclei: ssl-tls-version-mismatch (info): TLS 1.0/1.1 enabled
 [+] nuclei: missing-security-headers (info): X-Frame-Options, CSP absent
 [+] nuclei: exposed-git-config (medium): /.git/config readable, contains repo URL + branch
 [+] httpx: 200 https://demo.acme-example.com/actuator/env (Spring Boot actuator, unauthenticated)
-[+] waybackurls: /api/v1/users?limit=1000 returned JSON with email+role fields in 2024 snapshot
+[+] waybackurls: /api/v1/users?limit=1000 returned JSON with email+role fields in 2024 snapshot""",
+    # 2: the nuclei "critical" is the trap (WAF returns 200 on everything); CORS is the real one
+    """[+] nuclei: CVE-2021-41773 (critical): Apache path traversal — BUT the host returns HTTP 200 with identical body for every path tested, including /this-path-does-not-exist-12345
+[+] httpx: https://demo2.acme-example.com/api/me responds to Origin: https://evil.example with Access-Control-Allow-Origin: https://evil.example AND Access-Control-Allow-Credentials: true
+[+] nuclei: s3-bucket-listing (low): assets.acme-example.com allows anonymous LIST, 3 public logo files only
+[+] nuclei: swagger-ui-detected (info): /swagger/index.html loads, documents public marketing endpoints only
+[+] httpx: login page sets session cookie without Secure flag (site is HTTPS)""",
+    # 3: unverified default-cred guess is the trap; sequential invoice IDs are the real lead
+    """[+] nuclei: default-login-guess (high): admin panel at /admin "may" accept admin/admin — scanner only matched the login page title, never logged in
+[+] waybackurls: /invoice/view?id=1001 through id=1040 all returned 200 PDFs last year; current /invoice/view?id=9999 returns 200 with someone else's invoice when requested without login
+[+] nuclei: missing-rate-limit (info): 20 login attempts in 5s, no 429
+[+] httpx: /error/debug shows a stack trace with internal paths and "PostgreSQL 13.4" in the banner
+[+] nuclei: expired-ssl-cert-on-unused-subdomain (info): old-blog.acme-example.com cert expired 2023, subdomain serves parked page""",
+]
+
+MATRIX_TMPL = """Cyber triage benchmark (tag: {tag}). You are one of several agents given the IDENTICAL input; your output is compared for accuracy and usefulness. Triage this real scanner output from an authorized bug bounty asset (program "acme-bugcrowd-demo", host https://demo.acme-example.com):
+
+{scenario}
 
 For EACH observation: verdict (real / false-positive / needs-manual-check), realistic severity for a bug bounty program, one-line why, and the single next validation step. Then rank the three observations most worth reporting and say which ONE you would report first and why. Reply as compact JSON: {{"triage":[...],"ranking":[...],"first_report":"<id>","reason":"..."}}. Post your answer to the hub:
 
@@ -79,10 +98,12 @@ def main() -> int:
     p.add_argument("--title", default="")
     p.add_argument("--log", help="validator log file; an excerpt goes into the prompt")
     p.add_argument("--tag", default=time.strftime("%Y%m%d-%H%M"), help="matrix batch tag")
+    p.add_argument("--scenario", type=int, default=0, help="matrix scenario index; -1 = rotate by day of year")
     a = p.parse_args()
 
     admin = open(ADMIN_FILE).read().strip()
     agents = [x.strip() for x in a.agents.split(",") if x.strip()]
+    si = (int(time.strftime("%j")) % len(SCENARIOS)) if a.scenario < 0 else a.scenario % len(SCENARIOS)
 
     for agent in agents:
         if a.mode == "report":
@@ -95,7 +116,7 @@ def main() -> int:
             prompt = REPORT_TMPL.format(hub=HUB, platform=a.platform, program=a.program,
                                         host=a.host, title=a.title, excerpt=excerpt)
         else:
-            prompt = MATRIX_TMPL.format(hub=HUB, tag=f"{a.tag}-{agent}")
+            prompt = MATRIX_TMPL.format(hub=HUB, tag=f"{a.tag}-s{si + 1}-{agent}", scenario=SCENARIOS[si])
         res = post_run(admin, agent, prompt)
         run_ids = [r.get("id") for r in res.get("runs", [])]
         print(f"[dispatch] {a.mode} -> {agent}: run(s) {run_ids}")

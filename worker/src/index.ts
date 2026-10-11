@@ -189,8 +189,8 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
         const b = await readJson<{ name?: string; chunk?: string }>(request);
         return json(await appendLog(env, id, String(b.name ?? ""), String(b.chunk ?? "")));
       }
-      const b = await readJson<{ name?: string; exitCode?: number | null; cancelled?: boolean }>(request);
-      await finishRun(env, id, String(b.name ?? ""), { exitCode: b.exitCode ?? null, cancelled: !!b.cancelled });
+      const b = await readJson<{ name?: string; exitCode?: number | null; cancelled?: boolean; costUsd?: number | null; tokens?: number | null }>(request);
+      await finishRun(env, id, String(b.name ?? ""), { exitCode: b.exitCode ?? null, cancelled: !!b.cancelled, costUsd: b.costUsd ?? null, tokens: b.tokens ?? null });
       return json({ ok: true });
     }
     return json({ error: "not found" }, 404);

@@ -118,6 +118,8 @@ export default function Analytics() {
                 <th>Runs</th>
                 <th className="r">Avg run</th>
                 <th className="r">Run time</th>
+                <th className="r" title="Reported by the agent's own CLI; subscription and local models report $0">Cost</th>
+                <th className="r" title="Cost ÷ applications sent, in this window">$/app</th>
               </tr>
             </thead>
             <tbody>
@@ -161,12 +163,16 @@ export default function Analytics() {
                     </td>
                     <td className="r">{mins(a.avgRunMin)}</td>
                     <td className="r">{a.runMinutes ? `${(a.runMinutes / 60).toFixed(1)} h` : "—"}</td>
+                    <td className="r" title={(a.tokens ?? 0) ? `${(a.tokens ?? 0).toLocaleString()} tokens` : "only CLIs that self-report cost/tokens count here"}>
+                      {(a.costUsd ?? 0) ? `$${(a.costUsd ?? 0).toFixed(2)}` : "—"}
+                    </td>
+                    <td className="r">{(a.costUsd ?? 0) && a.applied ? `$${((a.costUsd ?? 0) / a.applied).toFixed(2)}` : "—"}</td>
                   </tr>
                 );
               })}
               {!data.byAgent.length && (
                 <tr>
-                  <td colSpan={11} className="muted">
+                  <td colSpan={13} className="muted">
                     No agent activity in this window yet.
                   </td>
                 </tr>

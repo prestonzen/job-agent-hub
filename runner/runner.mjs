@@ -179,22 +179,47 @@ async function startRun(run) {
     stdio: ["ignore", "pipe", "pipe"],
     detached: true, // own process group, so cancel kills the CLI and its browser/MCP children
   });
-  const state = { child, buf: `[runner ${NAME}] run #${run.id}: ${run.agent} (${run.kind}) started\n`, cancelled: false, timedOut: false };
+  const state = { child, buf: `[runner ${NAME}] run #${run.id}: ${run.agent} (${run.kind}) started\n`, cancelled: false, timedOut: false, costUsd: null, tokens: null };
   active.set(run.id, state);
   saveState();
   log(`run #${run.id} ${run.agent} pid ${child.pid}`);
 
   const fmt = FORMATTERS[a.format];
   let partial = "";
+  // Cost/token accounting, reported to the hub on finish: Claude's stream carries total_cost_usd;
+  // other CLIs get a tolerant "tokens used: 12,345" scan of their raw output.
+  const trackUsage = (raw, jsonLine) => {
+    if (jsonLine) {
+      try {
+        const e = JSON.parse(jsonLine);
+        if (e.type === "result" && typeof e.total_cost_usd === "number") state.costUsd = e.total_cost_usd;
+        const u = e.usage ?? e.message?.usage;
+        if (u) {
+          const t = (u.input_tokens ?? 0) + (u.output_tokens ?? 0);
+          if (t > 0) state.tokens = (state.tokens ?? 0) + t;
+        }
+      } catch {}
+      return;
+    }
+    const m = raw.match(/tokens?\s+used[:\s]+([\d,]+)/i);
+    if (m) state.tokens = Number(m[1].replace(/,/g, ""));
+    const c = raw.match(/(?:total\s+)?cost[:\s]+\$?([\d.]+)/i);
+    if (c && state.costUsd == null) state.costUsd = Number(c[1]);
+  };
   const onOut = (d) => {
-    if (!fmt) return void (state.buf += stripAnsi(d.toString()));
-    partial += d.toString();
+    const raw = d.toString();
+    if (!fmt) {
+      state.buf += stripAnsi(raw);
+      trackUsage(raw, null);
+      return;
+    }
+    partial += raw;
     const lines = partial.split("\n");
     partial = lines.pop() ?? "";
-    for (const l of lines) if (l.trim()) state.buf += fmt(l);
+    for (const l of lines) if (l.trim()) { state.buf += fmt(l); trackUsage(null, l); }
   };
   child.stdout.on("data", onOut);
-  child.stderr.on("data", (d) => (state.buf += stripAnsi(d.toString())));
+  child.stderr.on("data", (d) => { const raw = d.toString(); state.buf += stripAnsi(raw); trackUsage(raw, null); });
 
   const kill = (why) => {
     state.buf += `\n[runner] stopping: ${why}\n`;
@@ -212,7 +237,7 @@ async function startRun(run) {
     state.buf += `\n[runner] exited ${signal ? `by ${signal}` : `with code ${code}`}\n`;
     await flush(run.id);
     try {
-      await hub(`/api/runner/runs/${run.id}/finish`, { exitCode: state.timedOut ? 124 : code, cancelled: state.cancelled });
+      await hub(`/api/runner/runs/${run.id}/finish`, { exitCode: state.timedOut ? 124 : code, cancelled: state.cancelled, costUsd: state.costUsd, tokens: state.tokens });
     } catch (e) {
       log(`finish #${run.id} failed:`, e.message);
     }

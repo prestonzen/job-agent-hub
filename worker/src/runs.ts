@@ -43,6 +43,9 @@ async function db(env: Env): Promise<D1Database> {
     await env.DB.batch(SCHEMA.map((s) => env.DB.prepare(s)));
     // Added later: earliest start (scheduled runs get a random delay). Fails harmlessly if present.
     await env.DB.prepare("ALTER TABLE runs ADD COLUMN not_before INTEGER").run().catch(() => {});
+    // Added later: what a run cost (USD, from the CLI's own report) and how many tokens it burned.
+    await env.DB.prepare("ALTER TABLE runs ADD COLUMN cost_usd REAL").run().catch(() => {});
+    await env.DB.prepare("ALTER TABLE runs ADD COLUMN tokens INTEGER").run().catch(() => {});
     ready = true;
   }
   return env.DB;
@@ -255,14 +258,18 @@ export async function appendLog(env: Env, id: number, runner: string, chunk: str
   return { cancel: !!r.cancel || r.status !== "running" };
 }
 
-export async function finishRun(env: Env, id: number, runner: string, f: { exitCode: number | null; cancelled?: boolean }): Promise<void> {
+export async function finishRun(env: Env, id: number, runner: string, f: { exitCode: number | null; cancelled?: boolean; costUsd?: number | null; tokens?: number | null }): Promise<void> {
   const status = f.cancelled ? "cancelled" : f.exitCode === 0 ? "succeeded" : "failed";
+  const cost = typeof f.costUsd === "number" && Number.isFinite(f.costUsd) ? Math.round(f.costUsd * 10_000) / 10_000 : null;
+  const tokens = typeof f.tokens === "number" && Number.isFinite(f.tokens) ? Math.round(f.tokens) : null;
   const r = await (await db(env))
     .prepare(
-      `UPDATE runs SET status = ?1, exit_code = ?2, finished_at = ?3 WHERE id = ?4 AND runner = ?5 AND status = 'running'
+      `UPDATE runs SET status = ?1, exit_code = ?2, finished_at = ?3,
+         cost_usd = COALESCE(?6, cost_usd), tokens = COALESCE(?7, tokens)
+       WHERE id = ?4 AND runner = ?5 AND status = 'running'
        RETURNING agent, kind, count, started_at, finished_at, substr(log, -3000) AS tail`,
     )
-    .bind(status, f.exitCode, Date.now(), id, runner)
+    .bind(status, f.exitCode, Date.now(), id, runner, cost, tokens)
     .first<{ agent: string; kind: string; count: number | null; started_at: number; finished_at: number; tail: string }>();
   // Out of quota (a free API tier's daily limit, a rate limit): not a bug, so rest that agent until it resets
   // and keep the run out of the failure streak that pauses autopilot.
