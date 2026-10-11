@@ -134,6 +134,89 @@ export default function Bounty() {
         </section>
       )}
 
+      {(() => {
+        const rows = (data.matrix ?? []).map((e) => {
+          let j: { triage?: { verdict?: string }[]; first_report?: string; reason?: string } | null = null;
+          try {
+            j = JSON.parse(e.detail ?? "");
+          } catch {}
+          const scen = e.program?.match(/-s(\d+)-/)?.[1] ?? "1";
+          const triage = Array.isArray(j?.triage) ? j!.triage! : [];
+          return {
+            e,
+            scen,
+            first: j?.first_report ?? "—",
+            reason: j?.reason ?? "",
+            reals: triage.filter((t) => String(t?.verdict ?? "").toLowerCase() === "real").length,
+            n: triage.length,
+          };
+        });
+        if (!rows.length) return null;
+        const byAgent = [...new Set(rows.map((r) => r.e.agent))].sort();
+        return (
+          <section className="card wide">
+            <div className="card-head">
+              <h2>Cyber matrix leaderboard</h2>
+              <span className="muted small">identical triage tasks fired at every agent — same input, comparable judgment</span>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Agent</th>
+                  <th className="r">Runs</th>
+                  <th className="r">Scenarios</th>
+                  <th className="r" title="Average findings marked 'real' per run — high numbers mean noise-chasing, low can mean missed leads; read with the table below">
+                    Avg “real”
+                  </th>
+                  <th>First picks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byAgent.map((a) => {
+                  const mine = rows.filter((r) => r.e.agent === a);
+                  const avg = mine.length ? (mine.reduce((s, r) => s + r.reals, 0) / mine.length).toFixed(1) : "—";
+                  return (
+                    <tr key={a}>
+                      <td>
+                        <b>{a}</b>
+                      </td>
+                      <td className="r">{mine.length}</td>
+                      <td className="r">{new Set(mine.map((r) => r.scen)).size}</td>
+                      <td className="r">{avg}</td>
+                      <td className="sub">{mine.slice(0, 4).map((r) => `s${r.scen}:${r.first}`).join(" · ")}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <table>
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Agent</th>
+                  <th>Scenario</th>
+                  <th className="r">Real / total</th>
+                  <th>Report first</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.slice(0, 25).map((r) => (
+                  <tr key={r.e.id}>
+                    <td className="nowrap">{ago(r.e.at)}</td>
+                    <td>{r.e.agent}</td>
+                    <td>s{r.scen}</td>
+                    <td className="r">
+                      {r.reals}/{r.n || "—"}
+                    </td>
+                    <td title={r.reason}>{r.first}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        );
+      })()}
+
       {data.recent.length > 0 && (
         <section className="card wide">
           <div className="card-head">

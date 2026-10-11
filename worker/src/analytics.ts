@@ -34,7 +34,24 @@ export interface AgentStats {
   costUsd: number;
   /** Total tokens burned, when the CLI reports them. */
   tokens: number;
+  /** Estimated USD for subscription agents, from tokens × OpenRouter rates (TOKEN_RATES); 0 when actual cost is known. */
+  estCostUsd: number;
 }
+
+/**
+ * OpenRouter list rates ($ per 1M tokens, Oct 2026) for the models behind subscription CLIs —
+ * used to put a USD figure on their token burn: codex → gpt-5-codex 1.25/10, kimi → K2.7 Code
+ * 0.74/3.50 (OpenRouter). Agentic runs skew ~5:1 input:output, so cost = tokens × (5·in + out)/6.
+ * Estimates only — actual subscription spend is flat; claude reports exact cost itself.
+ */
+const TOKEN_RATES: Record<string, { in: number; out: number }> = {
+  codex: { in: 1.25, out: 10.0 },
+  kimi: { in: 0.74, out: 3.5 },
+};
+const estCost = (agent: string, tokens: number): number => {
+  const r = TOKEN_RATES[agent];
+  return r && tokens > 0 ? Math.round(((tokens * (5 * r.in + r.out)) / 6 / 1_000_000) * 10_000) / 10_000 : 0;
+};
 
 export interface AtsStats {
   ats: string;
@@ -142,7 +159,7 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
     const k = (name || "unknown").toLowerCase();
     let a = agents.get(k);
     if (!a) {
-      a = { agent: k, claimed: 0, applied: 0, skipped: 0, needsHuman: 0, failed: 0, released: 0, successRate: null, medianMinToApply: null, runs: 0, runsOk: 0, runsFailed: 0, avgRunMin: null, runMinutes: 0, costUsd: 0, tokens: 0, _toApply: [] };
+      a = { agent: k, claimed: 0, applied: 0, skipped: 0, needsHuman: 0, failed: 0, released: 0, successRate: null, medianMinToApply: null, runs: 0, runsOk: 0, runsFailed: 0, avgRunMin: null, runMinutes: 0, costUsd: 0, tokens: 0, estCostUsd: 0, _toApply: [] };
       agents.set(k, a);
     }
     return a;
@@ -228,6 +245,8 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
       medianMinToApply: round1(median(_toApply)),
       avgRunMin: a.runsOk + a.runsFailed ? round1(a.runMinutes / (a.runsOk + a.runsFailed)) : null,
       runMinutes: Math.round(a.runMinutes),
+      // Estimated spend only where the CLI doesn't report real cost (subscription agents).
+      estCostUsd: a.costUsd > 0 ? 0 : estCost(a.agent, a.tokens),
     }))
     .filter((a) => a.agent !== "unknown" || a.claimed + a.applied > 0)
     .sort((a, b) => b.applied - a.applied || b.claimed - a.claimed || a.agent.localeCompare(b.agent));

@@ -78,7 +78,7 @@ export const saveAutopilot = (p: Partial<AutopilotSettings>) =>
   request<{ settings: AutopilotSettings; agents: AgentAutopilot[] }>("/api/admin/autopilot", { method: "PUT", body: JSON.stringify(p) });
 
 // ---------- analytics ----------
-export interface AgentStats { agent: string; claimed: number; applied: number; skipped: number; needsHuman: number; failed: number; released: number; successRate: number | null; medianMinToApply: number | null; runs: number; runsOk: number; runsFailed: number; avgRunMin: number | null; runMinutes: number; costUsd: number; tokens: number }
+export interface AgentStats { agent: string; claimed: number; applied: number; skipped: number; needsHuman: number; failed: number; released: number; successRate: number | null; medianMinToApply: number | null; runs: number; runsOk: number; runsFailed: number; avgRunMin: number | null; runMinutes: number; costUsd: number; tokens: number; estCostUsd: number }
 export interface AtsStats { ats: string; applied: number; needsHuman: number; skipped: number; failed: number; successRate: number | null }
 export interface DayStats { date: string; applied: number; needsHuman: number; skipped: number; failed: number; runsOk: number; runsFailed: number }
 export interface Analytics {
@@ -105,6 +105,7 @@ export interface BountySummary {
   totals: { programs: number; scans: number; hostsScanned: number; findings: number; bySeverity: Record<string, number>; reports: number; payouts: number; payoutsUsd: number };
   programs: BountyProgram[];
   recent: BountyEvent[];
+  matrix: BountyEvent[];
 }
 export const getBounty = () => request<BountySummary>("/api/admin/bounty");
 

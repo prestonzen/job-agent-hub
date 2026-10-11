@@ -163,10 +163,15 @@ export default function Analytics() {
                     </td>
                     <td className="r">{mins(a.avgRunMin)}</td>
                     <td className="r">{a.runMinutes ? `${(a.runMinutes / 60).toFixed(1)} h` : "—"}</td>
-                    <td className="r" title={(a.tokens ?? 0) ? `${(a.tokens ?? 0).toLocaleString()} tokens` : "only CLIs that self-report cost/tokens count here"}>
-                      {(a.costUsd ?? 0) ? `$${(a.costUsd ?? 0).toFixed(2)}` : "—"}
+                    <td className="r" title={(a.tokens ?? 0) ? `${(a.tokens ?? 0).toLocaleString()} tokens${(a.estCostUsd ?? 0) ? " · estimated at OpenRouter rates" : ""}` : "only CLIs that self-report cost/tokens count here"}>
+                      {(a.costUsd ?? 0) ? `$${(a.costUsd ?? 0).toFixed(2)}` : (a.estCostUsd ?? 0) ? `~$${(a.estCostUsd ?? 0).toFixed(2)}` : "—"}
                     </td>
-                    <td className="r">{(a.costUsd ?? 0) && a.applied ? `$${((a.costUsd ?? 0) / a.applied).toFixed(2)}` : "—"}</td>
+                    <td className="r">
+                      {(() => {
+                        const c = (a.costUsd ?? 0) || (a.estCostUsd ?? 0);
+                        return c && a.applied ? `${(a.costUsd ?? 0) ? "" : "~"}$${(c / a.applied).toFixed(2)}` : "—";
+                      })()}
+                    </td>
                   </tr>
                 );
               })}

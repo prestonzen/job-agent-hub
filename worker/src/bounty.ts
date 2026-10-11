@@ -66,6 +66,8 @@ export interface BountySummary {
   };
   programs: BountyProgramRollup[];
   recent: BountyEvent[];
+  /** Benchmark (matrix) events: identical triage tasks fired at every agent, for the leaderboard. */
+  matrix: BountyEvent[];
 }
 
 const s = (v: unknown, n: number): string | null => (typeof v === "string" && v.trim() ? v.trim().slice(0, n) : null);
@@ -168,7 +170,7 @@ export async function bountyTotals(env: Env): Promise<BountySummary["totals"]> {
 /** Full view for the admin Bug bounty tab. */
 export async function bountySummary(env: Env): Promise<BountySummary> {
   const d = await db(env);
-  const [totals, progs, recent] = await Promise.all([
+  const [totals, progs, recent, matrix] = await Promise.all([
     bountyTotals(env),
     d
       .prepare(
@@ -187,6 +189,10 @@ export async function bountySummary(env: Env): Promise<BountySummary> {
       .prepare("SELECT * FROM bounty_events ORDER BY at DESC LIMIT 50")
       .all<Row>()
       .catch(() => ({ results: [] as Row[] })),
+    d
+      .prepare("SELECT * FROM bounty_events WHERE platform = 'benchmark' ORDER BY at DESC LIMIT 200")
+      .all<Row>()
+      .catch(() => ({ results: [] as Row[] })),
   ]);
   return {
     generatedAt: new Date().toISOString(),
@@ -201,5 +207,6 @@ export async function bountySummary(env: Env): Promise<BountySummary> {
       lastAt: new Date(r.lastAt).toISOString(),
     })),
     recent: recent.results.map(toEvent),
+    matrix: matrix.results.map(toEvent),
   };
 }
