@@ -108,3 +108,19 @@ EOF
 else
   echo "no $TOKEN_FILE; hub event skipped"
 fi
+
+# Auto-engage: hand medium+ nuclei hits to Dark-Moon for validation + report draft.
+# Cap: 3 hosts per program, one validation each — engagement is the expensive step.
+ENGAGE=/opt/bounty/bounty-engage.sh
+CLEAN="$OUT/nuclei.clean.txt"
+sed "s/\x1b\[[0-9;]*m//g" "$OUT/nuclei.txt" 2>/dev/null > "$CLEAN" || true
+HOT=$(grep -Ei "\[(medium|high|critical)\]" "$CLEAN" 2>/dev/null | head -20 || true)
+if [ -n "$HOT" ] && [ -x "$ENGAGE" ]; then
+  echo "$HOT" | awk '{for(i=1;i<=NF;i++) if ($i ~ /^https?:\/\//) print $i}' | sort -u | head -3 | while read -r HOSTURL; do
+    FTITLE=$(grep -m1 -F "$HOSTURL" "$CLEAN" | cut -c1-140 | tr '"' "'")
+    echo "engaging Dark-Moon on $HOSTURL ($FTITLE)"
+    nohup bash "$ENGAGE" "$PROGRAM" "$PLATFORM" "$HOSTURL" "$FTITLE" >> /root/bounty-engage.log 2>&1 &
+  done
+elif [ -n "$HOT" ]; then
+  echo "medium+ hits present but $ENGAGE missing/not executable"
+fi
