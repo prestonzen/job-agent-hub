@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""cyber-dispatch.py — route cyber work to the hub's on-point cyber agents.
+
+Modes:
+  report  A validator (Dark-Moon) confirmed a finding: dispatch a prompt run so a
+          capable agent drafts the platform-format report and posts it back to the
+          hub as a bounty event (kind "report", status "draft").
+  matrix  Fire the SAME standardized triage task at several agents so their output
+          quality / speed / structure can be compared head to head. Each posts back
+          kind "report", status "matrix-<tag>".
+
+Dispatch = hub "prompt run" (POST /api/admin/runs with the hub admin token from
+/etc/hub-admin-token). The runner on kloud claims it and runs that agent's CLI
+headless. Agents authenticate their bounty post with their own JOBHUNTER_TOKEN env
+(set for codex and kimi in the runner config).
+
+Reports are drafts only — Preston reviews before anything is submitted anywhere.
+"""
+
+import argparse
+import json
+import sys
+import time
+import urllib.request
+
+HUB = "https://jobhunter.prestonzen.com"
+ADMIN_FILE = "/etc/hub-admin-token"
+
+REPORT_TMPL = """You are on point for cyber work in Preston Zen's freelance pipeline. An automated validator (Dark-Moon) CONFIRMED a suspected finding on an authorized {platform} bug bounty asset.
+
+Program: {program}
+Platform: {platform}
+Host: {host}
+Suspected finding: {title}
+
+Validator log excerpt:
+{excerpt}
+
+Draft a submission-ready {platform} report: title, severity with rationale, reproduction steps, impact, suggested remediation. Then post it to the hub as a bounty event:
+
+curl -s -X POST {hub}/api/agent/bounty -H "Authorization: Bearer $JOBHUNTER_TOKEN" -H "Content-Type: application/json" -d '{{"kind":"report","platform":"{platform}","program":"{program}","target":"{host}","severity":"<your assessment>","status":"draft","title":"<report title>","detail":"<full report in markdown>"}}'
+
+This is a DRAFT for Preston's review only — never submit anything to the platform itself. Print the hub event id when done."""
+
+# One fixed task, identical for every agent, so results are comparable.
+MATRIX_TMPL = """Cyber triage benchmark (tag: {tag}). You are one of several agents given the IDENTICAL input; your output is compared for accuracy and usefulness. Triage this real scanner output from an authorized bug bounty asset (program "acme-bugcrowd-demo", host https://demo.acme-example.com):
+
+[+] nuclei: ssl-tls-version-mismatch (info): TLS 1.0/1.1 enabled
+[+] nuclei: missing-security-headers (info): X-Frame-Options, CSP absent
+[+] nuclei: exposed-git-config (medium): /.git/config readable, contains repo URL + branch
+[+] httpx: 200 https://demo.acme-example.com/actuator/env (Spring Boot actuator, unauthenticated)
+[+] waybackurls: /api/v1/users?limit=1000 returned JSON with email+role fields in 2024 snapshot
+
+For EACH observation: verdict (real / false-positive / needs-manual-check), realistic severity for a bug bounty program, one-line why, and the single next validation step. Then rank the three observations most worth reporting and say which ONE you would report first and why. Reply as compact JSON: {{"triage":[...],"ranking":[...],"first_report":"<id>","reason":"..."}}. Post your answer to the hub:
+
+curl -s -X POST {hub}/api/agent/bounty -H "Authorization: Bearer $JOBHUNTER_TOKEN" -H "Content-Type: application/json" -d '{{"kind":"report","platform":"benchmark","program":"cyber-matrix-{tag}","target":"demo.acme-example.com","severity":"medium","status":"matrix","title":"matrix triage {tag}","detail":"<your JSON>"}}'
+
+Print the hub event id when done."""
+
+
+def post_run(admin: str, agent: str, prompt: str) -> dict:
+    req = urllib.request.Request(
+        HUB + "/api/admin/runs",
+        data=json.dumps({"agent": agent, "kind": "prompt", "prompt": prompt}).encode(),
+        headers={"Authorization": "Bearer " + admin, "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.load(r)
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--mode", choices=["report", "matrix"], required=True)
+    p.add_argument("--agents", default="codex", help="comma-separated hub agent ids (codex, kimi, claude, ...)")
+    p.add_argument("--program", default="")
+    p.add_argument("--platform", default="")
+    p.add_argument("--host", default="")
+    p.add_argument("--title", default="")
+    p.add_argument("--log", help="validator log file; an excerpt goes into the prompt")
+    p.add_argument("--tag", default=time.strftime("%Y%m%d-%H%M"), help="matrix batch tag")
+    a = p.parse_args()
+
+    admin = open(ADMIN_FILE).read().strip()
+    agents = [x.strip() for x in a.agents.split(",") if x.strip()]
+
+    for agent in agents:
+        if a.mode == "report":
+            excerpt = ""
+            if a.log:
+                try:
+                    excerpt = open(a.log, errors="replace").read()[-3000:]
+                except OSError:
+                    excerpt = "(log unavailable)"
+            prompt = REPORT_TMPL.format(hub=HUB, platform=a.platform, program=a.program,
+                                        host=a.host, title=a.title, excerpt=excerpt)
+        else:
+            prompt = MATRIX_TMPL.format(hub=HUB, tag=f"{a.tag}-{agent}")
+        res = post_run(admin, agent, prompt)
+        run_ids = [r.get("id") for r in res.get("runs", [])]
+        print(f"[dispatch] {a.mode} -> {agent}: run(s) {run_ids}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -38,3 +38,10 @@ curl -s -X POST "$HUB/api/agent/bounty" -H "Authorization: Bearer $TOKEN" -H "Co
 {"kind":"$KIND","platform":"$PLATFORM","program":"$PROGRAM","target":"$HOST","severity":"medium","status":"$STATUS","title":"Dark-Moon validation: $TITLE","detail":"Autonomous validation of a scanner-flagged observation. rc=$RC, confirmed_findings=$CONFIRMED, campaign_finalized=$FINALIZED. Full log on CT 134: $LOG"}
 EOF
 echo
+
+# Confirmed finding → hand report drafting to the on-point cyber agent (codex) via the hub.
+if [ "$STATUS" = "confirmed" ] && [ -f /etc/hub-admin-token ]; then
+  python3 /opt/bounty/cyber-dispatch.py --mode report --agents "${CYBER_AGENTS:-codex}" \
+    --program "$PROGRAM" --platform "$PLATFORM" --host "$HOST" --title "$TITLE" --log "$LOG" \
+    || echo "[engage] cyber dispatch failed (non-fatal)"
+fi
