@@ -17,7 +17,7 @@ case "$agent" in
   qwen)     dir=/home/agent/.qwen;     var=BAILIAN_CODING_PLAN_API_KEY; extra="OPENAI_BASE_URL=https://coding.dashscope.aliyuncs.com/v1" ;;
   *) echo "usage: jar-set-key mistral|gemini [--add]|deepseek|qwen" >&2; exit 1 ;;
 esac
-read -rsp "Paste your $agent API key (hidden): " key; echo
+read -rsp "Paste your $agent API key (hidden): " key || true; echo
 key="$(printf '%s' "$key" | tr -d '\r\n ')"
 [ -n "$key" ] || { echo "nothing entered" >&2; exit 1; }
 install -d -o agent -g agent -m 700 "$dir"
