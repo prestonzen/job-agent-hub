@@ -26,13 +26,13 @@ fi
 install -d -o "$RUN_USER" -g "$RUN_USER" -m 700 "$RUN_HOME/resume" /var/lib/job-agent-runner /var/lib/job-agent-runner/runs
 install -d -m 755 /opt/job-agent-runner
 install -m 644 "$HERE/runner.mjs" "$HERE/configure-agents.mjs" /opt/job-agent-runner/
-install -m 755 "$HERE/update.sh" "$HERE/form-assist.mjs" "$HERE/inbox-assist.mjs" "$HERE/with-key.mjs" /opt/job-agent-runner/
+install -m 755 "$HERE/update.sh" "$HERE/form-assist.mjs" "$HERE/inbox-assist.mjs" "$HERE/with-key.mjs" "$HERE/gpu-gate.mjs" /opt/job-agent-runner/
 install -m 755 "$HERE/set-key.sh" /usr/local/bin/jar-set-key
 chown "root:$RUN_USER" "$CONFIG" && chmod 640 "$CONFIG"
 
 # Python CLIs and the browser must live outside /root so the run user can use them.
 export UV_TOOL_DIR=/opt/uv/tools UV_TOOL_BIN_DIR=/usr/local/bin
-if [ ! -x /opt/uv/tools/mistral-vibe/bin/vibe ]; then
+if grep -q '"mistral"' "$CONFIG" && [ ! -x /opt/uv/tools/mistral-vibe/bin/vibe ]; then
   uv tool uninstall mistral-vibe >/dev/null 2>&1 || true
   uv tool install --force mistral-vibe
 fi
@@ -46,6 +46,9 @@ fi
 chmod -R a+rX /opt/ms-playwright /opt/uv
 # Some npm CLIs ship vendored binaries (e.g. Qwen's ripgrep) without the execute bit for other users.
 find /usr/lib/node_modules -path '*vendor/ripgrep*' -name rg -type f -exec chmod a+rx {} +
+
+# Hermes (the Ollama agent's harness) installs per user; make it visible to the runner service.
+[ -x "$RUN_HOME/.local/bin/hermes" ] && ln -sf "$RUN_HOME/.local/bin/hermes" /usr/local/bin/hermes
 
 su - "$RUN_USER" -c "PATH=/usr/local/bin:\$PATH node /opt/job-agent-runner/configure-agents.mjs $CONFIG"
 

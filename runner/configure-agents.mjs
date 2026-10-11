@@ -39,6 +39,39 @@ if (tokens.claude) {
   }
 }
 
+// Ollama (local GPU): driven by Hermes Agent (Nous Research), which keeps its own memory and writes reusable skills
+// from the tasks it completes. Config goes in ~/.hermes via `hermes config set`; the hub token lives in ~/.hermes/.env.
+if (tokens.ollama) {
+  const hermesBin = [join(H, ".local", "bin", "hermes")].find((p) => existsSync(p)) ?? "hermes";
+  const o = cfg.agents?.ollama?.hermes ?? {};
+  const ctx = o.numCtx ?? 65536; // Hermes refuses models with less than 64k of context
+  const set = (key, value) => {
+    const r = spawnSync(hermesBin, ["config", "set", "--force", key, typeof value === "string" ? value : JSON.stringify(value)], {
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${join(H, ".local", "bin")}:${process.env.PATH}` },
+    });
+    if (r.status !== 0) console.log(`hermes config set ${key}:`, (r.stderr || r.stdout || "failed").trim().split("\n").pop());
+  };
+  set("model.default", o.model ?? "gemma4:26b");
+  set("model.provider", "local-ollama");
+  set("model.base_url", `${o.ollamaUrl ?? "http://127.0.0.1:11434"}/v1`);
+  set("model.context_length", String(ctx));
+  set("model.ollama_num_ctx", String(ctx));
+  set("providers.local-ollama.base_url", `${o.ollamaUrl ?? "http://127.0.0.1:11434"}/v1`);
+  set("providers.local-ollama.api_key", "ollama");
+  set("mcp_servers.jobhunter.url", MCP_URL);
+  set("mcp_servers.jobhunter.headers.Authorization", "Bearer ${JOBHUNTER_TOKEN}");
+  set("mcp_servers.jobhunter.connect_timeout", "60");
+  set("mcp_servers.jobhunter.timeout", "120");
+  set("mcp_servers.playwright.command", BROWSER.command);
+  set("mcp_servers.playwright.args", BROWSER.args);
+  set("mcp_servers.playwright.env.PLAYWRIGHT_BROWSERS_PATH", "/opt/ms-playwright");
+  set("mcp_servers.playwright.env.DISPLAY", process.env.DISPLAY || ":99");
+  const envPath = join(H, ".hermes", ".env");
+  const kept = existsSync(envPath) ? readFileSync(envPath, "utf8").split("\n").filter((l) => l && !l.startsWith("JOBHUNTER_TOKEN=")) : [];
+  write(envPath, [...kept, `JOBHUNTER_TOKEN=${tokens.ollama}`].join("\n") + "\n");
+}
+
 // DeepSeek has no CLI of its own: it runs through Claude Code pointed at DeepSeek's Anthropic-compatible endpoint
 // (see the runner config). A separate CLAUDE_CONFIG_DIR keeps its MCP config and history apart from Claude's.
 if (tokens.deepseek) {

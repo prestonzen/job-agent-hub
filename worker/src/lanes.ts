@@ -4,14 +4,14 @@ import type { Env, Job } from "./types";
 /**
  * Lanes: what kind of job an agent takes. Free-tier agents (Gemini's free API key allows about
  * twenty requests a day) can't drive a multi-page browser application, but they can finish a one-shot
- * email application, so Gemini is limited to the "email" lane and the other free tiers (Mistral, DeepSeek) take email
- * applications first. Paid agents (Claude, Codex, Kimi) take any job.
+ * email application, so Gemini is limited to the "email" lane and the other free tiers (Mistral, DeepSeek) and the local
+ * Ollama model take email applications first. Paid agents (Claude, Codex, Kimi) take any job.
  * Stored in the autopilot settings (`lanes`); a null entry removes an agent's default lane.
  */
 
 /** "email": only email applications. "email-first": any job, but email applications first (cheap for a free tier). */
 export type Lane = "email" | "email-first";
-export const DEFAULT_LANES: Record<string, Lane | null> = { gemini: "email", mistral: "email-first", deepseek: "email-first" };
+export const DEFAULT_LANES: Record<string, Lane | null> = { gemini: "email", mistral: "email-first", deepseek: "email-first", ollama: "email-first" };
 
 export async function agentLane(env: Env, agent: string): Promise<Lane | null> {
   const saved = await getSetting<{ lanes?: Record<string, Lane | null> }>(env, "autopilot").catch(() => null);

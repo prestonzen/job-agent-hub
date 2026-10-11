@@ -19,22 +19,16 @@ Phone / browser ──► /admin#run ──► hub (D1: runs) ◄── poll/cla
 | `setup.sh` | Creates the `agent` user, writes each CLI's MCP config (hub + browser), installs the systemd units. `--desktop <user>` for a desktop machine |
 | `update.sh` | Pull-based auto-update, run by `job-agent-updater.timer` every 5 min |
 | `runner.mjs` | The runner (zero dependencies) |
-| `form-assist.mjs` | Helper for agents: completes interactive human-verification challenges on a page (reCAPTCHA v2/v3, hCaptcha) |
+| `form-assist.mjs` | Helper for agents: completes interactive human-verification challenges on a page |
 | `inbox-assist.mjs` | Helper for agents: picks up emailed verification codes from the applicant inbox |
-| `jev-apply.py` | Fast path for standard application forms (Greenhouse etc.): deterministic field fill + résumé upload via a local LLM loop, ~20s instead of a full agent session. See `docs/JEV.md` |
-| `applicant.example.json` | Applicant profile shape for `jev-apply.py`; the real one is `/etc/job-agent-runner/applicant.json` (never committed) |
 | `config.example.json` | Runner config shape; the real one is `/etc/job-agent-runner/config.json` (holds secrets, never committed) |
 
 ## Verification helpers
 
 `machineNotes` tells agents about two helpers installed at `/opt/job-agent-runner/`. They let equipped runners handle verification steps (human-verification challenges, emailed codes) autonomously instead of stalling overnight. They are best-effort: if credentials are missing or the attempt fails, agents fall back to the Telegram relay and then `needs_human`.
 
-- **Page challenges** — `node form-assist.mjs --url <page url>`; needs `captcha.provider` / `captcha.apiKey` in the config (`capsolver` or `2captcha`). hCaptcha note: some solver plans reject hCaptcha sitekeys at the account level; if `--type hcaptcha` fails on the provider side, switch provider or plan.
-- **Emailed codes** — `node inbox-assist.mjs --wait 120`; needs `gmail.clientId` / `clientSecret` / `refreshToken` in the config (one-time OAuth setup, see the header comment in `inbox-assist.mjs`). Default query targets the common application-platform senders in `in:anywhere newer_than:10m`; override with `--query` for other senders. The watched inbox also receives forwarded mail from the public contact address, so codes sent to either address are picked up.
-
-## Outbound proxy (optional)
-
-`config.json` accepts a `proxy` section (`http` / `socks5` URLs) for routes that should leave through the residential proxy on the LAN (CT 125 `Socks5-Proxy`: HTTP `:3128`, SOCKS5 `:1080`). Never point solver services at a LAN proxy — they connect back from the internet and can't reach it; the runner sits behind CGNAT, so only outbound use works.
+- **Page challenges** — `node form-assist.mjs --url <page url>`; needs `captcha.provider` / `captcha.apiKey` in the config.
+- **Emailed codes** — `node inbox-assist.mjs --wait 120`; needs `gmail.clientId` / `clientSecret` / `refreshToken` in the config (one-time OAuth setup, see the header comment in `inbox-assist.mjs`).
 
 ## New machine
 
