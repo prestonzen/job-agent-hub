@@ -14,8 +14,9 @@ import { readFileSync } from "node:fs";
 const HELP = `inbox-assist.mjs — pick up an emailed verification code from the applicant inbox
 
   --query <q>          Gmail search query (default: {from:greenhouse.io from:greenhouse-mail.io}
-                       newer_than:10m — Greenhouse security codes come from
-                       no-reply@us.greenhouse-mail.io)
+                       in:anywhere newer_than:10m — Greenhouse security codes come from
+                       no-reply@us.greenhouse-mail.io / no-reply@eu.greenhouse-mail.io;
+                       in:anywhere also covers spam)
   --wait <sec>         keep polling until a code arrives (default 90)
   --every <sec>        poll interval (default 5)
   --pattern <regex>    code matcher; first capture group is the code (default: 6-10 char
@@ -168,7 +169,7 @@ async function findCode(cfg, args) {
 
 const args = parseArgs(process.argv);
 const cfg = loadConfig(args.config);
-const query = args.query ?? cfg.gmail?.query ?? "{from:greenhouse.io from:greenhouse-mail.io} newer_than:10m";
+const query = args.query ?? cfg.gmail?.query ?? "{from:greenhouse.io from:greenhouse-mail.io} in:anywhere newer_than:10m";
 
 const started = Date.now();
 const deadline = started + args.wait * 1000;

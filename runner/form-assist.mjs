@@ -6,7 +6,7 @@
 // Never hard-code keys here.
 //
 // Usage:
-//   node form-assist.mjs --url <page-url> [--sitekey <key>] [--type auto|turnstile|recaptcha-v2]
+//   node form-assist.mjs --url <page-url> [--sitekey <key>] [--type auto|turnstile|recaptcha-v2|hcaptcha]
 //                        [--attempts 3] [--timeout 240] [--proxy http://user:pass@host:port]
 //
 // Exit code 0 + JSON on stdout when a token was obtained; exit 1 + {ok:false,...} otherwise.
@@ -41,7 +41,7 @@ const HELP = `form-assist.mjs — complete a human-verification challenge for a 
 
   --url <url>        page URL that shows the challenge (required)
   --sitekey <key>    challenge sitekey; if omitted it is scraped from the page HTML
-  --type <t>         auto (default) | turnstile | recaptcha-v2
+  --type <t>         auto (default) | turnstile | recaptcha-v2 | hcaptcha
   --attempts <n>     solve attempts before giving up (default 3)
   --timeout <sec>    max seconds to wait for a solution (default 240)
   --proxy <url>      upstream proxy for the solving service (residential; Turnstile often needs one)
@@ -92,8 +92,11 @@ async function fetchSitekey(url) {
   } catch { return { sitekey: null, kindHint: null }; }
   const turnstile = html.match(/cf-turnstile[\s\S]{0,400}?data-sitekey=["']([^"']+)["']/i) ?? html.match(/data-sitekey=["']([^"']+)["'][\s\S]{0,400}?cf-turnstile/i) ?? html.match(/turnstile\.render\([^)]*?["']([^"']{10,})["']/i);
   const recaptcha = html.match(/g-recaptcha[\s\S]{0,300}?data-sitekey=["']([^"']+)["']/i) ?? html.match(/\/recaptcha\/api\.js\?render=explicit|grecaptcha\.render\([^)]*?["']([^"']{10,})["']/i);
+  const hcaptcha = html.match(/h-captcha[\s\S]{0,300}?data-sitekey=["']([^"']+)["']/i) ?? html.match(/hcaptcha\.render\([^)]*?["']([^"']{10,})["']/i) ?? html.match(/hcaptcha\.com\/1\/api\.js/i);
   if (turnstile?.[1]) return { sitekey: turnstile[1], kindHint: "turnstile" };
   if (recaptcha?.[1] || recaptcha?.[2]) return { sitekey: recaptcha[1] ?? recaptcha[2], kindHint: "recaptcha-v2" };
+  if (hcaptcha?.[1]) return { sitekey: hcaptcha[1], kindHint: "hcaptcha" };
+  if (hcaptcha) return { sitekey: null, kindHint: "hcaptcha" }; // script present, key rendered by JS — pass --sitekey
   if (/cf-turnstile/i.test(html)) return { sitekey: null, kindHint: "turnstile" }; // invisible, no explicit key
   if (/recaptcha/i.test(html)) return { sitekey: null, kindHint: "recaptcha-v2" };
   return { sitekey: null, kindHint: null };
@@ -106,6 +109,10 @@ async function solve2captcha({ apiKey, type, url, sitekey, proxy, timeoutSec }) 
     params.set("method", "turnstile");
     params.set("websiteURL", url);
     if (sitekey) params.set("websiteKey", sitekey);
+  } else if (type === "hcaptcha") {
+    params.set("method", "hcaptcha");
+    params.set("sitekey", sitekey ?? "");
+    params.set("pageurl", url);
   } else {
     params.set("method", "userrecaptcha");
     params.set("googlekey", sitekey ?? "");
@@ -127,20 +134,32 @@ async function solve2captcha({ apiKey, type, url, sitekey, proxy, timeoutSec }) 
 
 async function solveCapsolver({ apiKey, type, url, sitekey, proxy, timeoutSec }) {
   const task = { websiteURL: url, websiteKey: sitekey ?? "" };
-  let taskType;
-  if (type === "turnstile") taskType = proxy ? "AntiTurnstileTask" : "AntiTurnstileTaskProxyLess";
-  else taskType = proxy ? "RecaptchaV2Task" : "RecaptchaV2TaskProxyLess";
+  // hCaptcha support varies by CapSolver account plan: try candidates in order, keep the last
+  // non-"invalid task data" error. TurboTask needs a proxy; older plans allow ProxyLess variants.
+  let candidates;
+  if (type === "turnstile") candidates = [proxy ? "AntiTurnstileTask" : "AntiTurnstileTaskProxyLess"];
+  else if (type === "hcaptcha") candidates = proxy ? ["HCaptchaTurboTask", "HCaptchaTask"] : ["HCaptchaTaskProxyLess", "HCaptchaEnterpriseTaskProxyLess"];
+  else candidates = [proxy ? "RecaptchaV2Task" : "RecaptchaV2TaskProxyLess"];
   if (proxy) task.proxy = proxy;
-  const post = (body) => req("https://api.capsolver.com", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
-  const created = await post({ clientKey: apiKey, task: { type: taskType, ...task } });
-  if (created.errorId !== 0) return { error: `capsolver createTask: ${created.errorDescription ?? created.errorCode}` };
+  const post = (path, body) => req(`https://api.capsolver.com${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+  let created = null;
+  const createErrors = [];
+  for (const taskType of candidates) {
+    const c = await post("/createTask", { clientKey: apiKey, task: { type: taskType, ...task } });
+    if (c.errorId === 0) { created = c; break; }
+    createErrors.push(`${taskType}: ${c.errorDescription ?? c.errorCode}`);
+    if (c.errorCode !== "ERROR_INVALID_TASK_DATA") break; // real failure (auth, balance), don't keep trying types
+  }
+  if (!created) return { error: `capsolver createTask: ${createErrors.join(" | ")}` };
   const deadline = Date.now() + timeoutSec * 1000;
   for (;;) {
     if (Date.now() > deadline) return { error: `timeout after ${timeoutSec}s waiting for solution (id ${created.taskId})` };
     await sleep(3_000);
-    const r = await post({ clientKey: apiKey, taskId: created.taskId });
+    const r = await post("/getTaskResult", { clientKey: apiKey, taskId: created.taskId });
     if (r.errorId !== 0) return { error: `capsolver getTaskResult: ${r.errorDescription ?? r.errorCode}` };
-    if (r.status === "ready") return { token: r.solution.token, costCents: Math.round((r.solution.price ?? 0) * 100) };
+    const token = r.solution?.token ?? r.solution?.gRecaptchaResponse;
+    if (r.status === "ready" && token) return { token, costCents: Math.round((r.solution.price ?? 0) * 100) };
+    if (r.status === "ready") return { error: `capsolver ready but no token in solution: ${JSON.stringify(r.solution).slice(0, 200)}` };
     if (r.status !== "processing") return { error: `capsolver unexpected status: ${r.status}` };
   }
 }
@@ -155,6 +174,17 @@ function injectHint(type) {
       '  if (el) { el.value = t; el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); }',
       '  Also try: window.turnstile?.getResponse ? null : document.querySelector("form")?.requestSubmit()',
       '  If a callback is registered (window.tsCallback / data-callback), call it with the token.',
+    ].join("\n");
+  }
+  if (type === "hcaptcha") {
+    return [
+      "hCaptcha token (valid ~2 min). Apply in the page via browser_evaluate, then submit:",
+      '  const t = TOKEN;',
+      '  for (const sel of ["textarea[name=\\"h-captcha-response\\"]", "textarea[name=\\"g-recaptcha-response\\"]", "#h-captcha-response", "#g-recaptcha-response"]) {',
+      '    const el = document.querySelector(sel) || [...document.querySelectorAll("iframe")].map(f => { try { return f.contentDocument?.querySelector(sel); } catch { return null; } }).find(Boolean);',
+      '    if (el) { el.value = t; el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); }',
+      "  }",
+      '  If window.hcaptcha exists the widget callback may also need calling; then click/re-request the form submit.',
     ].join("\n");
   }
   return [
