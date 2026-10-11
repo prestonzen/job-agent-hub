@@ -91,6 +91,18 @@ function failStreak(runs: Awaited<ReturnType<typeof listRuns>>, agent: string): 
   return n;
 }
 
+/** Recent success rate (succeeded / finished, quota rests and cancels excluded); null until 3+ samples. */
+function successRate(runs: Awaited<ReturnType<typeof listRuns>>, agent: string): number | null {
+  let ok = 0,
+    fail = 0;
+  for (const r of finished(runs, agent)) {
+    if (r.exitCode === QUOTA_EXIT) continue;
+    if (r.status === "succeeded") ok++;
+    else if (r.status === "failed") fail++;
+  }
+  return ok + fail >= 3 ? ok / (ok + fail) : null;
+}
+
 export async function autopilotStatus(env: Env) {
   const [s, runners, runs, d] = await Promise.all([getAutopilot(env), listRunners(env), listRuns(env, 80), adb(env)]);
   const { results } = await d.prepare("SELECT agent, next_after FROM autopilot_state").all<{ agent: string; next_after: number }>();
@@ -138,7 +150,16 @@ export async function autopilotTick(env: Env): Promise<string | null> {
 
   const now = Date.now();
   const assignedTo = new Set(jobs.filter((j) => j.assignedTo && isAvailableFor(j, j.assignedTo)).map((j) => j.assignedTo as string));
-  order.sort((a, b) => Number(assignedTo.has(b)) - Number(assignedTo.has(a)));
+  // Handed-off jobs go first. Among backlog agents, recent success rate sets priority (unproven
+  // agents rank neutral). An agent already flying a run — e.g. a dispatched bug-bounty job — is
+  // skipped below, so cyber work never competes with applications for that agent.
+  const rate = new Map(order.map((a) => [a, successRate(runs, a)]));
+  order.sort((a, b) => {
+    const urgent = Number(assignedTo.has(b)) - Number(assignedTo.has(a));
+    if (urgent !== 0) return urgent;
+    if (s.backlog.includes(a) && s.backlog.includes(b)) return (rate.get(b) ?? 0.5) - (rate.get(a) ?? 0.5);
+    return 0;
+  });
   const frontLineAvailable = order.some((a) => !s.backlog.includes(a));
   for (const agent of order) {
     if (inFlight.some((r) => r.agent === agent)) continue;
