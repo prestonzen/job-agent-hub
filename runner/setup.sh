@@ -43,7 +43,8 @@ PW_REV=$(node -p "require('$PW_DIR/../playwright-core/browsers.json').browsers.f
 if [ -z "$PW_REV" ] || [ ! -d "/opt/ms-playwright/chromium-$PW_REV" ]; then
   node "$PW_DIR/cli.js" install --with-deps chromium
 fi
-chmod -R a+rX /opt/ms-playwright /opt/uv
+chmod -R a+rX /opt/ms-playwright
+[ -d /opt/uv ] && chmod -R a+rX /opt/uv || true
 # Some npm CLIs ship vendored binaries (e.g. Qwen's ripgrep) without the execute bit for other users.
 find /usr/lib/node_modules -path '*vendor/ripgrep*' -name rg -type f -exec chmod a+rx {} +
 
