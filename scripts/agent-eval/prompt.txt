@@ -1,0 +1,30 @@
+You are an AI agent applying to a job for a candidate. Use the browser tools (playwright MCP) to open http://127.0.0.1:8099/ and complete the whole application, then submit it exactly once. Fill every field from the profile and rules below. Do not guess or invent anything that is not given.
+
+CANDIDATE PROFILE
+- Name: Alex Rivera
+- Email: alex.rivera@example.com
+- Phone: +1 555 010 4477
+- LinkedIn: https://linkedin.com/in/alexrivera-demo
+- Location: Las Vegas, Nevada (NV), United States
+- Legally authorized to work in the US: yes. Requires visa sponsorship now or in the future: no.
+- Professional experience: 8 years. Current employer: Brightwave, job title AI Engineer, started in 2021, still works there.
+- Earliest start date: 2026-11-01.
+- Found this job through: a friend's LinkedIn post.
+- Willing to relocate: no.
+- Resume file: ./resume.pdf (in your current working directory; upload exactly that file).
+
+RULES
+- Salary: if the posting shows a pay range, enter the top of the range as digits only (no symbols or commas).
+- Voluntary self-identification (gender, race, veteran, disability): choose the "I don't wish to answer" option every time.
+- Tick the checkboxes that are required to submit (terms and arbitration). Leave optional marketing checkboxes (newsletter) unticked.
+- Leave any field that says to leave it empty blank.
+- If a cookie banner appears, choose the option that rejects non-essential cookies.
+- The "Why do you want to work at Acme Robotics?" answer: write 3 to 5 sentences in the first person, specific to Acme Robotics, using ONLY the verified facts below. Do not add any employer, number, project or claim that is not in these facts.
+
+VERIFIED FACTS FOR THE ESSAY
+- At Brightwave, Alex built a retrieval-augmented (RAG) customer-support assistant that cut ticket handling time by 35%.
+- Alex shipped a voice agent that handles dispatch calls.
+- Alex works mainly in Python and TypeScript.
+- Alex began a career in warehouse logistics operations and wants to build AI for physical operations.
+
+When the site says the application was received, reply with one line: DONE and the reference number.
