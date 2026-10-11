@@ -34,6 +34,9 @@ Score = checks passed / total (0 if nothing was submitted), averaged over trials
 | claude (Claude Code) | gemma4:26b | 3/3 | 0.96 | 3 min |
 | hermes | gemma4:26b | 3/3 | 0.97 | 6 min |
 | bare | qwen3.6:35b-a3b (q4_K_M) | 3/3 | 0.90 | 2.5 min |
+| bare | qwen3-coder-next | 2/3 | 0.59 | 4 min |
+| hermes | qwen3-coder-next | 3/3 | 0.89 | 8 min |
+| bare, *hard* | qwen3-coder-next | 0/3 | 0 | looped on one click |
 | bare | glm-4.7-flash | 2/3 | 0.61 | 2.5 min |
 | bare | muse-glimmer:30b | 1/3 | 0.32 | 10 min |
 | bare | qwen3:30b-a3b | 0/1 | 0 | timed out |

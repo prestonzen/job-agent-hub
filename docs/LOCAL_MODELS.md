@@ -9,7 +9,7 @@ building something similar, and applicants who want to know how far a free local
 
 | Question | Answer |
 |---|---|
-| Which local model? | **`gemma4:26b`** (18 GB, runs well on one box). Highest and most consistent score of everything tested. |
+| Which local model? | **`gemma4:26b`** (18 GB, runs well on one box). Highest and most consistent score of everything tested, including the 51 GB `qwen3-coder-next`. |
 | Do you need a harness? | **No for accuracy, yes for operations.** A bare "model + browser tools + loop" scored the same as Claude Code and Hermes. We still run **Hermes Agent** in production because it adds memory and skill learning, and it was the only harness that finished a perfect run. |
 | Is it as good as a frontier cloud model? | No. Expect roughly 97% of form fields right on a medium form and a miss on tricky masked inputs. Everything else here is cheaper, not smarter. |
 | Anything that failed outright? | `gpt-oss:20b` (malformed tool calls), `qwen3:30b-a3b` (never finished), `muse-glimmer:30b` (slow, mostly timed out). |
@@ -44,6 +44,8 @@ direction, not as precision.** Speed did not matter for the decision: the agent 
 | Claude Code | gemma4:26b | 3/3 | 0.96 | 0/3 | 3 min |
 | Hermes | gemma4:26b | 3/3 | **0.97** | 1/3 | 6 min |
 | bare loop | qwen3.6:35b-a3b (q4_K_M) | 3/3 | 0.90 | 0/3 | 2.5 min |
+| bare loop | qwen3-coder-next (80B MoE, 51 GB) | 2/3 | 0.59 | 0/3 | 4 min |
+| Hermes | qwen3-coder-next | 3/3 | 0.89 | 0/3 | 8 min |
 | bare loop | glm-4.7-flash | 2/3 | 0.61 | 0/3 | 2.5 min |
 | bare loop | muse-glimmer:30b | 1/3 | 0.32 | 0/3 | 10 min |
 | bare loop | qwen3:30b-a3b | 0/1 | 0 | 0/1 | timed out at 20 min |
@@ -59,8 +61,14 @@ direction, not as precision.** Speed did not matter for the decision: the agent 
 On the hard form Gemma still filled everything correctly when it finished; Qwen3.6 did not complete the type-ahead
 fields in either run. Raw per-run data is in [`scripts/agent-eval/results/`](../scripts/agent-eval/results/).
 
-Not tested: `gpt-oss:120b` (65 GB, judged too large and slow for a shared box) and `qwen3-coder-next` (no
-end-to-end data; downloads were stopped). Neither is ruled out for good; the decision to stop was practical.
+`qwen3-coder-next` (bare loop, hard form): 0/3 submitted. In the run inspected it clicked the same suggestion 80 times
+without progressing.
+
+`qwen3-coder-next` summary: slower to load and behind Gemma in both harnesses. It filled the honeypot trap field once,
+missed the demographic radio group once, and in the bare loop one run of three never submitted. Under Hermes it
+recovered to 0.89 (3/3 submitted), the best of the other models, but still below Gemma's 0.97.
+
+Not tested: `gpt-oss:120b` (65 GB, judged too large and slow for a shared box); its download was stopped.
 
 ## What the data says
 
