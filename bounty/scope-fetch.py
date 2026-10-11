@@ -26,7 +26,13 @@ DATA = {
 
 OUT = Path("/opt/bounty/queue.json")
 
-ASSET_TYPES = {"domain", "wildcard", "url", "website", "api", "other"}
+# Web-scannable asset classes (the dumps use asset_type with UPPERCASE enums; some entries
+# carry neither key — accept those when the identifier itself looks like a host or URL).
+ASSET_TYPES = {"domain", "wildcard", "url", "website", "api", "other", "cidr"}
+SKIP_TYPES = {"source_code", "hardware", "smart_contract", "android_play_store", "android_apk",
+              "apple_app_store", "ios", "windows_app_store", "executable", "blockchain"}
+HOSTLIKE = re.compile(r"^\*?\.?[a-z0-9][a-z0-9.\-]*\.[a-z]{2,}(/|$|\?)", re.I)
+URLLIKE = re.compile(r"^https?://", re.I)
 
 # Policy signals. Programs that explicitly bless automation go first; explicit bans are dropped.
 AUTO_OK = re.compile(r"(automated (scanning|testing|tools).{0,80}(allow|permit|ok|fine|accept)|(allow|permit|welcome).{0,80}automated)", re.I | re.S)
@@ -62,6 +68,66 @@ def policy_verdict(url: str) -> str:
     return "unspecified"
 
 
+def norm_program(platform: str, p: dict) -> dict | None:
+    """Normalize one program entry from any of the 4 platform dumps. None = skip."""
+    if platform == "hackerone":
+        pays = bool(p.get("offers_bounties"))
+        ident_of = lambda t: t.get("asset_identifier")  # noqa: E731
+        type_of = lambda t: (t.get("asset_type") or t.get("type") or "")  # noqa: E731
+        url = p.get("url", "")
+        name = p.get("name", "?")
+        maxb = None
+    elif platform == "bugcrowd":
+        pays = bool(p.get("max_payout"))
+        ident_of = lambda t: t.get("target") or t.get("uri")  # noqa: E731
+        type_of = lambda t: t.get("type") or ""  # noqa: E731
+        url = p.get("url", "")
+        name = p.get("name", "?")
+        maxb = p.get("max_payout") or None
+    elif platform == "intigriti":
+        pays = bool(p.get("max_bounty"))
+        ident_of = lambda t: t.get("endpoint")  # noqa: E731
+        type_of = lambda t: t.get("type") or ""  # noqa: E731
+        url = p.get("url", "")
+        name = p.get("name", "?")
+        maxb = p.get("max_bounty") or None
+    else:  # yeswehack
+        pays = bool(p.get("max_bounty")) and p.get("public", True) and not p.get("disabled")
+        ident_of = lambda t: t.get("target")  # noqa: E731
+        type_of = lambda t: t.get("type") or ""  # noqa: E731
+        url = p.get("url", "")
+        name = p.get("name", "?")
+        maxb = p.get("max_bounty") or None
+
+    if not pays:
+        return None
+    assets = set()
+    for t in p.get("targets", {}).get("in_scope", []):
+        ident = (ident_of(t) or "").strip()
+        if not ident or ident.lower() in ("all", "*"):
+            # "all" scope: note it via the program website if there is one
+            ident = (p.get("website") or "").strip()
+            if not ident:
+                continue
+        atype = type_of(t).strip().lower()
+        if atype in SKIP_TYPES:
+            continue
+        if atype in ASSET_TYPES or HOSTLIKE.match(ident) or URLLIKE.match(ident):
+            assets.add(ident)
+    if not assets:
+        return None
+    return {
+        "platform": platform,
+        "program": name,
+        "url": url,
+        "assets": sorted(assets),
+        "wildcards": sorted(a for a in assets if "*" in a),
+        "asset_count": len(assets),
+        "max_bounty": maxb,
+        "automation": "unchecked",
+    }
+
+
 def main() -> None:
     top = 40
     check_policy = True
@@ -81,28 +147,10 @@ def main() -> None:
         programs = json.loads(raw)
         n = 0
         for p in programs:
-            if not p.get("offers_bounties"):
-                continue
-            in_scope = p.get("targets", {}).get("in_scope", [])
-            assets = sorted({
-                t["asset_identifier"]
-                for t in in_scope
-                if t.get("type", "").lower() in ASSET_TYPES and t.get("asset_identifier")
-            })
-            wild = [a for a in assets if "*" in a]
-            if not assets:
-                continue
-            candidates.append({
-                "platform": platform,
-                "program": p.get("name", "?"),
-                "url": p.get("url", ""),
-                "assets": assets,
-                "wildcards": wild,
-                "asset_count": len(assets),
-                "max_bounty": p.get("max_bounty") or None,
-                "automation": "unchecked",
-            })
-            n += 1
+            row = norm_program(platform, p)
+            if row:
+                candidates.append(row)
+                n += 1
         print(f"{platform}: {n} paying programs with in-scope assets")
 
     # Biggest attack surface first.
