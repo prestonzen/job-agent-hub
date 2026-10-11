@@ -19,3 +19,4 @@ vite.preview-prod.config.ts
 desktop.ini
 .demo-seed.sql
 .mailer-token.local.txt
+__pycache__/
