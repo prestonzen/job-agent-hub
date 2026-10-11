@@ -91,3 +91,8 @@ export interface Analytics {
   fleet: { agentsReady: number; runnersOnline: number; slots: number; busy: number };
 }
 export const getAnalytics = (days: number) => request<Analytics>(`/api/admin/analytics?days=${days}`);
+
+// ---------- assisted queue ----------
+export interface AttemptLog { agent: string; at: string; outcome: string; note: string | null; log: string | null }
+export interface AssistedJob { id: string; name: string; company: string; role: string; applyUrl: string | null; applyEmail: string | null; ats: string | null; fit: number | null; pay: string | null; clickupUrl: string; category: string; reason: string; attempts: AttemptLog[] }
+export const getAssisted = () => request<{ jobs: AssistedJob[]; notWorkable: number }>("/api/admin/assisted");

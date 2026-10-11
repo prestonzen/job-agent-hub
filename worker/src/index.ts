@@ -1,3 +1,4 @@
+import { assistedQueue } from "./assisted";
 import { buildAnalytics } from "./analytics";
 import { sendApplicationEmail, sendTestEmail } from "./emailer";
 import { adminUser, agentName, agentNames, clearedCookie, isAdminToken, sessionCookie } from "./auth";
@@ -293,6 +294,9 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       const b = await readJson<{ to?: string }>(request).catch(() => ({}) as { to?: string });
       return json(await sendTestEmail(env, b.to ?? "prestonzen@kaizenapps.com"));
     }
+
+    // Jobs agents couldn't finish: worked in a signed-in Chrome with Preston nearby (Claude in Chrome), logs attached.
+    if (path === "/api/admin/assisted" && method === "GET") return json(await assistedQueue(env));
 
     // Analytics: per-agent success, time to apply, ATS yield, queue health (rolling window).
     if (path === "/api/admin/analytics" && method === "GET") {

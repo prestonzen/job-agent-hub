@@ -386,3 +386,16 @@ button.danger { color: #e5484d; border-color: color-mix(in srgb, #e5484d 40%, va
 .constellation .ghost .node-i { fill: var(--muted); }
 .constellation .ghost .spoke { stroke-dasharray: 2 6; opacity: 0.5; }
 .constellation .ghost .node-l, .constellation .ghost .node-n { opacity: 0.8; }
+
+/* ---------- Admin: assisted queue ---------- */
+.assist-how { background: var(--bg); border: 1px dashed var(--line); border-radius: 10px; padding: 12px 14px; margin: 10px 0 14px; font-size: 14px; }
+.assist-how pre { margin: 8px 0; padding: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; white-space: pre-wrap; font-size: 12.5px; }
+.assist-list { list-style: none; margin: 0; padding: 0; }
+.assist-list > li { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.assist-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+.assist-title { display: grid; gap: 2px; min-width: 0; flex: 1 1 320px; font-weight: 600; }
+.assist-meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.attempts { margin: 8px 0 4px 18px; padding: 0; font-size: 13px; }
+.attempts li { margin-bottom: 8px; }
+.attempts pre { margin: 6px 0 0; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; white-space: pre-wrap; max-height: 240px; overflow: auto; font-size: 12px; }
+.btn.small { padding: 4px 12px; font-size: 13px; }

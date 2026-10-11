@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { addComment, getAdminTasks, getMe, login, logout, setStatus } from "../api";
 import { STATUSES, type AdminTask } from "../types";
 import Analytics from "./Analytics";
+import Assisted from "./Assisted";
 import CommandCenter from "./CommandCenter";
 import Connect from "./Connect";
 import Alerts from "./Alerts";
@@ -11,6 +12,7 @@ import RunAgents from "./RunAgents";
 const TABS = [
   { id: "hub", label: "Command center" },
   { id: "analytics", label: "Analytics" },
+  { id: "assisted", label: "Assisted" },
   { id: "run", label: "Run agents" },
   { id: "resumes", label: "Resumes" },
   { id: "alerts", label: "Replies & alerts" },
@@ -59,6 +61,7 @@ export default function Admin() {
       </section>
       {tab === "hub" && <CommandCenter />}
       {tab === "analytics" && <Analytics />}
+      {tab === "assisted" && <Assisted />}
       {tab === "run" && <RunAgents />}
       {tab === "resumes" && <Resumes />}
       {tab === "alerts" && <Alerts />}

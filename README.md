@@ -27,6 +27,10 @@ Live at **https://jobhunter.prestonzen.com**.
 
 <p align="center"><img src="docs/screenshots/admin-analytics.png" alt="Admin analytics tab" width="920"></p>
 
+**Assisted queue**: everything the agents gave up on, with their logs, ready to finish in Chrome:
+
+<p align="center"><img src="docs/screenshots/admin-assisted.png" alt="Admin assisted queue" width="720"></p>
+
 **Command center** (autopilot, per-ATS pacing, live activity, the queue) and **Run agents** (launch "Gemini: work 4 jobs" from a phone, schedules, live run history):
 
 <p align="center">
@@ -41,6 +45,7 @@ Live at **https://jobhunter.prestonzen.com**.
 - **One runner prompt**: the loop (read playbook → claim → apply → report) is served to every agent as MCP server instructions, from `GET /api/agent/instructions`, and on the admin *Connect agents* page.
 - **Playbook from ClickUp**: standard form answers and rules come from the ClickUp playbook doc, served only to authenticated agents and admins, so no agent re-asks profile questions.
 - **Admin analytics** (`/admin#analytics`): per-agent scorecard (applied, success rate, median claim-to-submit time, run reliability and run-hours), outcomes per day, yield by application system, why jobs are parked, hour-of-day activity, ClickUp call trend and fleet health, over 7/30/90 days.
+- **Assisted queue** (`/admin#assisted`): jobs the agents couldn't finish (a second failure, a code or CAPTCHA wall, an account to sign in to) with every agent's attempt log attached, to be pushed to completion in a real signed-in Chrome with a person nearby (Claude in Chrome via `GET /api/admin/assisted` and `POST /api/admin/jobs/<id>/report`). Jobs that effort can't fix (eligibility, travel, already done) are counted, not listed.
 - **Admin command center** (`/admin`, admin-token login): queue and claims, which agents are online, live activity, release/skip/mark-applied, pipeline editing, copy-paste agent setup.
 - **Run agents from anywhere** (`/admin#run`): launch "Gemini: work 4 jobs" (or any prompt, up to 5 in parallel) from your phone. A **runner** on an always-on Linux box starts the CLI headless with a real browser, streams the output back live, and stops it on demand. See [runner/README.md](runner/README.md).
 - **Kimi is the backlog**: Codex, Claude, Mistral and Gemini take fresh jobs. When one fails a job (or can't write an essay) the hub hands it to Kimi automatically, with the failing agent's **action log** (URL reached, fields filled, answers given, where it stopped), so Kimi continues instead of starting over. Kimi works handed-over jobs first and takes fresh ones only when no front-line agent is available. A second failure parks the job for a person. Agents can also hand over deliberately with `handoff_job` (assignee gets it ahead of the queue for 6 hours).

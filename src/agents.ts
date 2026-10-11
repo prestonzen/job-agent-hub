@@ -15,7 +15,9 @@ export const agentColor = (name: string | null | undefined) => {
 
 export const agentLabel = (name: string | null | undefined) => {
   const k = agentKey(name);
-  return k === "unknown" ? "Unknown" : k[0].toUpperCase() + k.slice(1);
+  if (k === "unknown") return "Unknown";
+  if (k === "deepseek") return "DeepSeek";
+  return k[0].toUpperCase() + k.slice(1);
 };
 
 /** Palette slot order first, then anything unexpected alphabetically. */

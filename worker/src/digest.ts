@@ -25,6 +25,7 @@ export async function sendDigest(env: Env, origin = "https://jobhunter.prestonze
   ];
   if (human.length) {
     lines.push("", `🙋 <b>Needs you (${human.length})</b>`);
+    lines.push(`Open the <a href="${origin}/admin#assisted">assisted queue</a> to push them through with Claude in Chrome.`);
     for (const j of human.slice(0, 10)) lines.push(`• <a href="${j.clickupUrl}">${esc(j.name)}</a>: ${esc(j.needsHuman ?? "")}`);
   }
   lines.push("", `<a href="${origin}/admin">Open the hub</a>`);
