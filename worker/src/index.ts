@@ -245,7 +245,18 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
 
     // Bug bounty lane: runner tooling and agents push program/scan/finding/report/payout events.
     if (sub === "/bounty" && method === "POST") {
-      return json({ ok: true, agent, ...(await addBountyEvent(env, agent, await readJson<BountyEventInput>(request))) }, 201);
+      const b = await readJson<BountyEventInput>(request);
+      const created = await addBountyEvent(env, agent, b);
+      // Ava ping on the events that matter: a confirmed finding or money.
+      const status = (b.status ?? "").toLowerCase();
+      if (b.kind === "payout" || (b.kind === "finding" && status === "confirmed")) {
+        const what = b.kind === "payout" ? `💰 Bounty payout${b.amount ? ` — $${b.amount}` : ""}` : `🐞 Confirmed finding${b.severity ? ` (${b.severity})` : ""}`;
+        const lines = [what, `${b.program ?? "unknown program"}${b.target ? ` · ${b.target}` : ""}`];
+        if (b.title) lines.push(b.title);
+        lines.push(`${url.origin}/admin#bounty`);
+        ctx.waitUntil(notify(env, lines.join("\n")).then((e) => e && console.error("bounty notify:", e)));
+      }
+      return json({ ok: true, agent, ...created }, 201);
     }
 
     const job = sub.match(/^\/jobs\/([^/]+)(?:\/(renew|report|release|handoff|email))?$/);
