@@ -62,7 +62,8 @@ def post_run(admin: str, agent: str, prompt: str) -> dict:
     req = urllib.request.Request(
         HUB + "/api/admin/runs",
         data=json.dumps({"agent": agent, "kind": "prompt", "prompt": prompt}).encode(),
-        headers={"Authorization": "Bearer " + admin, "Content-Type": "application/json"},
+        headers={"Authorization": "Bearer " + admin, "Content-Type": "application/json",
+                 "User-Agent": "curl/8.5.0"},  # default python UA gets a 403 from the edge
     )
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.load(r)
