@@ -58,5 +58,15 @@ ssh root@kloud "pct exec 134 -- sh /opt/darkmoon-smoke-test.sh"
       Done 2026-10-11: found + documented a confirmed info-disclosure vuln on the lab; repeatable
       via `bounty/darkmoon-smoke-test.sh`.
 - [ ] Telegram notifications for BugBountyScanner (env: telegram_api_key / telegram_chat_id — Ava bot).
-- [ ] Program-scope fetcher: HackerOne API → scope list → ClickUp subtasks per in-scope domain.
+- [ ] Program-scope fetcher: build on `arkadiyt/bounty-targets-data` (hourly-updated JSON per
+      platform: `data/hackerone_data.json`, `bugcrowd_data.json`, `intigriti_data.json`,
+      `yeswehack_data.json` — validated 2026-10-11: 449 H1 programs, 118 paying with wildcard
+      scope). Filter paying + automation-tolerant programs → scope list → ClickUp subtasks per
+      in-scope domain.
 - [ ] Scheduled low-noise re-scans of enrolled programs (hub automation).
+
+## Platforms (accounts live on the runner, all with TOTP via `oathtool`)
+
+HackerOne, Bugcrowd, Intigriti, YesWeHack — credentials in CT 218 `/etc/job-agent-runner/accounts.json`.
+Hub tracking: `POST /api/agent/bounty` events (program/scan/finding/report/payout) roll up to the
+admin **Bug bounty** tab and the main analytics KPIs.
