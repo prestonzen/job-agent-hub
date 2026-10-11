@@ -1,8 +1,8 @@
 # Jev fast path (browser-use/jev-ultrafast)
 
-Status 2026-10-11: **proven on a live Greenhouse form**, not yet wired into the runner.
+Status 2026-10-11: **wired into the runner** as `/opt/job-agent-runner/jev-apply.py` (repo: `runner/jev-apply.py`). Profile: `/etc/job-agent-runner/applicant.json` (example: `runner/applicant.example.json`).
 
-Jev is a browser agent that *chooses* actions (indexed element table → TypeSafe policy → CLICK/TYPE_TEXT/SELECT/SCROLL) instead of generating code. A small OpenAI-compatible model (Mercury 2.5 via OpenRouter) writes field text. Filled a real Greenhouse application's contact fields in ~21 s for pennies, vs. minutes and dollars for a full agent CLI run.
+Jev is a browser agent that *chooses* actions (indexed element table → TypeSafe policy → CLICK/TYPE_TEXT/SELECT/SCROLL) instead of generating code. A small OpenAI-compatible model writes field text. Filled a real Greenhouse application's contact fields in ~21 s for pennies, vs. minutes and dollars for a full agent CLI run.
 
 ## Setup on the runner (kloud CT 218)
 
@@ -22,3 +22,22 @@ Jev is a browser agent that *chooses* actions (indexed element table → TypeSaf
 ## Planned integration
 
 `jev-apply.py` wrapper: runner hands it the job (URL, title, core answers from a local profile file, resume path) → Jev fills → wrapper uploads resume via CDP → wrapper clicks submit → verify confirmation → report to hub. Fast-path eligible: Greenhouse/Lever-style standard forms without essay questions (essays stay with the full agents for voice quality). Per-ATS pacing in `worker/src/pacing.ts` still applies — the wrapper claims through the same hub API.
+
+## jev-apply.py usage
+
+```bash
+BU_CDP_URL=http://127.0.0.1:9222 DISPLAY=:99 \
+  /opt/jev-ultrafast/.venv/bin/python /opt/job-agent-runner/jev-apply.py \
+  --url <job-url> --resume <path> [--submit] [--timeout 240]
+```
+
+(jev.env must be sourced first: `set -a; . /etc/job-agent-runner/jev.env; set +a`.)
+
+Outcome JSON on stdout: `filled-only` (no --submit), `submitted`, `captcha:<type>` (run form-assist.mjs, inject, resubmit), `email-code` (run inbox-assist.mjs), `needs-agent` (custom required fields/essays — hand to a full agent CLI).
+
+## More hard-won lessons (2026-10-11, second session)
+
+6. **Text model matters.** `inception/mercury-2.5` returns null content under the helper's token cap; `google/gemini-2.5-flash` flakes on mid-form fields. `deepseek/deepseek-chat-v3.1` via OpenRouter (the library's default family) is stable. jev.env: `TEXT_MODEL=deepseek/deepseek-chat-v3.1`.
+7. **The stock text helper is brittle**: strict JSON parse, no retry, no fence stripping. Patched in the container copy (`jev_ultrafast/model.py` `field_text`): strips ```json fences, retries once on empty/unparseable content. Local patch — a git pull of /opt/jev-ultrafast will overwrite it.
+8. **Greenhouse React deletes the file input after a successful upload** and replaces it with a filename chip. Verify uploads by the *filename appearing in page text*, never by re-querying the input. Relatedly, never use jev's `Browser.evaluate` (StalePage guard) after touching the DOM — use raw `Runtime.evaluate` via `br.call`.
+9. **Anti-stall guard ends runs** after 3 no-change actions; the wrapper treats interruption gracefully and still verifies/uploads, reporting `needs-agent` when required fields remain.

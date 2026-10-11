@@ -1,0 +1,15 @@
+{
+  "firstName": "Preston",
+  "lastName": "Zen",
+  "email": "contact@prestonzen.com",
+  "phone": "650-870-2017",
+  "location": "Las Vegas, Nevada, United States",
+  "address": "304 S Jones Blvd, Las Vegas, NV 89107",
+  "linkedin": "https://www.linkedin.com/in/prestonzen",
+  "github": "https://github.com/prestonzen",
+  "website": "https://prestonzen.com",
+  "workAuthorization": {
+    "authorized": "Yes, I am authorized to work in the United States",
+    "sponsorship": "No, I do not require sponsorship"
+  }
+}
