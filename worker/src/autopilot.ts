@@ -29,21 +29,41 @@ export interface AutopilotSettings {
   backlog: string[];
   /** Agents limited to one kind of job (free-tier Gemini: email applications only). null = any job. */
   lanes: Record<string, Lane | null>;
+  /** Capability labels per agent (cyber, blocker-bypass, applications, speed…); shown in the admin, editable via API. */
+  tags: Record<string, string[]>;
 }
 
-const DEFAULTS: AutopilotSettings = { enabled: true, maxConcurrent: 2, jobsPerRun: 3, minGapMin: 25, agents: {}, backlog: ["kimi"], lanes: DEFAULT_LANES };
+/** Seeded from matrix testing (2026-10): codex drafts cyber reports, kimi unblocks stuck applications, ollama does volume applications for free. */
+const DEFAULT_TAGS: Record<string, string[]> = {
+  ollama: ["applications", "essays", "free"],
+  gemini: ["email", "speed", "free"],
+  kimi: ["blocker-bypass", "handoffs"],
+  codex: ["cyber", "reports"],
+  claude: ["cyber", "applications"],
+  mistral: ["email-first"],
+  deepseek: ["unproven"],
+  qwen: ["unproven"],
+};
+
+const DEFAULTS: AutopilotSettings = { enabled: true, maxConcurrent: 2, jobsPerRun: 3, minGapMin: 25, agents: {}, backlog: ["kimi"], lanes: DEFAULT_LANES, tags: DEFAULT_TAGS };
 const FAIL_STREAK_PAUSE = 3;
 /** Exit code recorded on a run that stopped because the agent's quota or rate limit ran out (see runs.ts). */
 export const QUOTA_EXIT = 429;
 
 export async function getAutopilot(env: Env): Promise<AutopilotSettings> {
   const saved = await getSetting<Partial<AutopilotSettings>>(env, "autopilot").catch(() => null);
-  return { ...DEFAULTS, ...(saved ?? {}), agents: { ...(saved?.agents ?? {}) }, backlog: saved?.backlog ?? DEFAULTS.backlog, lanes: { ...DEFAULT_LANES, ...(saved?.lanes ?? {}) } };
+  return { ...DEFAULTS, ...(saved ?? {}), agents: { ...(saved?.agents ?? {}) }, backlog: saved?.backlog ?? DEFAULTS.backlog, lanes: { ...DEFAULT_LANES, ...(saved?.lanes ?? {}) }, tags: { ...DEFAULT_TAGS, ...(saved?.tags ?? {}) } };
 }
 
 export async function saveAutopilot(env: Env, patch: Partial<AutopilotSettings>): Promise<AutopilotSettings> {
   const cur = await getAutopilot(env);
   const num = (v: unknown, lo: number, hi: number, d: number) => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : d);
+  const tags = (t: unknown) =>
+    Object.fromEntries(
+      Object.entries(t && typeof t === "object" ? (t as Record<string, unknown>) : {})
+        .map(([k, v]) => [k.toLowerCase(), (Array.isArray(v) ? v : []).map((x) => String(x).toLowerCase().slice(0, 24)).slice(0, 8)] as const)
+        .filter(([, v]) => v.length),
+    );
   const next: AutopilotSettings = {
     enabled: typeof patch.enabled === "boolean" ? patch.enabled : cur.enabled,
     maxConcurrent: num(patch.maxConcurrent, 1, 6, cur.maxConcurrent),
@@ -52,6 +72,7 @@ export async function saveAutopilot(env: Env, patch: Partial<AutopilotSettings>)
     agents: { ...cur.agents, ...(patch.agents ?? {}) },
     backlog: Array.isArray(patch.backlog) ? patch.backlog.map((a) => String(a).toLowerCase()).slice(0, 10) : cur.backlog,
     lanes: { ...cur.lanes, ...(patch.lanes ?? {}) },
+    tags: patch.tags ? { ...cur.tags, ...tags(patch.tags) } : cur.tags,
   };
   await setSetting(env, "autopilot", next);
   return next;
@@ -75,6 +96,8 @@ export interface AgentAutopilot {
   detail: string | null;
   /** "backlog" agents (Kimi) work handed-over jobs; front-line agents take fresh ones. */
   role: "front-line" | "backlog";
+  /** Capability labels (cyber, blocker-bypass, applications, speed…) from settings.tags. */
+  tags: string[];
 }
 
 /** Most recent finished agent runs (queue/prompt kinds), newest first. */
@@ -112,15 +135,16 @@ export async function autopilotStatus(env: Env) {
   const agents: AgentAutopilot[] = [...known].sort().map((agent): AgentAutopilot => {
     const role = s.backlog.includes(agent) ? "backlog" : "front-line";
     const lane = s.lanes[agent] ?? null;
+    const tags = s.tags[agent] ?? [];
     const active = runs.find((r) => r.agent === agent && r.kind !== "login" && (r.status === "running" || r.status === "queued"));
     const streak = failStreak(runs, agent);
     const n = next.get(agent) ?? 0;
-    if (s.agents[agent] === false) return { agent, role, state: "off", nextAt: null, detail: "switched off" };
-    if (!readySet.has(agent)) return { agent, role, state: "not-ready", nextAt: null, detail: "not logged in on a runner" };
-    if (streak >= FAIL_STREAK_PAUSE) return { agent, role, state: "paused", nextAt: null, detail: `${streak} failed runs in a row` };
-    if (active) return { agent, role, state: active.status === "running" ? "working" : "queued", nextAt: null, detail: `run #${active.id}` };
-    if (n > Date.now()) return { agent, role, state: "waiting", nextAt: new Date(n).toISOString(), detail: lane === "email" ? "email applications only" : lane === "email-first" ? "email applications first" : null };
-    return { agent, role, state: "ready", nextAt: null, detail: lane === "email" ? "email applications only" : lane === "email-first" ? "email applications first" : null };
+    if (s.agents[agent] === false) return { agent, role, tags, state: "off", nextAt: null, detail: "switched off" };
+    if (!readySet.has(agent)) return { agent, role, tags, state: "not-ready", nextAt: null, detail: "not logged in on a runner" };
+    if (streak >= FAIL_STREAK_PAUSE) return { agent, role, tags, state: "paused", nextAt: null, detail: `${streak} failed runs in a row` };
+    if (active) return { agent, role, tags, state: active.status === "running" ? "working" : "queued", nextAt: null, detail: `run #${active.id}` };
+    if (n > Date.now()) return { agent, role, tags, state: "waiting", nextAt: new Date(n).toISOString(), detail: lane === "email" ? "email applications only" : lane === "email-first" ? "email applications first" : null };
+    return { agent, role, tags, state: "ready", nextAt: null, detail: lane === "email" ? "email applications only" : lane === "email-first" ? "email applications first" : null };
   });
   return { settings: s, agents };
 }

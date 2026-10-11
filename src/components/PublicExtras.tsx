@@ -17,7 +17,7 @@ export function Constellation({ byAgent, working, ready }: { byAgent: Record<str
   const sent = (a: string) => byAgent[a] ?? byAgent[agentLabel(a)] ?? Object.entries(byAgent).find(([k]) => agentKey(k) === agentKey(a))?.[1] ?? 0;
   const isWorking = (a: string) => working.map(agentKey).includes(agentKey(a));
   const isReady = (a: string) => ready.map(agentKey).includes(agentKey(a));
-  const W = 440;
+  const W = 540;
   const H = 330;
   const cx = W / 2;
   const cy = H / 2;
@@ -42,8 +42,14 @@ export function Constellation({ byAgent, working, ready }: { byAgent: Record<str
         const live = isWorking(name);
         const ghost = isPlanned(name);
         const path = `M${x.toFixed(1)},${y.toFixed(1)} L${cx},${cy}`;
+        // Side nodes get labels beside the icon; top/bottom nodes above/below it — so a label
+        // never lands on the next node's icon, no matter how many agents join.
+        const side = Math.abs(Math.cos(a)) > 0.7;
+        const right = x > cx;
+        const anchor = side ? (right ? "start" : "end") : "middle";
+        const lblX = side ? x + (right ? 34 : -34) : x;
         const above = y < cy - 30; // labels go above only for nodes near the top
-        const lblY = above ? y - 48 : y + 42;
+        const lblY = side ? y - 2 : above ? y - 48 : y + 42;
         return (
           <g key={name} className={`node${live ? " live" : isReady(name) ? " idle" : ""}${ghost ? " ghost" : ""}`}>
             <path d={path} className={`spoke${live ? " flow" : ""}`} />
@@ -57,10 +63,10 @@ export function Constellation({ byAgent, working, ready }: { byAgent: Record<str
             <text x={x} y={y + 5} textAnchor="middle" className="node-i">
               {agentLabel(name).slice(0, 2)}
             </text>
-            <text x={x} y={lblY} textAnchor="middle" className="node-l">
+            <text x={lblX} y={lblY} textAnchor={anchor} className="node-l">
               {agentLabel(name)}
             </text>
-            <text x={x} y={lblY + 14} textAnchor="middle" className="node-n">
+            <text x={lblX} y={lblY + 14} textAnchor={anchor} className="node-n">
               {ghost ? PLANNED[agentKey(name)] : sent(name) ? `${sent(name)} sent` : "standing by"}
             </text>
           </g>

@@ -72,6 +72,11 @@ export default function Autopilot() {
             <i className="key" style={{ background: agentColor(a.agent) }} aria-hidden="true" />
             <b>{agentLabel(a.agent)}</b>
             {a.role === "backlog" && <span className="chip" title="Works jobs other agents handed over (failures, essays), with their action log">backlog</span>}
+            {(a.tags ?? []).map((t) => (
+              <span key={t} className="chip muted-chip" title="What this agent is good at (from benchmark testing)">
+                {t}
+              </span>
+            ))}
             <span className="muted">
               {STATE[a.state].icon} {STATE[a.state].text}
               {a.state === "waiting" && a.nextAt ? ` · next in ${mins(a.nextAt)} min` : ""}
