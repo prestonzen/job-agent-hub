@@ -93,6 +93,13 @@ Which agents can join the hub, as of October 2026 (vendor docs plus hands-on che
 
 Per-agent setup snippets are on `/admin#connect`; the runner wiring is in [runner/configure-agents.mjs](runner/configure-agents.mjs).
 
+## Which local model, and do you need a harness?
+
+Measured, not guessed: a fake application site and grader (`scripts/agent-eval/`) scored each model and harness on the
+same forms. Best local model: **Gemma 4 26B (~0.97 of form checks right)**. The agent harness (bare loop, Claude Code,
+Hermes) changed speed and compatibility but not accuracy, so production uses Hermes for its memory and skill learning.
+Full results, method and caveats: [docs/LOCAL_MODELS.md](docs/LOCAL_MODELS.md).
+
 ## Where to run agents
 
 | Option | Best for | How |

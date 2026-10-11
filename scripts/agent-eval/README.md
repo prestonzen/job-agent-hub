@@ -20,6 +20,10 @@ Run on the box that will run the agents (the runner), pointing `OLLAMA_URL` at t
 OLLAMA_URL=http://gpu-box:11434 HARD=medium bash run.sh bare gemma4:26b
 ```
 
+The write-up for readers (recommendation, method, caveats) is [docs/LOCAL_MODELS.md](../../docs/LOCAL_MODELS.md).
+
+**Verdict: `gemma4:26b`, run under Hermes Agent.** The harness did not change accuracy; the model did.
+
 ## Findings (Oct 2026, GB10 / 119 GiB, Ollama 0.40, medium difficulty unless noted)
 
 Score = checks passed / total (0 if nothing was submitted), averaged over trials.
@@ -33,6 +37,7 @@ Score = checks passed / total (0 if nothing was submitted), averaged over trials
 | bare | glm-4.7-flash | 2/3 | 0.61 | 2.5 min |
 | bare | muse-glimmer:30b | 1/3 | 0.32 | 10 min |
 | bare | qwen3:30b-a3b | 0/1 | 0 | timed out |
+| bare, *hard* mode | gemma4:26b | 2/3 | 0.65 | 9 min |
 | bare | gpt-oss:20b | 0 | 0 | malformed tool calls (`??` in arguments, invented tool names) |
 
 - The harness barely changed Gemma's accuracy; it changed speed (bare 2 min, Claude Code 3, Hermes 6) and compatibility:
