@@ -51,12 +51,16 @@ direction, not as precision.** Speed did not matter for the decision: the agent 
 
 ### Hard difficulty (type-ahead comboboxes)
 
-| Harness | Model | Submitted | Avg score | Avg time |
+| Harness | Model | Submitted | Score when submitted | Avg time |
 |---|---|---|---|---|
-| bare loop | gemma4:26b | 2/3 | 0.65 | 9 min |
+| bare loop | **gemma4:26b** | 2/3 (third hit the 15-minute limit) | 0.97 (33 of 34 checks; only the masked phone missed) | 4 to 8 min |
+| bare loop | qwen3.6:35b-a3b | 0/2 | none submitted | stopped at 6 min, never finished |
 
-More hard-mode and large-model runs (`qwen3.6`, `qwen3-coder-next`, `gpt-oss:120b`) are queued; this table is
-updated as they finish.
+On the hard form Gemma still filled everything correctly when it finished; Qwen3.6 did not complete the type-ahead
+fields in either run. Raw per-run data is in [`scripts/agent-eval/results/`](../scripts/agent-eval/results/).
+
+Not tested: `gpt-oss:120b` (65 GB, judged too large and slow for a shared box) and `qwen3-coder-next` (no
+end-to-end data; downloads were stopped). Neither is ruled out for good; the decision to stop was practical.
 
 ## What the data says
 
