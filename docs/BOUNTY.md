@@ -65,13 +65,19 @@ ssh root@kloud "pct exec 134 -- sh /opt/darkmoon-smoke-test.sh"
       against a deliberately vulnerable lab (e.g. OWASP Juice Shop) before any real target.
       Done 2026-10-11: found + documented a confirmed info-disclosure vuln on the lab; repeatable
       via `bounty/darkmoon-smoke-test.sh`.
-- [ ] Telegram notifications for BugBountyScanner (env: telegram_api_key / telegram_chat_id — Ava bot).
-- [ ] Program-scope fetcher: build on `arkadiyt/bounty-targets-data` (hourly-updated JSON per
+- [x] Telegram notifications — done 2026-10-11, server-side in the hub: any `finding` event with
+      status `confirmed`, and any `payout` event, pings Ava's Telegram topic automatically.
+- [x] Program-scope fetcher: built on `arkadiyt/bounty-targets-data` (hourly-updated JSON per
       platform: `data/hackerone_data.json`, `bugcrowd_data.json`, `intigriti_data.json`,
-      `yeswehack_data.json` — validated 2026-10-11: 449 H1 programs, 118 paying with wildcard
-      scope). Filter paying + automation-tolerant programs → scope list → ClickUp subtasks per
-      in-scope domain.
-- [ ] Scheduled low-noise re-scans of enrolled programs (hub automation).
+      `yeswehack_data.json` — validated 2026-10-11). `bounty/scope-fetch.py` normalizes all 4
+      schemas, drops automation-banned programs via policy check, merges cross-platform dupes,
+      ranks by attack surface → `/opt/bounty/queue.json`.
+- [x] Scheduled low-noise re-scans — `bounty-daily.timer` (05:17 UTC): refresh queue, scan top 6
+      unscanned programs, 3 parallel (`PARALLEL`/`TOP` tunable), 7-day rescan guard, per-run nuclei
+      template update, waybackurls endpoint harvesting, Dark-Moon auto-engage on medium+ hits.
+- [ ] Per-platform report renderers for Bugcrowd / Intigriti / YesWeHack (Dark-Moon emits H1
+      markdown today; one master template internally, render at submission time).
+- [ ] Prioritize queue by historical payout speed (H1 dumps carry avg time-to-bounty stats).
 
 ## Platforms (accounts live on the runner, all with TOTP via `oathtool`)
 

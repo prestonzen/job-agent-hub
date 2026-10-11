@@ -77,6 +77,7 @@ def norm_program(platform: str, p: dict) -> dict | None:
         url = p.get("url", "")
         name = p.get("name", "?")
         maxb = None
+        triage_h = p.get("average_time_to_first_program_response") if isinstance(p.get("average_time_to_first_program_response"), (int, float)) else None
     elif platform == "bugcrowd":
         pays = bool(p.get("max_payout"))
         ident_of = lambda t: t.get("target") or t.get("uri")  # noqa: E731
@@ -84,6 +85,7 @@ def norm_program(platform: str, p: dict) -> dict | None:
         url = p.get("url", "")
         name = p.get("name", "?")
         maxb = p.get("max_payout") or None
+        triage_h = None
     elif platform == "intigriti":
         pays = bool(p.get("max_bounty"))
         ident_of = lambda t: t.get("endpoint")  # noqa: E731
@@ -91,6 +93,7 @@ def norm_program(platform: str, p: dict) -> dict | None:
         url = p.get("url", "")
         name = p.get("name", "?")
         maxb = p.get("max_bounty") or None
+        triage_h = None
     else:  # yeswehack
         pays = bool(p.get("max_bounty")) and p.get("public", True) and not p.get("disabled")
         ident_of = lambda t: t.get("target")  # noqa: E731
@@ -98,6 +101,7 @@ def norm_program(platform: str, p: dict) -> dict | None:
         url = p.get("url", "")
         name = p.get("name", "?")
         maxb = p.get("max_bounty") or None
+        triage_h = None
 
     if not pays:
         return None
@@ -124,6 +128,7 @@ def norm_program(platform: str, p: dict) -> dict | None:
         "wildcards": sorted(a for a in assets if "*" in a),
         "asset_count": len(assets),
         "max_bounty": maxb,
+        "triage_h": triage_h,
         "automation": "unchecked",
     }
 
@@ -185,7 +190,7 @@ def main() -> None:
         candidates = [c for c in candidates if c["automation"] != "banned"]
         # Order: allowed > rate-limited > unspecified > unknown, then scope size.
         rank = {"allowed": 0, "rate-limited": 1, "unspecified": 2, "unknown": 3, "unchecked": 2}
-        candidates.sort(key=lambda c: (rank.get(c["automation"], 3), -c["asset_count"]))
+        candidates.sort(key=lambda c: (rank.get(c["automation"], 3), c["triage_h"] if c["triage_h"] is not None else 9999, -c["asset_count"]))
 
     queue = candidates[:top]
     OUT.parent.mkdir(parents=True, exist_ok=True)

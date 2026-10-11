@@ -83,12 +83,21 @@ cat "$OUT/apex.txt" | sed 's/^/  /'
 # Recon inside the scanner image.
 docker run --rm -v "$OUT":/out "$IMAGE" /bin/bash -c '
   set -u
+  nuclei -update-templates > /dev/null 2>&1 || true   # fresh CVE templates every run
   subfinder -silent -dL /out/apex.txt -o /out/subs.txt 2>/dev/null
   cat /out/apex.txt >> /out/subs.txt
   sort -u /out/subs.txt -o /out/subs.txt
   httpx -silent -l /out/subs.txt -status-code -title -tech-detect -rl 30 -o /out/live.txt 2>/dev/null
   cut -d" " -f1 /out/live.txt > /out/live-hosts.txt 2>/dev/null || true
-  nuclei -silent -l /out/live-hosts.txt -tags exposure,misconfig,cve -rl 30 -timeout 10 -o /out/nuclei.txt 2>/dev/null
+  # Endpoint harvesting: historical URLs give nuclei real paths, not just root pages.
+  if command -v waybackurls > /dev/null 2>&1; then
+    cat /out/live-hosts.txt | sed "s|https\?://||" | waybackurls 2>/dev/null | head -3000 > /out/urls.txt || true
+  fi
+  if [ -s /out/urls.txt ]; then
+    nuclei -silent -l /out/urls.txt -tags exposure,misconfig,cve -rl 30 -timeout 10 -o /out/nuclei.txt 2>/dev/null
+  else
+    nuclei -silent -l /out/live-hosts.txt -tags exposure,misconfig,cve -rl 30 -timeout 10 -o /out/nuclei.txt 2>/dev/null
+  fi
   true
 '
 SUBS=$(grep -c . "$OUT/subs.txt" 2>/dev/null || echo 0)
