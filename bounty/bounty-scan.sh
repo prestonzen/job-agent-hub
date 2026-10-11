@@ -20,20 +20,30 @@ IMAGE=chvancooten/bugbountyscanner:latest
 
 [ -f "$QUEUE" ] || { echo "no queue; run scope-fetch.py first"; exit 1; }
 
+SCANNED=/opt/bounty/scanned.log
+touch "$SCANNED"
+
 NAME="${1:-}"
-ROW=$(python3 - "$QUEUE" "$NAME" <<'EOF'
-import json, sys
+ROW=$(python3 - "$QUEUE" "$NAME" "$SCANNED" <<'EOF'
+import json, re, sys, time
 q = json.load(open(sys.argv[1]))["programs"]
 name = sys.argv[2].lower()
+safe = lambda s: re.sub(r"[^A-Za-z0-9]+", "-", s).strip("-")
+try:
+    scanned = {}
+    for line in open(sys.argv[3]):
+        k, ts = line.strip().split("|")
+        scanned[k] = int(ts)
+    # older than 7 days = eligible again
+    scanned = {k for k, ts in scanned.items() if time.time() - ts < 7 * 86400}
+except Exception:
+    scanned = set()
 row = None
 if name:
     row = next((p for p in q if p["program"].lower() == name), None)
 else:
-    row = q[0] if q else None
-if not row:
-    print("NOTFOUND")
-else:
-    print(json.dumps(row))
+    row = next((p for p in q if safe(p["program"]) not in scanned), None)
+print(json.dumps(row) if row else "NOTFOUND")
 EOF
 )
 [ "$ROW" = "NOTFOUND" ] && { echo "program not found in queue"; exit 1; }
@@ -42,6 +52,13 @@ PROGRAM=$(echo "$ROW" | python3 -c "import json,sys; print(json.load(sys.stdin)[
 PLATFORM=$(echo "$ROW" | python3 -c "import json,sys; print(json.load(sys.stdin)['platform'])")
 SAFE=$(echo "$PROGRAM" | tr -cs 'A-Za-z0-9' '-' | sed 's/^-//;s/-$//')
 OUT=/root/bbscans/$SAFE
+
+# Skip programs scanned in the last 7 days when auto-picking (explicit name always re-scans).
+if [ -z "$NAME" ] && grep -q "^$SAFE|" "$SCANNED"; then
+  LAST=$(grep "^$SAFE|" "$SCANNED" | tail -1 | cut -d'|' -f2)
+  AGE=$(( ($(date +%s) - LAST) / 86400 ))
+  [ "$AGE" -lt 7 ] && { echo "$PROGRAM scanned ${AGE}d ago; skipping (name it explicitly to force)"; exit 2; }
+fi
 mkdir -p "$OUT"
 
 # Apex domains: strip '*.' from wildcards, keep plain in-scope domains, cap at 10.
@@ -77,6 +94,7 @@ docker run --rm -v "$OUT":/out "$IMAGE" /bin/bash -c '
 SUBS=$(grep -c . "$OUT/subs.txt" 2>/dev/null || echo 0)
 LIVE=$(grep -c . "$OUT/live-hosts.txt" 2>/dev/null || echo 0)
 HITS=$(grep -c . "$OUT/nuclei.txt" 2>/dev/null || echo 0)
+echo "$(date -u +%s | sed "s/^/$SAFE|/")" >> "$SCANNED"
 echo "subdomains: $SUBS · live hosts: $LIVE · nuclei hits: $HITS"
 echo "results: $OUT"
 

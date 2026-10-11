@@ -1,0 +1,8 @@
+[Unit]
+Description=Bug bounty daily: refresh scope queue + parallel low-noise scans
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash /opt/bounty/bounty-daily.sh
+Nice=10

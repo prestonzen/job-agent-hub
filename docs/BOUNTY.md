@@ -42,14 +42,22 @@ ssh root@kloud "pct exec 134 -- sh /opt/darkmoon-smoke-test.sh"
 4. Findings are reported through the platform's official channel only; FORMAT=h1 for HackerOne reports.
 5. Every run logs to the ClickUp task: target, scope source URL, tool, start/end, findings count.
 
-## Pipeline (manual today, automate later)
+## Pipeline (automated recon, 2026-10-11)
 
-1. Pick program (HackerOne/Bugcrowd account — creation authorized, contact@prestonzen.com).
-2. Extract in-scope domains → `./BugBountyScanner.sh -d <domain> [--quick] -t /opt/tools`
-   (or the Docker image with a results volume).
-3. Feed interesting live hosts to Dark-Moon with PROGRAM/FOCUS flags.
-4. Triage findings (evidence = exact command + raw output), write the report, submit on-platform,
-   log payout on the ClickUp task (`Earned` field).
+1. **Queue** — `bounty/scope-fetch.py` pulls all 4 platform dumps from bounty-targets-data,
+   normalizes schemas, drops automation-banned programs (policy check), merges cross-platform
+   duplicates, ranks by attack surface → `/opt/bounty/queue.json`.
+2. **Daily scans** — `bounty-daily.timer` (05:17 UTC) runs `bounty/bounty-daily.sh`: refreshes the
+   queue, scans the top 6 not-recently-scanned programs, 3 in parallel (`PARALLEL`/`TOP` tunable).
+   Each scan (`bounty/bounty-scan.sh`): subfinder → httpx → nuclei (non-intrusive, rate-limited),
+   posts a summary event to the hub (`POST /api/agent/bounty`) → admin **Bug bounty** tab.
+   Programs re-scan at most every 7 days.
+3. **Validation + report** — anything above info level goes to Dark-Moon for exploitation-proof
+   and report drafting. One master report template internally (severity, summary, repro steps,
+   exact commands + raw output, impact, remediation); rendered per platform on submit
+   (HackerOne markdown via FORMAT=h1, Bugcrowd/Intigriti/YesWeHack variants). Reports are always
+   reviewed by Preston before submission — nothing auto-submits.
+4. Payouts logged as `payout` events → hub analytics.
 
 ## TODO
 

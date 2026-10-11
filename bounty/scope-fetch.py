@@ -153,7 +153,23 @@ def main() -> None:
                 n += 1
         print(f"{platform}: {n} paying programs with in-scope assets")
 
-    # Biggest attack surface first.
+    # Biggest attack surface first; merge the same program listed on multiple platforms
+    # (dedupe by normalized name — keep the entry with the most assets, note the rest).
+    merged: dict[str, dict] = {}
+    for c in candidates:
+        k = re.sub(r"[^a-z0-9]", "", c["program"].lower())
+        if k in merged:
+            prev = merged[k]
+            prev.setdefault("also_on", []).append(c["platform"])
+            if c["asset_count"] > prev["asset_count"]:
+                c["also_on"] = prev.get("also_on", []) + [prev["platform"]]
+                merged[k] = c
+        else:
+            merged[k] = c
+    dupes = len(candidates) - len(merged)
+    if dupes:
+        print(f"merged {dupes} cross-platform duplicates")
+    candidates = list(merged.values())
     candidates.sort(key=lambda c: -c["asset_count"])
     candidates = candidates[: top * 2]  # check policy on 2x, keep top N after filtering
 
