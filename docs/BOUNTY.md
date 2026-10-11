@@ -1,6 +1,8 @@
 # Bug bounty lane
 
-Status 2026-10-11: infrastructure provisioned, pipeline not yet automated end-to-end.
+Status 2026-10-11: infrastructure live and smoke-tested. Dark-Moon verified end-to-end against
+a local OWASP Juice Shop lab (recon → confirmed finding → finalized report). Pipeline to real
+programs still manual.
 
 Part of the Job Agent Hub's "find work of all types" mandate: bounty payouts count as income
 alongside jobs, contracts and freelance platforms. ClickUp parent task: "HackerOne / Bugcrowd"
@@ -13,9 +15,21 @@ alongside jobs, contracts and freelance platforms. ClickUp parent task: "HackerO
 | BugBountyScanner | CT 134 `/opt/BugBountyScanner` + Docker image `chvancooten/bugbountyscanner` | Headless recon: subdomain enum, live hosts, nuclei (CVEs/misconfigs), wayback endpoints, port scan, screenshots. `--quick` for opsec-light runs. |
 | Dark-Moon | CT 134 `/opt/Dark-Moon` (`./darkmoon.sh`) | Autonomous AI pentest over MCP-gated Docker toolbox. Bug bounty mode: `./darkmoon.sh " TARGET: <host> PROGRAM=\"<name>\" FOCUS=sqli,xss,idor NOISE=moderate FORMAT=h1 "`. LLM: OpenRouter (`.opencode.env`, currently `deepseek/deepseek-chat-v3.1`; bump to a frontier model for hard targets). |
 
-CT 134 is Kali Rolling, nesting enabled, Docker 28 + Compose 2.40, 35 GB disk, 8 vCPU / 8.5 GB RAM.
+CT 134 is Kali Rolling, nesting enabled, Docker 28 + Compose 2.40, 60 GB disk, 8 vCPU / 8.5 GB RAM.
 Egress is the host's T-Mobile residential IP; route through CT 125's proxy (see runner config
 `proxy` section) only if a program's rate limits require it.
+
+## Regression test
+
+`bounty/darkmoon-smoke-test.sh` (deployed at `/opt/darkmoon-smoke-test.sh` on CT 134) boots a
+local OWASP Juice Shop container, runs Dark-Moon against it with a smoke-test scope, and asserts
+the full pipeline: LLM reachable, recon executes, ≥1 confirmed finding, campaign finalized with a
+report. Exits 0 = PASS. Run it after any Dark-Moon update, model change, or Docker rebuild before
+pointing the stack at a real program:
+
+```bash
+ssh root@kloud "pct exec 134 -- sh /opt/darkmoon-smoke-test.sh"
+```
 
 ## Scope discipline (hard rules)
 
@@ -39,8 +53,10 @@ Egress is the host's T-Mobile residential IP; route through CT 125's proxy (see 
 
 ## TODO
 
-- [ ] Verify Dark-Moon build finished (`/root/darkmoon-install.log` on CT 134) and smoke-test
+- [x] Verify Dark-Moon build finished (`/root/darkmoon-install.log` on CT 134) and smoke-test
       against a deliberately vulnerable lab (e.g. OWASP Juice Shop) before any real target.
+      Done 2026-10-11: found + documented a confirmed info-disclosure vuln on the lab; repeatable
+      via `bounty/darkmoon-smoke-test.sh`.
 - [ ] Telegram notifications for BugBountyScanner (env: telegram_api_key / telegram_chat_id — Ava bot).
 - [ ] Program-scope fetcher: HackerOne API → scope list → ClickUp subtasks per in-scope domain.
 - [ ] Scheduled low-noise re-scans of enrolled programs (hub automation).
