@@ -52,9 +52,9 @@ rc=$?
 # 4. Assertions
 grep -q 'darkmoon_dashboard_push_finding' "$LOG" || fail "no finding was pushed (see $LOG)"
 grep -q 'darkmoon_dashboard_finalize_campaign' "$LOG" || fail "campaign never finalized (see $LOG)"
-grep -qi '"status":"confirmed"' "$LOG" || fail "finding not marked confirmed (see $LOG)"
+grep -qi -a '"status":"confirmed"' "$LOG" || fail "finding not marked confirmed (see $LOG)"
 
-finding=$(grep -o '"title":"[^"]*"' "$LOG" | head -1 | cut -d'"' -f4)
+finding=$(grep -a -o '"title":"[^"]*"' "$LOG" | head -1 | cut -d'"' -f4)
 echo "PASS: finding confirmed + campaign finalized"
 echo "first finding: ${finding:-unknown}"
 exit 0
