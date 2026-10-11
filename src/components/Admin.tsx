@@ -3,6 +3,7 @@ import { addComment, getAdminTasks, getMe, login, logout, setStatus } from "../a
 import { STATUSES, type AdminTask } from "../types";
 import Analytics from "./Analytics";
 import Assisted from "./Assisted";
+import Bounty from "./Bounty";
 import CommandCenter from "./CommandCenter";
 import Connect from "./Connect";
 import Alerts from "./Alerts";
@@ -16,6 +17,7 @@ const TABS = [
   { id: "run", label: "Run agents" },
   { id: "resumes", label: "Resumes" },
   { id: "alerts", label: "Replies & alerts" },
+  { id: "bounty", label: "Bug bounty" },
   { id: "pipeline", label: "Pipeline" },
   { id: "connect", label: "Connect agents" },
 ] as const;
@@ -65,6 +67,7 @@ export default function Admin() {
       {tab === "run" && <RunAgents />}
       {tab === "resumes" && <Resumes />}
       {tab === "alerts" && <Alerts />}
+      {tab === "bounty" && <Bounty />}
       {tab === "pipeline" && <Pipeline />}
       {tab === "connect" && <Connect />}
     </main>

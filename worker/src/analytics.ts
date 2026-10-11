@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { bountyTotals } from "./bounty";
 import { parkedCategory } from "./park";
 import { queue } from "./jobs";
 import { mdb } from "./mirror";
@@ -77,6 +78,17 @@ export interface Analytics {
   queue: { ready: number; claimed: number; parked: number; total: number };
   clickup: { day: string; calls: number }[];
   fleet: { agentsReady: number; runnersOnline: number; slots: number; busy: number };
+  /** Bug bounty lane rollup: program enrollments count toward the lane's "applied" alongside jobs. */
+  bounty: {
+    programs: number;
+    scans: number;
+    hostsScanned: number;
+    findings: number;
+    bySeverity: Record<string, number>;
+    reports: number;
+    payouts: number;
+    payoutsUsd: number;
+  };
 }
 
 const DAY = 86_400_000;
@@ -238,6 +250,9 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
   const ready = q.filter((j) => !j.claimedBy && !j.needsHuman && j.applyUrl).length;
 
   const online = runners.filter((r) => r.online);
+  const bounty = await bountyTotals(env).catch(() => ({
+    programs: 0, scans: 0, hostsScanned: 0, findings: 0, bySeverity: {} as Record<string, number>, reports: 0, payouts: 0, payoutsUsd: 0,
+  }));
   return {
     generatedAt: new Date().toISOString(),
     days,
@@ -268,5 +283,6 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
       slots: online.reduce((s, r) => s + r.slots, 0),
       busy: online.reduce((s, r) => s + r.busy, 0),
     },
+    bounty,
   };
 }

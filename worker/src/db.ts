@@ -37,6 +37,21 @@ const SCHEMA = [
      last_seen INTEGER NOT NULL,
      client TEXT
    )`,
+  `CREATE TABLE IF NOT EXISTS bounty_events (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     at INTEGER NOT NULL,
+     agent TEXT NOT NULL,
+     kind TEXT NOT NULL,
+     platform TEXT,
+     program TEXT,
+     target TEXT,
+     severity TEXT,
+     status TEXT,
+     title TEXT,
+     detail TEXT,
+     amount REAL
+   )`,
+  `CREATE INDEX IF NOT EXISTS bounty_events_at ON bounty_events (at DESC)`,
 ];
 
 /** Columns added after the first release; ALTER fails harmlessly when they already exist. */

@@ -89,6 +89,13 @@ export default function Analytics() {
         <Stat label="Ready in the queue" value={data.queue.ready} sub={`${data.queue.claimed} in progress`} />
         <Stat label="Parked for a person" value={data.queue.parked} tone={data.queue.parked ? "warn" : undefined} sub="not claimable" />
         <Stat label="Agents ready now" value={data.fleet.agentsReady} sub={`${data.fleet.runnersOnline} runner${data.fleet.runnersOnline === 1 ? "" : "s"} online`} />
+        {data.bounty && (data.bounty.programs > 0 || data.bounty.findings > 0) && (
+          <>
+            <Stat label="Bounty programs" value={data.bounty.programs} sub={`${data.bounty.scans} scans · ${data.bounty.hostsScanned} hosts`} />
+            <Stat label="Bounty findings" value={data.bounty.findings} sub={`${data.bounty.reports} reports submitted`} />
+            <Stat label="Bounty payouts" value={`$${data.bounty.payoutsUsd.toLocaleString()}`} sub={`${data.bounty.payouts} payout${data.bounty.payouts === 1 ? "" : "s"}`} />
+          </>
+        )}
       </section>
 
       <Card title="Outcomes per day" className="wide chart-card" aside={<Legend items={OUTCOMES} />}>

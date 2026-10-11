@@ -89,8 +89,24 @@ export interface Analytics {
   queue: { ready: number; claimed: number; parked: number; total: number };
   clickup: { day: string; calls: number }[];
   fleet: { agentsReady: number; runnersOnline: number; slots: number; busy: number };
+  bounty?: { programs: number; scans: number; hostsScanned: number; findings: number; bySeverity: Record<string, number>; reports: number; payouts: number; payoutsUsd: number };
 }
 export const getAnalytics = (days: number) => request<Analytics>(`/api/admin/analytics?days=${days}`);
+
+// ---------- bug bounty lane ----------
+export interface BountyEvent {
+  id: number; at: string; agent: string; kind: "program" | "scan" | "finding" | "report" | "payout";
+  platform: string | null; program: string | null; target: string | null; severity: string | null;
+  status: string | null; title: string | null; detail: string | null; amount: number | null;
+}
+export interface BountyProgram { program: string; platform: string | null; scans: number; findings: number; reports: number; payoutsUsd: number; lastAt: string }
+export interface BountySummary {
+  generatedAt: string;
+  totals: { programs: number; scans: number; hostsScanned: number; findings: number; bySeverity: Record<string, number>; reports: number; payouts: number; payoutsUsd: number };
+  programs: BountyProgram[];
+  recent: BountyEvent[];
+}
+export const getBounty = () => request<BountySummary>("/api/admin/bounty");
 
 // ---------- assisted queue ----------
 export interface AttemptLog { agent: string; at: string; outcome: string; note: string | null; log: string | null }

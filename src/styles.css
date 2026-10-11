@@ -399,3 +399,22 @@ button.danger { color: #e5484d; border-color: color-mix(in srgb, #e5484d 40%, va
 .attempts li { margin-bottom: 8px; }
 .attempts pre { margin: 6px 0 0; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; white-space: pre-wrap; max-height: 240px; overflow: auto; font-size: 12px; }
 .btn.small { padding: 4px 12px; font-size: 13px; }
+
+/* ---------- Admin: bug bounty lane ---------- */
+.bars { display: grid; gap: 8px; }
+.bar-row { display: grid; grid-template-columns: 90px 1fr 40px; align-items: center; gap: 10px; }
+.bar-track { height: 10px; background: var(--grid); border-radius: 999px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 999px; }
+.bar-row b { text-align: right; font-variant-numeric: tabular-nums; }
+.sev-critical { background: #e34948; }
+.sev-high { background: #eb6834; }
+.sev-medium { background: #eda100; }
+.sev-low { background: #2a78d6; }
+.sev-info { background: #9aa3ad; }
+.chip.sev-critical { border-color: #e34948; color: #e34948; }
+.chip.sev-high { border-color: #eb6834; color: #eb6834; }
+.chip.sev-medium { border-color: #eda100; color: var(--warn); }
+.chip.sev-low { border-color: #2a78d6; color: #2a78d6; }
+.chip.sev-info { border-color: var(--muted); color: var(--muted); }
+.chip.kind-finding { border-color: color-mix(in srgb, #eb6834 50%, var(--line)); color: var(--ink); }
+.chip.kind-payout { border-color: color-mix(in srgb, #22c55e 50%, var(--line)); color: var(--ink); background: var(--accent-soft); }

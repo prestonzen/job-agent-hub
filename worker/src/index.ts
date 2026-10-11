@@ -34,6 +34,7 @@ import { createSchedule, deleteSchedule, listSchedules, tick, updateSchedule, ty
 import { notify, setHubWebhook, telegramConfigured, webhookInfo } from "./telegram";
 import { handleTelegramUpdate } from "./telegram-bot";
 import { getCodeRequest, requestCode, waitForCode } from "./codes";
+import { addBountyEvent, bountySummary, type BountyEventInput } from "./bounty";
 import { toPublicSummary } from "./sanitize";
 import type { Env, PublicSummary } from "./types";
 import { zadarmaGet } from "./zadarma";
@@ -242,6 +243,11 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       return json({ ok: true, agent, ...(await logApplication(env, agent, newJob(await readJson(request)))) }, 201);
     }
 
+    // Bug bounty lane: runner tooling and agents push program/scan/finding/report/payout events.
+    if (sub === "/bounty" && method === "POST") {
+      return json({ ok: true, agent, ...(await addBountyEvent(env, agent, await readJson<BountyEventInput>(request))) }, 201);
+    }
+
     const job = sub.match(/^\/jobs\/([^/]+)(?:\/(renew|report|release|handoff|email))?$/);
     if (job) {
       const id = decodeURIComponent(job[1]);
@@ -303,6 +309,9 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       const days = Math.min(90, Math.max(7, Number(url.searchParams.get("days")) || 30));
       return json(await buildAnalytics(env, days));
     }
+
+    // Bug bounty lane: programs, scans, findings, reports, payouts.
+    if (path === "/api/admin/bounty" && method === "GET") return json(await bountySummary(env));
 
     // Command center: queue + claims, agent activity and check-ins, per-agent totals.
     if (path === "/api/admin/hub" && method === "GET") {
