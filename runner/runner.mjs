@@ -7,7 +7,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { hostname, homedir } from "node:os";
 import { basename, join } from "node:path";
 
-const VERSION = "0.1.0";
+const VERSION = "0.1.1";
 const CONFIG_PATH = process.env.RUNNER_CONFIG ?? "/etc/job-agent-runner/config.json";
 let cfg = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
 /** Re-read the config file so edits (commands, models, notes, tokens) apply to the next run without a restart. */
@@ -158,7 +158,8 @@ async function startRun(run) {
   const prompt = cfg.machineNotes ? `${run.fullPrompt}\n\nNOTES FOR THIS MACHINE:\n${cfg.machineNotes}` : run.fullPrompt;
   const LOGIN = { codex: ["codex", "login", "--device-auth"], kimi: ["kimi", "login"] };
   const [bin, ...rest] = run.kind === "login" ? (a.loginCmd ?? LOGIN[run.agent] ?? ["false"]) : a.cmd;
-  const args = rest.map((x) => (x === "{PROMPT}" ? prompt : x));
+  // Commands use spawn rather than a shell, so paths such as ~/.gemini/.env need expansion here.
+  const args = rest.map((x) => (x === "{PROMPT}" ? prompt : expand(x)));
   const cwd = join(WORK, String(run.id));
   mkdirSync(cwd, { recursive: true });
   // Only these files (e.g. the resume) are put where the agent's browser may upload from.

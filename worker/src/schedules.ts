@@ -1,5 +1,5 @@
 import { HttpError } from "./clickup";
-import { db } from "./db";
+import { db, getSetting } from "./db";
 import { createRun } from "./runs";
 import type { Env } from "./types";
 
@@ -170,9 +170,16 @@ export async function tick(env: Env, onDigest: () => Promise<void>): Promise<num
   const d = await sdb(env);
   const now = Date.now();
   const { results } = await d.prepare("SELECT * FROM schedules WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?").bind(now).all<Row>();
+  const switches = await getSetting<{ enabled?: boolean; agents?: Record<string, boolean> }>(env, "autopilot");
   let fired = 0;
   for (const r of results) {
     const next = nextRun(r.cron, r.tz, now);
+    // Agent and master switches apply to scheduled work too. Advance a skipped slot without
+    // recording a run, so re-enabling an agent doesn't replay work missed while it was off.
+    if (r.kind !== "digest" && (switches?.enabled === false || switches?.agents?.[r.agent!] === false)) {
+      await d.prepare("UPDATE schedules SET next_run_at = ? WHERE id = ? AND next_run_at = ?").bind(next, r.id, r.next_run_at).run();
+      continue;
+    }
     const won = await d
       .prepare("UPDATE schedules SET last_run_at = ?, next_run_at = ? WHERE id = ? AND next_run_at = ?")
       .bind(now, next, r.id, r.next_run_at)
