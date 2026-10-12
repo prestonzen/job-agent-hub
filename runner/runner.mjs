@@ -7,7 +7,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { hostname, homedir } from "node:os";
 import { basename, join } from "node:path";
 
-const VERSION = "0.1.1";
+const VERSION = "0.2.0";
 const CONFIG_PATH = process.env.RUNNER_CONFIG ?? "/etc/job-agent-runner/config.json";
 let cfg = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
 /** Re-read the config file so edits (commands, models, notes, tokens) apply to the next run without a restart. */
@@ -90,9 +90,9 @@ async function hub(path, body) {
 
 // ---------- which agents can run here ----------
 
-function probe() {
+async function probe() {
   reloadCfg();
-  return Object.entries(cfg.agents ?? {}).map(([id, a]) => {
+  const results = Object.entries(cfg.agents ?? {}).map(([id, a]) => {
     const bin = a.probeBin ?? a.cmd?.[0];
     const installed = !!bin && spawnSync("sh", ["-c", `command -v "${bin}"`]).status === 0;
     const authOk = !a.auth || [].concat(a.auth).some((p) => existsSync(expand(p)) && (!a.authNeeds || a.authNeeds.every((v) => readEnvFile(a.envFile ?? p)[v])));
@@ -101,11 +101,21 @@ function probe() {
       const v = spawnSync(bin, a.versionArgs ?? ["--version"], { encoding: "utf8", timeout: 15_000 });
       version = (v.stdout || v.stderr || "").trim().split("\n")[0]?.slice(0, 80) || null;
     }
-    return { id, installed, ready: installed && authOk && a.enabled !== false, version, note: !installed ? "not installed" : !authOk ? "not logged in" : a.enabled === false ? (a.note ?? "disabled in config") : null };
+    return { id, installed, signedIn: id === "ollama" ? null : installed && authOk, ready: installed && authOk && a.enabled !== false, version, note: !installed ? "not installed" : !authOk ? "not logged in" : a.enabled === false ? (a.note ?? "disabled in config") : null };
   });
+  const ollama = results.find((a) => a.id === "ollama");
+  if (ollama?.ready) {
+    const o = cfg.agents.ollama.hermes ?? {};
+    try {
+      const res = await fetch(`${o.ollamaUrl ?? "http://127.0.0.1:11434"}/api/tags`, { signal: AbortSignal.timeout(5000) });
+      const tags = await res.json();
+      if (!res.ok || !(tags.models ?? []).some((m) => m.name === (o.model ?? "gemma4:26b"))) { ollama.ready = false; ollama.note = "Configured Ollama model is unavailable"; }
+    } catch { ollama.ready = false; ollama.note = "Ollama server is unreachable"; }
+  }
+  return results;
 }
 
-let agents = probe();
+let agents = await probe();
 const active = new Map(); // runId -> { child, buf, cancelled, timedOut }
 
 function saveState() {
@@ -174,9 +184,12 @@ async function startRun(run) {
     log("resume bank sync failed:", e.message);
   }
 
+  const runEnv = agentEnv(a);
+  // Every task uses the canonical hub identity, including email and cyber prompts that call REST.
+  if (cfg.agentTokens?.[run.agent]) runEnv.JOBHUNTER_TOKEN = cfg.agentTokens[run.agent];
   const child = spawn(bin, args, {
     cwd,
-    env: { ...process.env, ...agentEnv(a), JOB_AGENT_RUN_ID: String(run.id) },
+    env: { ...process.env, ...runEnv, JOB_AGENT_RUN_ID: String(run.id) },
     stdio: ["ignore", "pipe", "pipe"],
     detached: true, // own process group, so cancel kills the CLI and its browser/MCP children
   });
@@ -244,7 +257,7 @@ async function startRun(run) {
     }
     active.delete(run.id);
     saveState();
-    if (run.kind === "login") { agents = probe(); void heartbeat(); } // show the new login right away
+    if (run.kind === "login") { agents = await probe(); void heartbeat(); } // show the new login right away
     log(`run #${run.id} done (${code ?? signal})`);
   });
 }
@@ -293,7 +306,7 @@ async function claimLoop() {
 log(`runner ${NAME} v${VERSION}: ${maxSlots()} slots; agents: ${agents.map((a) => `${a.id}=${a.ready ? "ready" : a.note}`).join(", ")}`);
 await heartbeat();
 setInterval(heartbeat, 30_000);
-setInterval(() => { agents = probe(); }, 5 * 60_000); // pick up new logins without a restart
+setInterval(async () => { agents = await probe(); }, 5 * 60_000); // pick up new logins without a restart
 setInterval(claimLoop, 5_000);
 void claimLoop();
 

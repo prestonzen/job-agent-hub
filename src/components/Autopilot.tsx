@@ -7,9 +7,11 @@ const STATE: Record<AgentAutopilot["state"], { icon: string; text: string }> = {
   queued: { icon: "⏳", text: "starting" },
   waiting: { icon: "⏱️", text: "resting" },
   ready: { icon: "🟢", text: "ready" },
+  idle: { icon: "💤", text: "idle" },
+  offline: { icon: "○", text: "offline" },
   paused: { icon: "⚠️", text: "paused" },
   off: { icon: "⚪", text: "off" },
-  "not-ready": { icon: "🔑", text: "needs login" },
+  "not-ready": { icon: "⚠️", text: "unavailable" },
 };
 
 const mins = (iso: string) => Math.max(1, Math.ceil((Date.parse(iso) - Date.now()) / 60_000));
@@ -57,7 +59,7 @@ export default function Autopilot() {
           </h2>
           <p className="muted small">
             {s.enabled
-              ? `Every logged-in agent keeps applying on its own${working ? ` · ${working} working right now` : ""}. Flip it off to stop starting new runs.`
+              ? `Enabled agents work their selected tasks${working ? ` · ${working} working right now` : ""}. Sourcing uses an available backup when needed.`
               : "No new runs will start. Runs already in progress finish (use Run agents → Stop to end them)."}
           </p>
         </div>
@@ -71,6 +73,7 @@ export default function Autopilot() {
           <li key={a.agent} className={`st-${a.state}`} title={a.detail ?? undefined}>
             <i className="key" style={{ background: agentColor(a.agent) }} aria-hidden="true" />
             <b>{agentLabel(a.agent)}</b>
+            <span className="chip" title="Credential presence is separate from available work, quota and runner capacity">{a.signedIn === null ? "local model" : a.signedIn ? "signed in" : "not signed in"}</span>
             {a.role === "backlog" && <span className="chip" title="Works jobs other agents handed over (failures, essays), with their action log">backlog</span>}
             {(a.tags ?? []).map((t) => (
               <span key={t} className="chip muted-chip" title="What this agent is good at (from benchmark testing)">
@@ -81,6 +84,13 @@ export default function Autopilot() {
               {STATE[a.state].icon} {STATE[a.state].text}
               {a.state === "waiting" && a.nextAt ? ` · next in ${mins(a.nextAt)} min` : ""}
             </span>
+            {a.detail && <span className="agent-detail small">{a.detail}</span>}
+            <fieldset className="agent-task-switches" aria-label={`${agentLabel(a.agent)} tasks`}>
+              <legend className="sr-only">Task focus</legend>
+              {([['applications','Applications'],['email','Email'],['sourcing','Sourcing'],['cyber','Cyber']] as const).map(([key,label]) => (
+                <label key={key}><input type="checkbox" aria-label={`${agentLabel(a.agent)} ${label}`} checked={a.tasks?.[key] ?? false} onChange={(e) => void patch({tasks:{[a.agent]:{[key]:e.target.checked}}})} />{label}</label>
+              ))}
+            </fieldset>
             {a.state !== "not-ready" && (
               <button
                 className="ghost small-btn"

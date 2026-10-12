@@ -2,6 +2,7 @@ import { HttpError } from "./clickup";
 import { db, getSetting } from "./db";
 import { createRun } from "./runs";
 import type { Env } from "./types";
+import { processSourceChecks, queueSourceCheck, SOURCE_PROMPT } from "./sourcing";
 
 /**
  * Scheduled runs. Pages Functions have no cron triggers, so schedules are evaluated lazily by
@@ -9,7 +10,7 @@ import type { Env } from "./types";
  * kind "queue"/"prompt" queue agent runs; kind "digest" posts a Telegram summary (no runner needed).
  */
 
-export const SCHEDULE_KINDS = ["queue", "prompt", "digest"] as const;
+export const SCHEDULE_KINDS = ["queue", "prompt", "digest", "sourcing"] as const;
 export type ScheduleKind = (typeof SCHEDULE_KINDS)[number];
 
 export interface Schedule {
@@ -121,7 +122,7 @@ export async function createSchedule(
   s: { name?: string; agent?: string; kind: ScheduleKind; count?: number; copies?: number; prompt?: string; cron: string; tz?: string; jitterMin?: number },
 ): Promise<Schedule> {
   if (!SCHEDULE_KINDS.includes(s.kind)) throw new HttpError(400, `kind must be one of ${SCHEDULE_KINDS.join(", ")}`);
-  if (s.kind !== "digest" && !s.agent) throw new HttpError(400, "agent is required");
+  if (s.kind !== "digest" && s.kind !== "sourcing" && !s.agent) throw new HttpError(400, "agent is required");
   if (s.kind === "prompt" && !s.prompt?.trim()) throw new HttpError(400, "prompt is required");
   const tz = s.tz || "America/Los_Angeles";
   try {
@@ -130,16 +131,16 @@ export async function createSchedule(
     throw new HttpError(400, `unknown time zone ${tz}`);
   }
   const next = nextRun(s.cron, tz);
-  const name = s.name?.trim() || (s.kind === "digest" ? "Daily digest" : s.kind === "queue" ? `${s.agent}: work ${s.count ?? 4} jobs` : `${s.agent}: custom`);
+  const name = s.name?.trim() || (s.kind === "sourcing" ? "Sourcing check (available agent)" : s.kind === "digest" ? "Daily digest" : s.kind === "queue" ? `${s.agent}: work ${s.count ?? 4} jobs` : `${s.agent}: custom`);
   const r = await (await sdb(env))
     .prepare(
       `INSERT INTO schedules (name, agent, kind, count, copies, prompt, cron, tz, next_run_at, created_at, jitter_min)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *`,
     )
     .bind(
-      name.slice(0, 80), s.kind === "digest" ? null : s.agent!.toLowerCase(), s.kind,
+      name.slice(0, 80), s.kind === "digest" || !s.agent ? null : s.agent.toLowerCase(), s.kind,
       s.kind === "queue" ? Math.min(10, Math.max(1, s.count ?? 4)) : null,
-      Math.min(5, Math.max(1, s.copies ?? 1)), s.kind === "prompt" ? s.prompt!.trim().slice(0, 8000) : null,
+      Math.min(5, Math.max(1, s.copies ?? 1)), s.kind === "sourcing" ? (s.prompt?.trim() || SOURCE_PROMPT).slice(0,8000) : s.kind === "prompt" ? s.prompt!.trim().slice(0, 8000) : null,
       s.cron.trim(), tz, next, Date.now(), Math.min(120, Math.max(0, Math.round(s.jitterMin ?? 20))),
     )
     .first<Row>();
@@ -176,10 +177,12 @@ export async function tick(env: Env, onDigest: () => Promise<void>): Promise<num
     const next = nextRun(r.cron, r.tz, now);
     // Agent and master switches apply to scheduled work too. Advance a skipped slot without
     // recording a run, so re-enabling an agent doesn't replay work missed while it was off.
-    if (r.kind !== "digest" && (switches?.enabled === false || switches?.agents?.[r.agent!] === false)) {
+    if (r.kind !== "digest" && (switches?.enabled === false || (r.kind !== "sourcing" && switches?.agents?.[r.agent!] === false))) {
       await d.prepare("UPDATE schedules SET next_run_at = ? WHERE id = ? AND next_run_at = ?").bind(next, r.id, r.next_run_at).run();
       continue;
     }
+    // Persist before advancing the clock; concurrent ticks insert the same occurrence only once.
+    if (r.kind === "sourcing") await queueSourceCheck(env, r, r.next_run_at!);
     const won = await d
       .prepare("UPDATE schedules SET last_run_at = ?, next_run_at = ? WHERE id = ? AND next_run_at = ?")
       .bind(now, next, r.id, r.next_run_at)
@@ -190,6 +193,7 @@ export async function tick(env: Env, onDigest: () => Promise<void>): Promise<num
       await onDigest().catch((e) => console.error("digest:", e));
       continue;
     }
+    if (r.kind === "sourcing") continue;
     // Random start within the jitter window; each parallel copy starts a few more random minutes later.
     let start = now + Math.random() * (r.jitter_min ?? 0) * 60_000;
     for (let i = 0; i < r.copies; i++) {
@@ -197,5 +201,5 @@ export async function tick(env: Env, onDigest: () => Promise<void>): Promise<num
       start += (3 + Math.random() * 9) * 60_000;
     }
   }
-  return fired;
+  return fired + await processSourceChecks(env);
 }

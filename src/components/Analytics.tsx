@@ -84,7 +84,7 @@ export default function Analytics() {
         <Stat label="Applications sent" value={t.applied} sub={`${t.claimed} jobs claimed`} />
         <Stat label="Success rate" value={pct(t.successRate)} sub="applied ÷ finished attempts" />
         <Stat label="Median time to apply" value={mins(t.medianMinToApply)} sub="claim → submitted" />
-        <Stat label="Agent run time" value={`${(t.runMinutes / 60).toFixed(1)} h`} sub={`${t.runsOk}/${t.runs} runs succeeded`} />
+        <Stat label="Agent run time" value={`${(t.runMinutes / 60).toFixed(1)} h`} sub={`${t.runsOk}/${t.runs} processes completed; diagnostics excluded`} />
         <Stat label="Applications per run-hour" value={t.appsPerRunHour === null ? "—" : t.appsPerRunHour.toFixed(1)} sub="throughput" />
         <Stat label="Ready in the queue" value={data.queue.ready} sub={`${data.queue.claimed} in progress`} />
         <Stat label="Parked for a person" value={data.queue.parked} tone={data.queue.parked ? "warn" : undefined} sub="not claimable" />
@@ -149,7 +149,7 @@ export default function Analytics() {
                     <td className="r">{mins(a.medianMinToApply)}</td>
                     <td>
                       {done ? (
-                        <span className="mini" title={`${a.runsOk} succeeded, ${a.runsFailed} failed`}>
+                        <span className="mini" title={`${a.runsOk} processes completed, ${a.runsFailed} processes failed; these are not application outcomes`}>
                           <span className="mini-track">
                             <span style={{ width: `${(a.runsOk / done) * 100}%`, background: "var(--accent)" }} />
                           </span>

@@ -3,6 +3,7 @@ import { db, logEvent } from "./db";
 import { getJob, reportResult } from "./jobs";
 import { pickResume, resumeBytes } from "./resumes";
 import type { Env } from "./types";
+import { taskSwitches, workSettings } from "./work";
 
 /**
  * Email applications, in one shot. For a posting that is applied to by emailing the employer, the agent
@@ -58,6 +59,7 @@ export async function sendApplicationEmail(
   jobId: string,
   a: { body?: string | null; subject?: string | null; resumeId?: number | null },
 ): Promise<{ ok: true; messageId: string; to: string; resume: string; subject: string }> {
+  if (!taskSwitches(await workSettings(env), agent).email) throw new HttpError(403, "Email applications are switched off for this agent");
   if (!emailEnabled(env)) throw new HttpError(503, "email sending is not enabled on the hub; release_job and stop");
   const job = await getJob(env, jobId);
   if (job.claimedBy !== agent) throw new HttpError(409, `you don't hold ${job.name}; claim it first`);

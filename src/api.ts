@@ -1,4 +1,4 @@
-import type { AdminTask, HubState, PublicSummary, Run, RunnerInfo } from "./types";
+import type { AdminTask, HubState, PublicSummary, Run, RunnerInfo, AgentWorkState, TaskSwitches, RunTask } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
@@ -35,9 +35,9 @@ export async function getText(path: string): Promise<string> {
   return res.text();
 }
 
-export const getRuns = () => request<{ runs: Run[]; runners: RunnerInfo[] }>("/api/admin/runs");
+export const getRuns = () => request<{ runs: Run[]; runners: RunnerInfo[]; agentStates: AgentWorkState[] }>("/api/admin/runs");
 export const getRun = (id: number) => request<Run>(`/api/admin/runs/${id}`);
-export const createRun = (r: { agent: string; kind: "queue" | "prompt"; count?: number; prompt?: string; copies?: number }) =>
+export const createRun = (r: { agent: string; kind: "queue" | "prompt"; task?: RunTask; count?: number; prompt?: string; copies?: number }) =>
   request<{ runs: Run[] }>("/api/admin/runs", { method: "POST", body: JSON.stringify(r) });
 export const cancelRun = (id: number) => request<Run>(`/api/admin/runs/${id}/cancel`, { method: "POST" });
 
@@ -48,8 +48,9 @@ export interface PacingLive { globalPerDay: number; todayTotal: number; ats: (At
 export const getPacing = () => request<{ policy: PacingPolicy; defaults: PacingPolicy; live: PacingLive }>("/api/admin/pacing");
 export const savePacing = (p: PacingPolicy) => request<{ policy: PacingPolicy }>("/api/admin/pacing", { method: "PUT", body: JSON.stringify(p) });
 
-export interface Schedule { id: number; name: string; agent: string | null; kind: "queue" | "prompt" | "digest"; count: number | null; copies: number; prompt: string | null; cron: string; tz: string; enabled: boolean; jitterMin: number; lastRunAt: string | null; nextRunAt: string | null }
-export const getSchedules = () => request<{ schedules: Schedule[] }>("/api/admin/schedules");
+export interface Schedule { id: number; name: string; agent: string | null; kind: "queue" | "prompt" | "digest" | "sourcing"; count: number | null; copies: number; prompt: string | null; cron: string; tz: string; enabled: boolean; jitterMin: number; lastRunAt: string | null; nextRunAt: string | null }
+export interface SourceCheck { id: number; schedule_id: number; due_at: number; status: string; run_id: number | null; attempted_agents: string; attempts: number; detail: string | null }
+export const getSchedules = () => request<{ schedules: Schedule[]; sourceChecks: SourceCheck[] }>("/api/admin/schedules");
 export const createSchedule = (s: Partial<Schedule>) => request<Schedule>("/api/admin/schedules", { method: "POST", body: JSON.stringify(s) });
 export const setScheduleEnabled = (id: number, enabled: boolean) => request<Schedule>(`/api/admin/schedules/${id}`, { method: "PATCH", body: JSON.stringify({ enabled }) });
 export const deleteSchedule = (id: number) => request<{ ok: true }>(`/api/admin/schedules/${id}`, { method: "DELETE" });
@@ -71,8 +72,8 @@ export const getInbound = () => request<{ emails: InboundEmail[] }>("/api/admin/
 export const testTelegram = () => request<{ ok: boolean; error: string | null; configured: boolean }>("/api/admin/telegram/test", { method: "POST" });
 export const sendDigestNow = () => request<{ ok: boolean; error: string | null }>("/api/admin/digest", { method: "POST" });
 
-export interface AutopilotSettings { enabled: boolean; maxConcurrent: number; jobsPerRun: number; minGapMin: number; agents: Record<string, boolean>; backlog?: string[]; tags?: Record<string, string[]> }
-export interface AgentAutopilot { agent: string; state: "working" | "queued" | "waiting" | "ready" | "paused" | "off" | "not-ready"; nextAt: string | null; detail: string | null; role?: "front-line" | "backlog"; tags?: string[] }
+export interface AutopilotSettings { enabled: boolean; maxConcurrent: number; jobsPerRun: number; minGapMin: number; agents: Record<string, boolean>; tasks?: Record<string, Partial<TaskSwitches>>; backlog?: string[]; tags?: Record<string, string[]> }
+export type AgentAutopilot = AgentWorkState;
 export const getAutopilot = () => request<{ settings: AutopilotSettings; agents: AgentAutopilot[] }>("/api/admin/autopilot");
 export const saveAutopilot = (p: Partial<AutopilotSettings>) =>
   request<{ settings: AutopilotSettings; agents: AgentAutopilot[] }>("/api/admin/autopilot", { method: "PUT", body: JSON.stringify(p) });

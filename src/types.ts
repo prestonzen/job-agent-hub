@@ -17,7 +17,7 @@ export interface PublicSummary {
   byPlatform: Record<string, number>;
   byAgent: Record<string, number>;
   byDay: { date: string; count: number; byAgent: Record<string, number> }[];
-  live: { agentsOnline: string[]; agentsReady: string[]; inProgress: number; lastActivityAt: string | null };
+  live: { agentsOnline: string[]; agentsWorking?: string[]; agentsReady: string[]; inProgress: number; lastActivityAt: string | null };
   /** Aggregate operations numbers (no job detail): how much work the fleet has done. Optional on old snapshots. */
   ops?: { runs: number; runsOk: number; agentHours: number; claims: number; since: string | null };
   recent: PublicApplication[];
@@ -77,6 +77,7 @@ export interface HubState {
   /** Enabled agents logged in on an online runner (available even when idle). */
   ready: string[];
   disabledAgents?: string[];
+  agentStates?: AgentWorkState[];
   demo: boolean;
   agents: string[];
   queue: Job[];
@@ -87,9 +88,12 @@ export interface HubState {
 }
 
 export interface Run {
+  task: RunTask;
+  summary?: string;
+  outcome?: { applied: number; emailed: number; added: number; blocked: number; failed: number; skipped: number; claimed: number; cyber: number };
   id: number;
   agent: string;
-  kind: "queue" | "prompt";
+  kind: "queue" | "prompt" | "login";
   prompt: string | null;
   count: number | null;
   status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
@@ -108,9 +112,17 @@ export interface RunnerInfo {
   name: string;
   lastSeen: string;
   online: boolean;
-  agents: { id: string; installed: boolean; ready: boolean; version?: string | null; note?: string | null }[];
+  agents: { id: string; installed: boolean; signedIn?: boolean | null; ready: boolean; version?: string | null; note?: string | null }[];
   slots: number;
   busy: number;
   version: string | null;
   host: string | null;
+}
+
+export type RunTask = "applications" | "email" | "sourcing" | "cyber" | "diagnostic" | "custom" | "login";
+export type TaskSwitches = Record<"applications" | "email" | "sourcing" | "cyber", boolean>;
+export interface AgentWorkState {
+  agent: string; state: "working" | "queued" | "waiting" | "ready" | "idle" | "offline" | "paused" | "off" | "not-ready";
+  signedIn: boolean | null; online: boolean; tasks: TaskSwitches;
+  nextAt: string | null; detail: string | null; role?: "front-line" | "backlog"; tags?: string[];
 }

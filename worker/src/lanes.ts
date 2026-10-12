@@ -1,5 +1,6 @@
 import { getSetting } from "./db";
 import type { Env, Job } from "./types";
+import { taskSwitches, workSettings } from "./work";
 
 /**
  * Lanes: what kind of job an agent takes. Free-tier agents (Gemini's free API key allows about
@@ -10,10 +11,14 @@ import type { Env, Job } from "./types";
  */
 
 /** "email": only email applications. "email-first": any job, but email applications first (cheap for a free tier). */
-export type Lane = "email" | "email-first";
+export type Lane = "email" | "email-first" | "web" | "none";
 export const DEFAULT_LANES: Record<string, Lane | null> = { gemini: "email", mistral: "email-first", deepseek: "email-first", ollama: "email-first" };
 
 export async function agentLane(env: Env, agent: string): Promise<Lane | null> {
+  const tasks = taskSwitches(await workSettings(env), agent);
+  if (!tasks.applications && !tasks.email) return "none";
+  if (!tasks.applications) return "email";
+  if (!tasks.email) return "web";
   const saved = await getSetting<{ lanes?: Record<string, Lane | null> }>(env, "autopilot").catch(() => null);
   const lanes = { ...DEFAULT_LANES, ...(saved?.lanes ?? {}) };
   return lanes[agent] ?? null;
@@ -22,7 +27,7 @@ export async function agentLane(env: Env, agent: string): Promise<Lane | null> {
 /** An application made by emailing the employer: the posting names an address, or the ATS is "Email". */
 export const isEmailJob = (j: Job): boolean => !!j.applyEmail || /\be-?mail\b/i.test(j.ats ?? "") || /^mailto:/i.test(j.applyUrl ?? "");
 
-export const inLane = (j: Job, lane: Lane | null): boolean => !lane || lane === "email-first" || isEmailJob(j);
+export const inLane = (j: Job, lane: Lane | null): boolean => lane === "none" ? false : lane === "web" ? !isEmailJob(j) : !lane || lane === "email-first" || isEmailJob(j);
 
 /** Email-first agents see email jobs ahead of the rest (stable). */
 export const laneOrder = (jobs: Job[], lane: Lane | null): Job[] => (lane === "email-first" ? [...jobs.filter(isEmailJob), ...jobs.filter((j) => !isEmailJob(j))] : jobs);

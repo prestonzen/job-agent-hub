@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { agentColor, agentLabel, sortAgents } from "../agents";
 import { cancelRun, createRun, getRun, getRuns } from "../api";
-import type { Run, RunnerInfo } from "../types";
+import type { Run, RunnerInfo, AgentWorkState } from "../types";
 import Schedules from "./Schedules";
 
 const ago = (iso: string) => {
@@ -28,14 +28,17 @@ const STATUS_CLASS: Record<Run["status"], string> = {
 export default function RunAgents() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [runners, setRunners] = useState<RunnerInfo[]>([]);
+  const [states, setStates] = useState<AgentWorkState[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const r = await getRuns();
       setRuns(r.runs);
       setRunners(r.runners);
+      setStates(r.agentStates ?? []);
       setErr(null);
     } catch (e) {
       setErr((e as Error).message);
@@ -57,8 +60,8 @@ export default function RunAgents() {
         if (!prev || (!prev.ready && a.ready)) m.set(a.id, { ready: a.ready, note: a.note ?? null });
       }
     }
-    return sortAgents([...m.keys()]).map((id) => ({ id, ...m.get(id)! }));
-  }, [runners]);
+    return sortAgents([...m.keys()]).map((id) => { const s=states.find((a)=>a.agent===id); return { id, ...m.get(id)!, ready:s?.state === 'ready' || s?.state === 'idle', note:s?.detail ?? s?.state ?? m.get(id)!.note }; });
+  }, [runners,states]);
 
   const online = runners.filter((r) => r.online);
 
@@ -91,7 +94,7 @@ export default function RunAgents() {
                     return (
                       <li key={id} className={`chip${a.ready ? " ready" : ""}`} title={a.version ?? a.note ?? ""}>
                         <i className="key" style={{ background: agentColor(id) }} aria-hidden="true" />
-                        {agentLabel(id)} <span className="muted">· {a.ready ? "ready" : a.note}</span>
+                        {agentLabel(id)} <span className="muted">· {a.signedIn === null ? "local model" : a.signedIn ?? a.ready ? "signed in" : "not signed in"}{!a.ready && a.note ? ` · ${a.note}` : ""}</span>
                       </li>
                     );
                   })}
@@ -110,12 +113,13 @@ export default function RunAgents() {
         <div className="card-head">
           <h2>Runs</h2>
           <span className="muted small">refreshes every few seconds</span>
+          <label className="small"><input type="checkbox" checked={showDiagnostics} onChange={(e) => setShowDiagnostics(e.target.checked)} /> Show diagnostics</label>
         </div>
         {runs.length === 0 ? (
           <p className="muted">No runs yet.</p>
         ) : (
           <ul className="runs">
-            {runs.map((r) => (
+            {runs.filter((r) => showDiagnostics || r.task !== "diagnostic").map((r) => (
               <li key={r.id} className={selected === r.id ? "on" : ""}>
                 <button className="run-row" onClick={() => setSelected(selected === r.id ? null : r.id)} aria-expanded={selected === r.id}>
                   <span className="mono muted">#{r.id}</span>
@@ -123,8 +127,8 @@ export default function RunAgents() {
                     <i className="key" style={{ background: agentColor(r.agent) }} aria-hidden="true" />
                     {agentLabel(r.agent)}
                   </span>
-                  <span className="task">{r.kind === "queue" ? `Work ${r.count} jobs` : (r.prompt ?? "").slice(0, 80)}</span>
-                  <span className={`pill ${STATUS_CLASS[r.status]}`}>{r.cancel && r.status === "running" ? "stopping" : r.status}</span>
+                  <span className="task"><b>{r.task}</b> · {r.summary ?? "No outcome recorded"}</span>
+                  <span className={`pill ${STATUS_CLASS[r.status]}`}>{r.cancel && r.status === "running" ? "stopping" : r.status === "succeeded" ? "process finished" : r.status}</span>
                   <span className="muted small nowrap">
                     {r.startedAt
                       ? dur(r.startedAt, r.finishedAt)
@@ -212,10 +216,10 @@ function Launcher({ options, disabled, onLaunched }: { options: { id: string; re
         Parallel runs <b>{copies}</b>
         <input type="range" min={1} max={5} value={copies} onChange={(e) => setCopies(Number(e.target.value))} />
       </label>
-      <button disabled={busy || disabled || !agent || (kind === "prompt" && !prompt.trim())}>
+      <button disabled={busy || disabled || !agent || !chosen?.ready || (kind === "prompt" && !prompt.trim())}>
         {busy ? "Queuing…" : `Launch ${agentLabel(agent || "agent")}`}
       </button>
-      {chosen && !chosen.ready && <p className="muted small">This agent isn't ready on any runner ({chosen.note}). The run will wait in the queue until it is.</p>}
+      {chosen && !chosen.ready && <p className="muted small">This agent cannot start a task now: {chosen.note}.</p>}
       {disabled && <p className="muted small">No runner online.</p>}
       {msg && <p className="small">{msg}</p>}
     </form>
@@ -224,6 +228,7 @@ function Launcher({ options, disabled, onLaunched }: { options: { id: string; re
 
 function RunLog({ run, onCancel }: { run: Run; onCancel: () => void }) {
   const [log, setLog] = useState<string>("");
+  const [result, setResult] = useState<Run>(run);
   const pre = useRef<HTMLPreElement>(null);
   const stick = useRef(true);
   const live = run.status === "running" || run.status === "queued";
@@ -233,7 +238,7 @@ function RunLog({ run, onCancel }: { run: Run; onCancel: () => void }) {
     const pull = async () => {
       try {
         const r = await getRun(run.id);
-        if (alive) setLog(r.log ?? "");
+        if (alive) { setLog(r.log ?? ""); setResult(r); }
       } catch {
         /* keep last */
       }
@@ -250,6 +255,8 @@ function RunLog({ run, onCancel }: { run: Run; onCancel: () => void }) {
 
   return (
     <div className="run-log">
+      <p className="run-outcome"><b>Result:</b> {result.summary ?? "No work result recorded"}</p>
+      {result.status === "failed" && <p className="notice">{log.trim().split('\n').filter((l) => !/^\[runner\]|session_id:/.test(l)).slice(-3).join(' ').slice(-450) || 'Process failed; open the technical log for details.'}</p>}
       <div className="run-log-bar">
         <span className="muted small">
           {run.runner ? `on ${run.runner}` : "waiting for a runner"} · {run.exitCode !== null ? `exit ${run.exitCode}` : live ? "live" : run.status}
@@ -260,7 +267,7 @@ function RunLog({ run, onCancel }: { run: Run; onCancel: () => void }) {
           </button>
         )}
       </div>
-      <pre
+      <details><summary>Technical log</summary><pre
         ref={pre}
         onScroll={(e) => {
           const el = e.currentTarget;
@@ -268,7 +275,7 @@ function RunLog({ run, onCancel }: { run: Run; onCancel: () => void }) {
         }}
       >
         {log || (run.status === "queued" ? "Queued…" : "No output yet.")}
-      </pre>
+      </pre></details>
     </div>
   );
 }

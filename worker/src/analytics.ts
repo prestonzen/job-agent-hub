@@ -141,7 +141,7 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
       .bind(since)
       .all<Ev>(),
     d
-      .prepare("SELECT agent, status, created_at, started_at, finished_at, cost_usd, tokens FROM runs WHERE created_at >= ? AND kind != 'login'")
+      .prepare("SELECT agent, status, created_at, started_at, finished_at, cost_usd, tokens FROM runs WHERE created_at >= ? AND kind != 'login' AND (task IS NULL OR task!='diagnostic')")
       .bind(since)
       .all<{ agent: string; status: string; created_at: number; started_at: number | null; finished_at: number | null; cost_usd: number | null; tokens: number | null }>()
       .catch(() => ({ results: [] as { agent: string; status: string; created_at: number; started_at: number | null; finished_at: number | null; cost_usd: number | null; tokens: number | null }[] })),

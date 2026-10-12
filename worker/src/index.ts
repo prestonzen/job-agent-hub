@@ -25,7 +25,9 @@ import {
 } from "./jobs";
 import { handleMcp } from "./mcp";
 import { appendLog, cancelRun, claimRun, createRun, finishRun, getRun, isRunnerToken, listRunners, listRuns, runnerHeartbeat, type RunKind } from "./runs";
-import { autopilotStatus, autopilotTick, getAutopilot, saveAutopilot } from "./autopilot";
+import { autopilotStatus, autopilotTick, saveAutopilot } from "./autopilot";
+import { sourceCheckStatus } from "./sourcing";
+import type { RunTask } from "./work";
 import { sendDigest } from "./digest";
 import { handleInbound, recentInbound, type InboundEmail } from "./inbound";
 import { DEFAULT_POLICY, getPolicy, pacingState, pacingSummary, type PacingPolicy } from "./pacing";
@@ -334,10 +336,11 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
           applied[k] = (applied[k] ?? 0) + 1;
         }
       }
-      const [runnerList, switches] = await Promise.all([listRunners(env).catch(() => []), getAutopilot(env)]);
-      const disabledAgents = Object.entries(switches.agents).filter(([, enabled]) => enabled === false).map(([agent]) => agent);
+      const state = await autopilotStatus(env);
+      const disabledAgents = state.agents.filter((a) => a.state === "off").map((a) => a.agent);
       return json({
-        ready: [...new Set(runnerList.filter((r) => r.online).flatMap((r) => r.agents.filter((a) => a.ready && !disabledAgents.includes(a.id)).map((a) => a.id)))],
+        ready: state.agents.filter((a) => a.state === "ready").map((a) => a.agent),
+        agentStates: state.agents,
         disabledAgents,
         demo: env.MOCK === "true",
         agents: agentNames(env),
@@ -382,7 +385,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     }
 
     // Schedules.
-    if (path === "/api/admin/schedules" && method === "GET") return json({ schedules: await listSchedules(env) });
+    if (path === "/api/admin/schedules" && method === "GET") return json({ schedules: await listSchedules(env), sourceChecks: await sourceCheckStatus(env) });
     if (path === "/api/admin/schedules" && method === "POST") {
       const b = await readJson<{ name?: string; agent?: string; kind?: ScheduleKind; count?: number; copies?: number; prompt?: string; cron?: string; tz?: string; jitterMin?: number }>(request);
       if (!b.cron) return json({ error: "cron is required" }, 400);
@@ -447,15 +450,15 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     // Remote agent runs (executed by runner machines).
     if (path === "/api/admin/runs" && method === "GET") {
       ctx.waitUntil(tick(env, () => sendDigest(env, url.origin).then(() => {})).catch((e) => console.error("schedule tick:", e)));
-      const [runs, runners] = await Promise.all([listRuns(env, Number(url.searchParams.get("limit")) || 50), listRunners(env)]);
-      return json({ runs, runners });
+      const [runs, runners, state] = await Promise.all([listRuns(env, Number(url.searchParams.get("limit")) || 50), listRunners(env), autopilotStatus(env)]);
+      return json({ runs, runners, agentStates: state.agents });
     }
     if (path === "/api/admin/runs" && method === "POST") {
-      const b = await readJson<{ agent?: string; kind?: RunKind; prompt?: string; count?: number; copies?: number }>(request);
+      const b = await readJson<{ agent?: string; kind?: RunKind; task?: RunTask; prompt?: string; count?: number; copies?: number }>(request);
       if (!b.agent) return json({ error: "agent is required" }, 400);
       const copies = Math.min(5, Math.max(1, Math.floor(b.copies ?? 1)));
       const created = [];
-      for (let i = 0; i < copies; i++) created.push(await createRun(env, { agent: b.agent, kind: b.kind ?? "queue", prompt: b.prompt, count: b.count }));
+      for (let i = 0; i < copies; i++) created.push(await createRun(env, { agent: b.agent, kind: b.kind ?? "queue", task: b.task, prompt: b.prompt, count: b.count }));
       return json({ runs: created }, 201);
     }
     const runRoute = path.match(/^\/api\/admin\/runs\/(\d+)(?:\/(cancel))?$/);
@@ -510,7 +513,6 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   return env.ASSETS ? env.ASSETS.fetch(request) : json({ error: "not found" }, 404);
 }
 
-const ONLINE_MS = 15 * 60_000;
 
 /** Fleet totals for the public page: counts and hours only, never anything about a specific job. */
 async function publicOps(env: Env): Promise<NonNullable<PublicSummary["ops"]>> {
@@ -518,7 +520,7 @@ async function publicOps(env: Env): Promise<NonNullable<PublicSummary["ops"]>> {
   const [r, c, f] = await Promise.all([
     d
       .prepare(
-        "SELECT COUNT(*) AS runs, SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END) AS ok, SUM(CASE WHEN started_at IS NOT NULL AND finished_at > started_at THEN finished_at - started_at ELSE 0 END) AS ms FROM runs WHERE kind != 'login' AND status IN ('succeeded','failed')",
+        "SELECT COUNT(*) AS runs, SUM(CASE WHEN status = 'succeeded' THEN 1 ELSE 0 END) AS ok, SUM(CASE WHEN started_at IS NOT NULL AND finished_at > started_at THEN finished_at - started_at ELSE 0 END) AS ms FROM runs WHERE kind != 'login' AND (task IS NULL OR task!='diagnostic') AND status IN ('succeeded','failed')",
       )
       .first<{ runs: number; ok: number | null; ms: number | null }>(),
     d.prepare("SELECT COUNT(*) AS n FROM events WHERE type = 'claimed'").first<{ n: number }>(),
@@ -535,18 +537,17 @@ async function publicOps(env: Env): Promise<NonNullable<PublicSummary["ops"]>> {
 
 /** Compute the public summary from ClickUp + hub activity, and save it as the latest snapshot. */
 async function buildPublicSummary(env: Env): Promise<string> {
-  const [tasks, beats, claims, last, runners] = await Promise.all([
+  const [tasks, claims, last, state] = await Promise.all([
     loadTasks(env),
-    listHeartbeats(env).catch(() => []),
     activeClaims(env).catch(() => new Map()),
     lastEventAt(env).catch(() => null),
-    listRunners(env).catch(() => []),
+    autopilotStatus(env),
   ]);
   const summary = toPublicSummary(tasks, env, env.MOCK === "true");
   summary.live = {
-    agentsOnline: beats.filter((b) => Date.now() - Date.parse(b.lastSeen) < ONLINE_MS).map((b) => b.agent),
-    // Logged in and on a live runner: available for the next run even if idle right now.
-    agentsReady: [...new Set(runners.filter((r) => r.online).flatMap((r) => r.agents.filter((a) => a.ready).map((a) => a.id)))],
+    agentsOnline: state.agents.filter((a) => a.online && a.state !== "off").map((a) => a.agent),
+    agentsWorking: state.agents.filter((a) => a.state === "working").map((a) => a.agent),
+    agentsReady: state.agents.filter((a) => a.state === "ready").map((a) => a.agent),
     inProgress: claims.size,
     lastActivityAt: last,
   };

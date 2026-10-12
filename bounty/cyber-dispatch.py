@@ -80,7 +80,7 @@ Print the hub event id when done."""
 def post_run(admin: str, agent: str, prompt: str) -> dict:
     req = urllib.request.Request(
         HUB + "/api/admin/runs",
-        data=json.dumps({"agent": agent, "kind": "prompt", "prompt": prompt}).encode(),
+        data=json.dumps({"agent": agent, "kind": "prompt", "task": "cyber", "prompt": prompt}).encode(),
         headers={"Authorization": "Bearer " + admin, "Content-Type": "application/json",
                  "User-Agent": "curl/8.5.0"},  # default python UA gets a 403 from the edge
     )
@@ -103,6 +103,15 @@ def main() -> int:
 
     admin = open(ADMIN_FILE).read().strip()
     agents = [x.strip() for x in a.agents.split(",") if x.strip()]
+    state_req = urllib.request.Request(HUB + "/api/admin/autopilot", headers={"Authorization": "Bearer " + admin, "User-Agent": "curl/8.5.0"})
+    with urllib.request.urlopen(state_req, timeout=30) as response:
+        state = json.load(response)
+    allowed = {x["agent"] for x in state["agents"] if x.get("online") and x.get("signedIn") is not False
+               and x["state"] in ("ready", "idle") and x.get("tasks", {}).get("cyber", False)}
+    agents = [agent for agent in agents if agent in allowed]
+    if not state["settings"]["enabled"] or not agents:
+        print("[dispatch] no enabled, available cyber agent; no task launched")
+        return 0
     si = (int(time.strftime("%j")) % len(SCENARIOS)) if a.scenario < 0 else a.scenario % len(SCENARIOS)
 
     for agent in agents:

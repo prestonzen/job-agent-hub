@@ -78,7 +78,7 @@ function Public() {
           {data.demo && <p className="badge">Demo data</p>}
           {data.stale && <p className="badge">Showing the last snapshot; live data is temporarily unavailable</p>}
         </div>
-        <Constellation byAgent={data.byAgent} working={data.live?.agentsOnline ?? []} ready={data.live?.agentsReady ?? []} />
+        <Constellation byAgent={data.byAgent} working={data.live?.agentsWorking ?? []} ready={data.live?.agentsReady ?? []} />
       </section>
 
       <section className="kpis">
@@ -91,7 +91,7 @@ function Public() {
 
       <div className="grid two">
         <DailyChart days={data.byDay} />
-        <AgentBoard byAgent={data.byAgent} working={data.live?.agentsOnline ?? []} ready={data.live?.agentsReady ?? []} />
+        <AgentBoard byAgent={data.byAgent} working={data.live?.agentsWorking ?? []} ready={data.live?.agentsReady ?? []} />
         <PlatformBars byPlatform={data.byPlatform} />
       </div>
 
@@ -122,7 +122,7 @@ function ago(iso: string): string {
 }
 
 function LivePill({ live, generatedAt }: { live: PublicSummary["live"]; generatedAt: string }) {
-  const online = live?.agentsOnline ?? [];
+  const online = live?.agentsWorking ?? [];
   const ready = live?.agentsReady ?? [];
   const working = online.length > 0;
   const standby = ready.filter((a) => !online.map((x) => x.toLowerCase()).includes(a.toLowerCase())).length;

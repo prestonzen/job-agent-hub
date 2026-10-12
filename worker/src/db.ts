@@ -55,7 +55,7 @@ const SCHEMA = [
 ];
 
 /** Columns added after the first release; ALTER fails harmlessly when they already exist. */
-const ADDED_COLUMNS = ["ALTER TABLE events ADD COLUMN ats TEXT", "ALTER TABLE events ADD COLUMN company TEXT"];
+const ADDED_COLUMNS = ["ALTER TABLE events ADD COLUMN ats TEXT", "ALTER TABLE events ADD COLUMN company TEXT", "ALTER TABLE events ADD COLUMN run_id INTEGER"];
 
 let ready = false;
 
@@ -64,6 +64,7 @@ export async function db(env: Env): Promise<D1Database> {
     await env.DB.batch(SCHEMA.map((s) => env.DB.prepare(s)));
     for (const sql of ADDED_COLUMNS) await env.DB.prepare(sql).run().catch(() => {});
     await env.DB.prepare("CREATE INDEX IF NOT EXISTS events_ats ON events (type, ats, at)").run();
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS events_run_id ON events (run_id)").run();
     ready = true;
   }
   return env.DB;
@@ -144,9 +145,11 @@ export async function logEvent(
     company?: string | null;
   },
 ): Promise<void> {
-  await (await db(env))
-    .prepare("INSERT INTO events (at, agent, task_id, task_name, type, message, ats, company) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-    .bind(Date.now(), e.agent, e.taskId ?? null, e.taskName ?? null, e.type, e.message ? e.message.slice(0, 2000) : null, e.ats ?? null, e.company ?? null)
+  const d = await db(env);
+  // Never guess which concurrent manual run should receive outcome credit.
+  const owner = await d.prepare("SELECT CASE WHEN COUNT(*) = 1 THEN MIN(id) ELSE NULL END AS id FROM runs WHERE agent = ? AND status = 'running'").bind(e.agent).first<{ id: number | null }>().catch(() => null);
+  await d.prepare("INSERT INTO events (at, agent, task_id, task_name, type, message, ats, company, run_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(Date.now(), e.agent, e.taskId ?? null, e.taskName ?? null, e.type, e.message ? e.message.slice(0, 2000) : null, e.ats ?? null, e.company ?? null, owner?.id ?? null)
     .run();
 }
 

@@ -5,7 +5,6 @@ import { agentColor } from "../agents";
 import Autopilot from "./Autopilot";
 import Pacing from "./Pacing";
 
-const ONLINE_MS = 15 * 60_000;
 const REFRESH_MS = 20_000;
 
 const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
@@ -61,14 +60,18 @@ export default function CommandCenter() {
       .map((name) => {
         const hb = hub.heartbeats.find((h) => h.agent === name);
         const off = (hub.disabledAgents ?? []).includes(name);
+        const state = hub.agentStates?.find((a) => a.agent === name);
         return {
           name,
           off,
+          state: state?.state ?? (off ? "off" : "unknown"),
+          detail: state?.detail ?? null,
+          signedIn: state?.signedIn,
           lastSeen: hb?.lastSeen ?? null,
           client: hb?.client ?? null,
-          working: !off && !!hb && Date.now() - Date.parse(hb.lastSeen) < ONLINE_MS,
+          working: state?.state === "working",
           ready: !off && hub.ready.map((r) => r.toLowerCase()).includes(name),
-          online: !off && ((!!hb && Date.now() - Date.parse(hb.lastSeen) < ONLINE_MS) || hub.ready.map((r) => r.toLowerCase()).includes(name)),
+          online: !off && (state?.online ?? false),
           holding: hub.queue.filter((j) => j.claimedBy === name).length,
           applied: hub.applied[name] ?? 0,
           hasToken: hub.agents.includes(name),
@@ -128,6 +131,8 @@ export default function CommandCenter() {
               <thead>
                 <tr>
                   <th>Agent</th>
+                  <th>Access</th>
+                  <th>Work status</th>
                   <th>Last seen</th>
                   <th className="r">Holding</th>
                   <th className="r">Applied</th>
@@ -139,9 +144,10 @@ export default function CommandCenter() {
                     <td className="nowrap">
                       <AgentDot name={a.name} />
                       {cap(a.name)}
-                      {a.off ? <span className="pill idle">off</span> : a.working ? <span className="pill live">working</span> : a.ready ? <span className="pill live idle">ready</span> : null}
                       {!a.hasToken && <span className="sub">no token</span>}
                     </td>
+                    <td className="small">{a.signedIn === null ? "Local model" : a.signedIn ? "Signed in" : "Not signed in"}</td>
+                    <td title={a.detail ?? undefined}><span className={`pill ${a.working ? "live" : "idle"}`}>{a.state}</span></td>
                     <td title={a.client ?? undefined}>{a.lastSeen ? ago(a.lastSeen) : <span className="muted">never</span>}</td>
                     <td className="r">{a.holding}</td>
                     <td className="r">{a.applied}</td>

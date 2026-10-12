@@ -25,6 +25,7 @@ import { isFresh, mirrorAge, mirrorTasks, patchMirror, replaceMirror, upsertMirr
 import { getSetting, setSetting } from "./db";
 import { splitName } from "./sanitize";
 import type { Env, Job, Task } from "./types";
+import { taskSwitches, workSettings } from "./work";
 
 /**
  * The job queue and its rules. Both front doors (REST /api/agent/* and MCP /mcp) call these
@@ -210,6 +211,7 @@ export async function claimJobs(
   agent: string,
   opts: { count?: number; ats?: string[] } = {},
 ): Promise<{ jobs: Job[]; remaining: number; paced: { ats: string; reason: string; retryAt: string | null }[] }> {
+  if ((await workSettings(env)).agents?.[agent] === false) throw new HttpError(403, `${agent} is switched off`);
   const count = Math.min(10, Math.max(1, Math.floor(opts.count ?? 1)));
   const ats = (opts.ats ?? []).map((a) => a.toLowerCase()).filter(Boolean);
   const all = await queue(env);
@@ -476,6 +478,8 @@ export interface NewJob {
 
 /** Add a posting to the queue (status "not started"). Returns the existing task if it's already tracked. */
 export async function addJob(env: Env, agent: string, j: NewJob): Promise<{ id: string; created: boolean; status: string }> {
+  const settings = await workSettings(env);
+  if (settings.agents?.[agent] === false || !taskSwitches(settings,agent).sourcing) throw new HttpError(403, `Sourcing is switched off for ${agent}`);
   const existing = await findExisting(env, j.company, j.role, j.url);
   if (existing) return { id: existing.id, created: false, status: existing.status };
   let id = `demo-${Date.now()}`;

@@ -9,6 +9,7 @@
     "dev:api": "wrangler pages dev dist --port 8788 --binding MOCK=true",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b && tsc -p worker/tsconfig.json --noEmit && tsc -p mailer/tsconfig.json",
+    "test": "node scripts/test.mjs",
     "preview": "vite preview",
     "db:migrate": "wrangler d1 migrations apply job-agent-hub --remote",
     "deploy": "npm run build && wrangler pages deploy dist --project-name job-agent-hub",
@@ -20,6 +21,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "esbuild": "^0.25.12",
     "@cloudflare/workers-types": "^5.20261007.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

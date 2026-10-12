@@ -1,4 +1,4 @@
-import { db } from "./db";
+import { db, logEvent } from "./db";
 import { HttpError } from "./clickup";
 import type { Env } from "./types";
 
@@ -107,6 +107,7 @@ export async function addBountyEvent(env: Env, agent: string, body: BountyEventI
       kind === "payout" ? amount : null,
     )
     .run();
+  if (kind === "report") await logEvent(env, { agent, type: "cyber_report", message: s(body.title, 200) });
   return { id: Number(res.meta.last_row_id) };
 }
 

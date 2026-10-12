@@ -4,6 +4,8 @@
 
 Live at **https://jobhunter.prestonzen.com**.
 
+Work routing and recovery: [operations guide](docs/OPERATIONS.md). Sourcing checks run twice daily with persistent occurrences and automatic fallback to enabled, available agents. Per-agent task switches cover web applications, email applications, sourcing and cyber. Signed-in access, readiness, active work and recorded outcomes are shown separately.
+
 <p align="center">
   <a href="https://jobhunter.prestonzen.com"><img src="docs/screenshots/public-hero.png" alt="Job Agent Hub public dashboard: the agent constellation, live counters and applications per day" width="920"></a>
 </p>
