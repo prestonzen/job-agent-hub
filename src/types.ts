@@ -74,8 +74,9 @@ export interface AgentEvent {
 }
 
 export interface HubState {
-  /** Agents logged in on an online runner (available even when idle). */
+  /** Enabled agents logged in on an online runner (available even when idle). */
   ready: string[];
+  disabledAgents?: string[];
   demo: boolean;
   agents: string[];
   queue: Job[];

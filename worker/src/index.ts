@@ -25,7 +25,7 @@ import {
 } from "./jobs";
 import { handleMcp } from "./mcp";
 import { appendLog, cancelRun, claimRun, createRun, finishRun, getRun, isRunnerToken, listRunners, listRuns, runnerHeartbeat, type RunKind } from "./runs";
-import { autopilotStatus, autopilotTick, saveAutopilot } from "./autopilot";
+import { autopilotStatus, autopilotTick, getAutopilot, saveAutopilot } from "./autopilot";
 import { sendDigest } from "./digest";
 import { handleInbound, recentInbound, type InboundEmail } from "./inbound";
 import { DEFAULT_POLICY, getPolicy, pacingState, pacingSummary, type PacingPolicy } from "./pacing";
@@ -334,9 +334,11 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
           applied[k] = (applied[k] ?? 0) + 1;
         }
       }
-      const runnerList = await listRunners(env).catch(() => []);
+      const [runnerList, switches] = await Promise.all([listRunners(env).catch(() => []), getAutopilot(env)]);
+      const disabledAgents = Object.entries(switches.agents).filter(([, enabled]) => enabled === false).map(([agent]) => agent);
       return json({
-        ready: [...new Set(runnerList.filter((r) => r.online).flatMap((r) => r.agents.filter((a) => a.ready).map((a) => a.id)))],
+        ready: [...new Set(runnerList.filter((r) => r.online).flatMap((r) => r.agents.filter((a) => a.ready && !disabledAgents.includes(a.id)).map((a) => a.id)))],
+        disabledAgents,
         demo: env.MOCK === "true",
         agents: agentNames(env),
         queue: q,

@@ -60,13 +60,15 @@ export default function CommandCenter() {
     return [...names]
       .map((name) => {
         const hb = hub.heartbeats.find((h) => h.agent === name);
+        const off = (hub.disabledAgents ?? []).includes(name);
         return {
           name,
+          off,
           lastSeen: hb?.lastSeen ?? null,
           client: hb?.client ?? null,
-          working: !!hb && Date.now() - Date.parse(hb.lastSeen) < ONLINE_MS,
-          ready: hub.ready.map((r) => r.toLowerCase()).includes(name),
-          online: (!!hb && Date.now() - Date.parse(hb.lastSeen) < ONLINE_MS) || hub.ready.map((r) => r.toLowerCase()).includes(name),
+          working: !off && !!hb && Date.now() - Date.parse(hb.lastSeen) < ONLINE_MS,
+          ready: !off && hub.ready.map((r) => r.toLowerCase()).includes(name),
+          online: !off && ((!!hb && Date.now() - Date.parse(hb.lastSeen) < ONLINE_MS) || hub.ready.map((r) => r.toLowerCase()).includes(name)),
           holding: hub.queue.filter((j) => j.claimedBy === name).length,
           applied: hub.applied[name] ?? 0,
           hasToken: hub.agents.includes(name),
@@ -137,7 +139,7 @@ export default function CommandCenter() {
                     <td className="nowrap">
                       <AgentDot name={a.name} />
                       {cap(a.name)}
-                      {a.working ? <span className="pill live">working</span> : a.ready ? <span className="pill live idle">ready</span> : null}
+                      {a.off ? <span className="pill idle">off</span> : a.working ? <span className="pill live">working</span> : a.ready ? <span className="pill live idle">ready</span> : null}
                       {!a.hasToken && <span className="sub">no token</span>}
                     </td>
                     <td title={a.client ?? undefined}>{a.lastSeen ? ago(a.lastSeen) : <span className="muted">never</span>}</td>
