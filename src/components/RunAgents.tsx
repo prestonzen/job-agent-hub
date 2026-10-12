@@ -24,6 +24,15 @@ const STATUS_CLASS: Record<Run["status"], string> = {
   cancelled: "s-not-started",
 };
 
+function resultBadge(r:Run){
+  if(r.cancel&&r.status==='running')return {label:'stopping',style:STATUS_CLASS.running};
+  if(r.status!=='succeeded')return {label:r.status,style:STATUS_CLASS[r.status]};
+  if(r.task==='diagnostic')return {label:'diagnostic passed',style:'s-not-started'};
+  const o=r.outcome, useful=!!o&&(o.applied+o.emailed+o.added+o.cyber)>0;
+  const unfinished=!!o&&(o.blocked+o.failed+o.unfinished)>0;
+  return {label:unfinished?(useful?'partial results':'needs review'):useful?'results recorded':'no result',style:unfinished?'warn':useful?'':'s-not-started'};
+}
+
 /** Launch agent runs on runner machines and watch their output live, from any device. */
 export default function RunAgents() {
   const [runs, setRuns] = useState<Run[]>([]);
@@ -32,6 +41,7 @@ export default function RunAgents() {
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
@@ -42,7 +52,7 @@ export default function RunAgents() {
       setErr(null);
     } catch (e) {
       setErr((e as Error).message);
-    }
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => {
@@ -64,6 +74,7 @@ export default function RunAgents() {
   }, [runners,states]);
 
   const online = runners.filter((r) => r.online);
+  if (loading) return <p className="notice">Loading runner access and work results…</p>;
 
   return (
     <>
@@ -128,7 +139,7 @@ export default function RunAgents() {
                     {agentLabel(r.agent)}
                   </span>
                   <span className="task"><b>{r.task}</b> · {r.summary ?? "No outcome recorded"}</span>
-                  <span className={`pill ${STATUS_CLASS[r.status]}`}>{r.cancel && r.status === "running" ? "stopping" : r.status === "succeeded" ? "process finished" : r.status}</span>
+                  <span className={`pill ${resultBadge(r).style}`}>{resultBadge(r).label}</span>
                   <span className="muted small nowrap">
                     {r.startedAt
                       ? dur(r.startedAt, r.finishedAt)
@@ -188,7 +199,7 @@ function Launcher({ options, disabled, onLaunched }: { options: { id: string; re
           {options.map((o) => (
             <option key={o.id} value={o.id}>
               {agentLabel(o.id)}
-              {o.ready ? "" : ` (${o.note ?? "not ready"})`}
+              {o.ready ? "" : ` (${(o.note ?? "unavailable").slice(0,40)}${(o.note?.length??0)>40?'…':''})`}
             </option>
           ))}
         </select>

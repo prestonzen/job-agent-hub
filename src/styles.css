@@ -301,6 +301,7 @@ button.danger { color: #e5484d; border-color: color-mix(in srgb, #e5484d 40%, va
 .source-checks { font-size: 13px; margin: 16px 0; }
 .run-outcome { padding: 10px 12px; background: var(--grid); border-radius: 8px; }
 .run-log details summary { cursor: pointer; color: var(--muted); padding: 8px 0; }
+.launcher select { min-width: 0; max-width: 100%; }
 .ap-agents li.st-off, .ap-agents li.st-not-ready { opacity: 0.6; }
 
 /* ---------- Public: hero split, constellation, calendar, under the hood, about ---------- */

@@ -335,9 +335,10 @@ export async function finishRun(env: Env, id: number, runner: string, f: { exitC
   }
   if (r && !quota) {
     const mins = Math.max(1, Math.round((r.finished_at - r.started_at) / 60_000));
-    const icon = status === "succeeded" ? "✅" : status === "cancelled" ? "⏹️" : "⚠️";
     const result = await getRun(env, id);
     if (result.task === "diagnostic" && status === "succeeded") return;
+    const o=result.outcome!;
+    const icon=status==='cancelled'?'⏹️':status==='failed'||o.blocked+o.failed+o.unfinished>0?'⚠️':o.applied+o.emailed+o.added+o.cyber>0?'✅':'ℹ️';
     await notify(
       env,
       `${icon} Run #${id} <b>${esc(r.agent)}</b> (${esc(result.task)}) on ${esc(runner)} after ${mins} min\n${esc(result.summary ?? status)}`,
