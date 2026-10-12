@@ -30,14 +30,25 @@ export async function processSourceChecks(env: Env): Promise<number> {
     if (won.meta.changes !== 1) continue;
     try {
       const [runners, runs] = await Promise.all([listRunners(env), listRuns(env, 200)]);
+      const dispatchKey=`source:${c.id}:${c.attempts}`;
+      if (!c.run_id) {
+        // Recover an accepted run if a transient DB error interrupted the check/run link write.
+        const reserved=await d.prepare("SELECT id,agent FROM runs WHERE dispatch_key=?").bind(dispatchKey).first<{id:number;agent:string}>();
+        if(reserved){
+          const tried=JSON.parse(c.attempted_agents) as string[];
+          await d.prepare("UPDATE source_checks SET status='running',run_id=?,attempted_agents=?,attempts=?,next_try=0,detail=? WHERE id=?").bind(reserved.id,JSON.stringify([...new Set([...tried,reserved.agent])]),c.attempts+1,`Recovered dispatch to ${reserved.agent} after interrupted check update`,c.id).run();
+          continue;
+        }
+      }
       if (c.run_id) {
         const run = await getRun(env, c.run_id);
         if (run.status === "running") {
           const owner = runners.find((r) => r.name === run.runner);
-          if (owner?.online) continue;
+          const expired = run.startedAt && now-Date.parse(run.startedAt)>45*60_000;
+          if (owner?.online && !expired) continue;
           // The runner is lost. Cancel ownership before handing sourcing to a different agent.
           await cancelRun(env, run.id);
-          await d.prepare("UPDATE runs SET status='failed',finished_at=?,cancel=1 WHERE id=? AND status='running'").bind(now, run.id).run();
+          await d.prepare("UPDATE runs SET status='failed',finished_at=?,cancel=1,log=log||? WHERE id=? AND status='running'").bind(now,expired?'\n[hub] sourcing reached its 45 minute limit; trying a backup.\n':'\n[hub] sourcing runner went offline; trying a backup.\n',run.id).run();
         } else if (run.status === "queued") {
           const available = settings.agents?.[run.agent] !== false && taskEnabled(settings,run.agent) && runners.some((r) => r.online && r.busy < r.slots && r.agents.some((a) => a.id === run.agent && a.ready));
           if (available || now - Date.parse(run.createdAt) < 120_000) continue;
@@ -63,8 +74,8 @@ export async function processSourceChecks(env: Env): Promise<number> {
         await d.prepare("UPDATE source_checks SET next_try=?,detail=? WHERE id=?").bind(now + 60_000, !capacity ? "Waiting for a free task slot" : "Waiting for an enabled online agent with sourcing enabled", c.id).run();
       } else {
         const agent = candidates[0];
-        const run = await createRun(env, { agent, kind: "prompt", task: "sourcing", prompt: c.prompt, exclusive: true });
-        await d.prepare("UPDATE source_checks SET status='running',run_id=?,attempted_agents=?,attempts=attempts+1,next_try=0,detail=? WHERE id=?").bind(run.id, JSON.stringify([...tried, agent]), `Checking with ${agent}; backups eligible automatically`, c.id).run();
+        const run = await createRun(env, { agent, kind: "prompt", task: "sourcing", prompt: c.prompt, exclusive: true,dispatchKey });
+        await d.prepare("UPDATE source_checks SET status='running',run_id=?,attempted_agents=?,attempts=attempts+1,next_try=0,detail=? WHERE id=?").bind(run.id, JSON.stringify([...tried, run.agent]), `Checking with ${run.agent}; backups eligible automatically`, c.id).run();
         launched++;
       }
     } catch (e) {

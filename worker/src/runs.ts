@@ -49,6 +49,8 @@ async function db(env: Env): Promise<D1Database> {
     await env.DB.prepare("ALTER TABLE runs ADD COLUMN cost_usd REAL").run().catch(() => {});
     await env.DB.prepare("ALTER TABLE runs ADD COLUMN tokens INTEGER").run().catch(() => {});
     await env.DB.prepare("ALTER TABLE runs ADD COLUMN task TEXT").run().catch(() => {});
+    await env.DB.prepare("ALTER TABLE runs ADD COLUMN dispatch_key TEXT").run().catch(() => {});
+    await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS runs_dispatch_key ON runs(dispatch_key)").run();
     ready = true;
   }
   return env.DB;
@@ -61,6 +63,7 @@ export const RUN_KINDS = ["queue", "prompt", "login"] as const;
 export type RunKind = (typeof RUN_KINDS)[number];
 
 export interface RunRow {
+  dispatchKey?: string | null;
   task: RunTask;
   outcome?: RunOutcome;
   summary?: string;
@@ -83,6 +86,7 @@ export interface RunRow {
 }
 
 interface DbRun {
+  dispatch_key: string | null;
   task: RunTask | null;
   id: number;
   agent: string;
@@ -103,6 +107,7 @@ interface DbRun {
 
 const iso = (ms: number | null) => (ms ? new Date(ms).toISOString() : null);
 const toRow = (r: DbRun): RunRow => ({
+  dispatchKey: r.dispatch_key,
   task: r.task ?? inferRunTask(r.kind, r.prompt),
   id: r.id,
   agent: r.agent,
@@ -121,11 +126,11 @@ const toRow = (r: DbRun): RunRow => ({
   ...(r.log !== undefined ? { log: r.log } : {}),
 });
 
-const COLS = "id, agent, kind, task, prompt, count, status, runner, created_at, started_at, finished_at, exit_code, cancel, not_before, length(log) AS log_size";
+const COLS = "id, agent, kind, task, dispatch_key, prompt, count, status, runner, created_at, started_at, finished_at, exit_code, cancel, not_before, length(log) AS log_size";
 
 // ---------- admin ----------
 
-export async function createRun(env: Env, r: { agent: string; kind: RunKind; task?: RunTask; prompt?: string; count?: number; notBefore?: number; exclusive?: boolean }): Promise<RunRow> {
+export async function createRun(env: Env, r: { agent: string; kind: RunKind; task?: RunTask; prompt?: string; count?: number; notBefore?: number; exclusive?: boolean; dispatchKey?: string }): Promise<RunRow> {
   const agent = r.agent.toLowerCase();
   if (!RUN_KINDS.includes(r.kind)) throw new HttpError(400, `kind must be one of ${RUN_KINDS.join(", ")}`);
   if (r.kind === "prompt" && !r.prompt?.trim()) throw new HttpError(400, "prompt is required for a custom run");
@@ -140,11 +145,16 @@ export async function createRun(env: Env, r: { agent: string; kind: RunKind; tas
     if ((TASKS as readonly string[]).includes(task) && !taskSwitches(settings, agent)[task as keyof ReturnType<typeof taskSwitches>]) throw new HttpError(409, `${task} is switched off for ${agent}`);
   }
   const row = await (await db(env))
-    .prepare(`INSERT INTO runs (agent, kind, task, prompt, count, created_at, not_before)
-      SELECT ?1,?2,?3,?4,?5,?6,?7 WHERE ?8=0 OR (NOT EXISTS (SELECT 1 FROM runs WHERE agent=?1 AND status IN ('queued','running'))
-      AND (SELECT COUNT(*) FROM runs WHERE kind!='login' AND status IN ('queued','running')) < ?9) RETURNING ${COLS}`)
-    .bind(agent, r.kind, task, r.kind === "prompt" ? r.prompt!.trim().slice(0, 8000) : null, count, Date.now(), r.notBefore ?? null, r.exclusive ? 1 : 0, settings.maxConcurrent ?? 2)
+    .prepare(`INSERT INTO runs (agent, kind, task, prompt, count, created_at, not_before,dispatch_key)
+      SELECT ?1,?2,?3,?4,?5,?6,?7,?10 WHERE ?8=0 OR (NOT EXISTS (SELECT 1 FROM runs WHERE agent=?1 AND status IN ('queued','running'))
+      AND (SELECT COUNT(*) FROM runs WHERE kind!='login' AND status IN ('queued','running')) < ?9)
+      ON CONFLICT(dispatch_key) DO NOTHING RETURNING ${COLS}`)
+    .bind(agent, r.kind, task, r.kind === "prompt" ? r.prompt!.trim().slice(0, 8000) : null, count, Date.now(), r.notBefore ?? null, r.exclusive ? 1 : 0, settings.maxConcurrent ?? 2,r.dispatchKey??null)
     .first<DbRun>();
+  if (!row && r.dispatchKey) {
+    const existing=await(await db(env)).prepare(`SELECT ${COLS} FROM runs WHERE dispatch_key=?`).bind(r.dispatchKey).first<DbRun>();
+    if(existing)return toRow(existing);
+  }
   if (!row) throw new HttpError(409, "Agent or fleet task capacity is full");
   return toRow(row);
 }
@@ -320,12 +330,14 @@ export async function finishRun(env: Env, id: number, runner: string, f: { exitC
       .prepare("INSERT INTO autopilot_state (agent, next_after) VALUES (?1, ?2) ON CONFLICT (agent) DO UPDATE SET next_after = MAX(next_after, ?2)")
       .bind(r.agent, Date.now() + quota.restMs)
       .run();
-    await notify(env, `⏳ <b>${esc(r.agent)}</b> ran out of quota (run #${id}); resting until about ${new Date(Date.now() + quota.restMs).toISOString().slice(11, 16)} UTC. Not counted as a failure.`, { silent: true });
+    const result = await getRun(env,id);
+    await notify(env, `⏳ <b>${esc(r.agent)}</b> ran out of quota (run #${id}); resting until ${new Date(Date.now() + quota.restMs).toISOString()}.\n${esc(result.summary ?? "No work result recorded")}`, { silent: true });
   }
   if (r && !quota) {
     const mins = Math.max(1, Math.round((r.finished_at - r.started_at) / 60_000));
     const icon = status === "succeeded" ? "✅" : status === "cancelled" ? "⏹️" : "⚠️";
     const result = await getRun(env, id);
+    if (result.task === "diagnostic" && status === "succeeded") return;
     await notify(
       env,
       `${icon} Run #${id} <b>${esc(r.agent)}</b> (${esc(result.task)}) on ${esc(runner)} after ${mins} min\n${esc(result.summary ?? status)}`,
