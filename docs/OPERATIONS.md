@@ -32,7 +32,7 @@ An agent switch disables all new work for that agent. Queued tasks that conflict
 
 Run rows and notifications use recorded hub events: applications reported submitted, emails accepted by the mailer, new roles added, review blockers, failed attempts, skips, and cyber reports. An exit code of zero means **process finished**, not an application succeeded. If no work result was recorded, that is the displayed result.
 
-Events are attributed only when exactly one active run owns that agent. Concurrent manual runs get no inferred credit; their unassigned events remain in activity and application totals. Historic runs without attributed events show no recorded work result. The app does not infer success from an agent's prose or from a resume upload.
+Events are attributed only when exactly one active run owns that agent. Existing reports are matched by agent and event time only when exactly one run window matches; overlapping or outside-run reports remain unassigned. Concurrent manual runs get no inferred credit. Runs show both partial results and claimed jobs that have no final report. The app does not infer success from process-log prose or from a resume upload.
 
 Diagnostics such as visiting Example Domain are labelled diagnostics, hidden from the normal run list by default, excluded from work process metrics, and available through Show diagnostics. Technical logs are collapsed behind the result summary.
 
@@ -40,6 +40,6 @@ Diagnostics such as visiting Example Domain are labelled diagnostics, hidden fro
 
 Run `npm ci`, `npm run typecheck`, `npm test`, and `npm run build`. CI runs the same checks. `tests/dispatch.test.ts` uses real SQLite and covers durable occurrences, concurrent dispatch, disabled/offline/busy/quota providers, backup after zero-result sourcing, task switches, credential/readiness differences, event attribution, and diagnostic outcomes.
 
-Apply the additive `0003_work_routing.sql` migration before deploying. Existing runners remain compatible. Runner updates wait until the current work finishes; inspect `job-agent-updater` and the runner version rather than interrupting applications to deploy.
+Apply the additive `0003_work_routing.sql` and outcome-correlation `0004_recorded_outcomes.sql` migrations before deploying. Existing runners remain compatible. Runner updates wait until the current work finishes; inspect `job-agent-updater` and the runner version rather than interrupting applications to deploy.
 
 If work stops: inspect the queue's available/parked counts, per-agent access and work status, task switches, latest sourcing-check detail, recorded run result, then the technical log. Do not restart a healthy Ollama service just because the queue has no available work.

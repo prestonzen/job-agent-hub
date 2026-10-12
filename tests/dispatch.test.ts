@@ -1,6 +1,7 @@
 import { test, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { readFileSync } from "node:fs";
 import { db, logEvent, setSetting } from "../worker/src/db";
 import { createRun, claimRun, finishRun, getRun, listRuns, quotaStop, runnerHeartbeat } from "../worker/src/runs";
 import { createSchedule, listSchedules, nextRun, tick } from "../worker/src/schedules";
@@ -97,4 +98,10 @@ test("provider UTC reset times prevent retrying a weekly limit after three hours
 });
 test("an uppercase agent name cannot bypass its off switch",async()=>{
   await assert.rejects(createRun(env,{agent:'Claude',kind:'prompt',prompt:'custom'}),/switched off/);
+});
+test("historical reports are credited only for an unambiguous run window",async()=>{
+  const a=await createRun(env,{agent:'codex',kind:'prompt',prompt:'custom'}),b=await createRun(env,{agent:'codex',kind:'prompt',prompt:'custom'});const now=Date.now();sqlite.prepare("UPDATE runs SET status='failed',started_at=?,finished_at=? WHERE id IN (?,?)").run(now-1000,now+1000,a.id,b.id);sqlite.prepare("INSERT INTO events(at,agent,type,task_id) VALUES(?,?,?,?)").run(now,'codex','applied','recorded-role');const migration=readFileSync('migrations/0004_recorded_outcomes.sql','utf8');sqlite.exec(migration);assert.equal((await getRun(env,a.id)).outcome!.applied,0);sqlite.prepare('DELETE FROM runs WHERE id=?').run(b.id);sqlite.exec(migration);assert.equal((await getRun(env,a.id)).outcome!.applied,1);
+});
+test("partial results identify unfinished jobs separately from process failure",async()=>{
+  const r=await createRun(env,{agent:'codex',kind:'queue'});await claimRun(env,'host',['codex'],'https://example.invalid');await logEvent(env,{agent:'codex',type:'claimed',taskId:'a'});await logEvent(env,{agent:'codex',type:'claimed',taskId:'b'});await logEvent(env,{agent:'codex',type:'applied',taskId:'a'});await finishRun(env,r.id,'host',{exitCode:1});const result=await getRun(env,r.id);assert.equal(result.outcome!.applied,1);assert.equal(result.outcome!.unfinished,1);assert.match(result.summary!,/applications reported submitted.*no final result.*process failed/);
 });

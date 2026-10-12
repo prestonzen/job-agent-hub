@@ -26,11 +26,11 @@ export function eligibleAgents(runners: RunnerInfo[], runs: RunRow[], settings: 
   );
 }
 
-export interface RunOutcome { applied: number; emailed: number; added: number; blocked: number; failed: number; skipped: number; claimed: number; cyber: number }
-export const EMPTY_OUTCOME: RunOutcome = { applied: 0, emailed: 0, added: 0, blocked: 0, failed: 0, skipped: 0, claimed: 0, cyber: 0 };
+export interface RunOutcome { applied: number; emailed: number; added: number; blocked: number; failed: number; skipped: number; claimed: number; cyber: number; unfinished: number }
+export const EMPTY_OUTCOME: RunOutcome = { applied: 0, emailed: 0, added: 0, blocked: 0, failed: 0, skipped: 0, claimed: 0, cyber: 0, unfinished: 0 };
 export function outcomeSummary(task: RunTask, status: RunRow["status"], o: RunOutcome): string {
   if (task === "diagnostic") return status === "succeeded" ? "Diagnostic passed; no application work performed" : `Diagnostic ${status}`;
-  const results = [o.applied && `${o.applied} applications reported submitted`, o.emailed && `${o.emailed} emails sent`, o.added && `${o.added} new roles added`, o.cyber && `${o.cyber} cyber reports recorded`, o.blocked && `${o.blocked} need review`, o.failed && `${o.failed} failed attempts`, o.skipped && `${o.skipped} skipped`].filter(Boolean);
+  const results = [o.applied && `${o.applied} applications reported submitted`, o.emailed && `${o.emailed} emails sent`, o.added && `${o.added} new roles added`, o.cyber && `${o.cyber} cyber reports recorded`, o.blocked && `${o.blocked} need review`, o.failed && `${o.failed} failed attempts`, o.skipped && `${o.skipped} skipped`, o.unfinished && `${o.unfinished} claimed jobs ${status==='running'?'awaiting results':'have no final result recorded'}`].filter(Boolean);
   if (results.length) return results.join(" · ") + (status === "failed" ? " · process failed" : "");
   if (status === "running") return o.claimed ? `${o.claimed} jobs claimed; no result reported yet` : "Running; no work result reported yet";
   if (status === "queued") return "Waiting to start";

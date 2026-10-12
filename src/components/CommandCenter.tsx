@@ -146,8 +146,8 @@ export default function CommandCenter() {
                       {cap(a.name)}
                       {!a.hasToken && <span className="sub">no token</span>}
                     </td>
-                    <td className="small">{a.signedIn === null ? "Local model" : a.signedIn ? "Signed in" : "Not signed in"}</td>
-                    <td title={a.detail ?? undefined}><span className={`pill ${a.working ? "live" : "idle"}`}>{a.state}</span></td>
+                    <td className="small">{a.signedIn === undefined ? "Unknown" : a.signedIn === null ? "Local model" : a.signedIn ? "Signed in" : "Not signed in"}</td>
+                    <td title={a.detail ?? undefined}><span className={`pill ${a.working ? "live" : "idle"}`}>{a.state === 'not-ready' ? 'unavailable' : a.state}</span></td>
                     <td title={a.client ?? undefined}>{a.lastSeen ? ago(a.lastSeen) : <span className="muted">never</span>}</td>
                     <td className="r">{a.holding}</td>
                     <td className="r">{a.applied}</td>

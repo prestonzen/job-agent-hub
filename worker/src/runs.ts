@@ -169,6 +169,11 @@ async function attachOutcomes(env: Env, rows: RunRow[]): Promise<RunRow[]> {
   const counts = new Map<number, RunOutcome>();
   const keys: Record<string, keyof RunOutcome> = { applied: "applied", emailed: "emailed", added: "added", needs_human: "blocked", failed: "failed", skipped: "skipped", claimed: "claimed", cyber_report: "cyber" };
   for (const r of results) { const o = counts.get(r.run_id) ?? { ...EMPTY_OUTCOME }; if (keys[r.type]) o[keys[r.type]] += r.n; counts.set(r.run_id, o); }
+  const { results: unfinished } = await (await eventDb(env)).prepare(`SELECT e.run_id,COUNT(DISTINCT e.task_id) AS n FROM events e
+    WHERE e.type='claimed' AND e.run_id IN (SELECT value FROM json_each(?))
+      AND NOT EXISTS (SELECT 1 FROM events f WHERE f.run_id=e.run_id AND f.task_id=e.task_id
+        AND f.type IN ('applied','needs_human','failed','skipped','handoff','released')) GROUP BY e.run_id`).bind(JSON.stringify(rows.map((r)=>r.id))).all<{run_id:number;n:number}>();
+  for (const r of unfinished) {const o=counts.get(r.run_id)??{...EMPTY_OUTCOME};o.unfinished=r.n;counts.set(r.run_id,o);}
   return rows.map((r) => { const outcome = counts.get(r.id) ?? { ...EMPTY_OUTCOME }; return { ...r, outcome, summary: outcomeSummary(r.task, r.status, outcome) }; });
 }
 

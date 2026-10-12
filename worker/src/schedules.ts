@@ -140,8 +140,8 @@ export async function createSchedule(
     .bind(
       name.slice(0, 80), s.kind === "digest" || !s.agent ? null : s.agent.toLowerCase(), s.kind,
       s.kind === "queue" ? Math.min(10, Math.max(1, s.count ?? 4)) : null,
-      Math.min(5, Math.max(1, s.copies ?? 1)), s.kind === "sourcing" ? (s.prompt?.trim() || SOURCE_PROMPT).slice(0,8000) : s.kind === "prompt" ? s.prompt!.trim().slice(0, 8000) : null,
-      s.cron.trim(), tz, next, Date.now(), Math.min(120, Math.max(0, Math.round(s.jitterMin ?? 20))),
+      s.kind === "sourcing" ? 1 : Math.min(5, Math.max(1, s.copies ?? 1)), s.kind === "sourcing" ? (s.prompt?.trim() || SOURCE_PROMPT).slice(0,8000) : s.kind === "prompt" ? s.prompt!.trim().slice(0, 8000) : null,
+      s.cron.trim(), tz, next, Date.now(), s.kind === "sourcing" ? 0 : Math.min(120, Math.max(0, Math.round(s.jitterMin ?? 20))),
     )
     .first<Row>();
   return toSchedule(r!);

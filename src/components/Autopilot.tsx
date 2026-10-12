@@ -5,7 +5,7 @@ import { getAutopilot, saveAutopilot, type AgentAutopilot, type AutopilotSetting
 const STATE: Record<AgentAutopilot["state"], { icon: string; text: string }> = {
   working: { icon: "🏃", text: "working" },
   queued: { icon: "⏳", text: "starting" },
-  waiting: { icon: "⏱️", text: "resting" },
+  waiting: { icon: "⏱️", text: "waiting" },
   ready: { icon: "🟢", text: "ready" },
   idle: { icon: "💤", text: "idle" },
   offline: { icon: "○", text: "offline" },

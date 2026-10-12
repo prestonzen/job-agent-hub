@@ -36,7 +36,8 @@ export default function Schedules({ agents }: { agents: string[] }) {
     const [h, m] = time.split(":").map(Number);
     const dow = days.length === 7 || days.length === 0 ? "*" : [...days].sort().join(",");
     try {
-      await createSchedule({ kind, agent: kind === "digest" || kind === "sourcing" ? undefined : agent, count, copies, prompt, cron: `${m} ${h} * * ${dow}`, tz, jitterMin: jitter } as Partial<Schedule>);
+      const hours=kind==='sourcing'?`${h},${(Number(h)+12)%24}`:h;
+      await createSchedule({ kind, agent: kind === "digest" || kind === "sourcing" ? undefined : agent, count, copies, prompt, cron: `${m} ${hours} * * ${dow}`, tz, jitterMin: jitter } as Partial<Schedule>);
       setMsg("Schedule added.");
       void load();
     } catch (err) {
@@ -94,14 +95,15 @@ export default function Schedules({ agents }: { agents: string[] }) {
         {kind !== "digest" && kind !== "sourcing" && (
           <label>Parallel <input className="num-in" type="number" min={1} max={5} value={copies} onChange={(e) => setCopies(+e.target.value)} /></label>
         )}
-        <label>Time <input type="time" value={time} onChange={(e) => setTime(e.target.value)} /></label>
+        <label>{kind==='sourcing'?'First check':'Time'} <input type="time" value={time} onChange={(e) => setTime(e.target.value)} /></label>
+        {kind==='sourcing'&&<p className="small muted">A second sourcing check runs 12 hours later. An available enabled agent handles each check, with automatic backups.</p>}
         <div className="days" role="group" aria-label="Days">
           {DAYS.map((d, i) => (
             <button type="button" key={d} className={days.includes(i) ? "on" : ""} onClick={() => setDays(days.includes(i) ? days.filter((x) => x !== i) : [...days, i])}>{d}</button>
           ))}
         </div>
         <label>Time zone <input value={tz} onChange={(e) => setTz(e.target.value)} /></label>
-        <label>Random delay (min) <input className="num-in" type="number" min={0} max={120} value={jitter} onChange={(e) => setJitter(+e.target.value)} /></label>
+        {kind!=='sourcing'&&<label>Random delay (min) <input className="num-in" type="number" min={0} max={120} value={jitter} onChange={(e) => setJitter(+e.target.value)} /></label>}
         <button disabled={kind === "prompt" && !prompt.trim()}>Add schedule</button>
       </form>
       {msg && <p className="small muted">{msg}</p>}
