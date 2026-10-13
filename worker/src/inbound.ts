@@ -147,7 +147,8 @@ export async function handleInbound(env: Env, e: InboundEmail): Promise<{ duplic
   const record=d.prepare("INSERT OR IGNORE INTO inbound (message_id, at, from_addr, subject, category, company, task_id, action, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
     .bind(e.id, Date.now(), e.from.slice(0, 200), e.subject.slice(0, 300), category, ai?.company ?? null, task?.id ?? null, action, summary);
   if(category!=="confirmation"&&category!=="other"){
-    const loud=category!=="rejection";
+    const marketing=/job matches|job alerts|recommended jobs|unlock your|newsletter/i.test(e.subject);
+    const loud=["interview","assessment","offer","onboarding"].includes(category)||(category==="recruiter"&&!marketing&&/invited|schedule|availability|assessment|onboarding|interested|reply|respond|next step/i.test(`${e.subject} ${e.text.slice(0,3000)}`));
     const where=task?`<a href="${task.url}">${esc(task.name)}</a> · ${esc(action)}`:"Unmatched opportunity · review the email";
     const html=`${ICON[category]} <b>${esc(category)}</b>: ${esc(e.subject)}\n${where}\n<i>${esc(summary)}</i>`;
     await d.batch([record,d.prepare(`INSERT INTO inbound_notifications (message_id,html,silent,updated_at) VALUES (?,?,?,?) ON CONFLICT(message_id) DO NOTHING`).bind(e.id,html,loud?0:1,Date.now())]);
