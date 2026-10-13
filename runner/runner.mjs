@@ -117,9 +117,11 @@ async function probe() {
 
 let agents = await probe();
 const active = new Map(); // runId -> { child, buf, cancelled, timedOut }
+const DRAIN = '/run/job-agent-runner.drain';
+let claiming = false;
 
 function saveState() {
-  try { writeFileSync(STATE, JSON.stringify({ busy: active.size, runs: [...active.keys()], at: new Date().toISOString() })); } catch {}
+  try { writeFileSync(STATE, JSON.stringify({ busy: active.size, runs: [...active.keys()], draining:existsSync(DRAIN), claiming, at: new Date().toISOString() })); } catch {}
 }
 
 async function heartbeat() {
@@ -293,19 +295,24 @@ async function flush(id) {
 
 async function claimLoop() {
   reloadCfg(); // pick up slot/config changes without a restart
+  if(claiming)return;
+  if(existsSync(DRAIN)){saveState();return;}
   if (active.size >= maxSlots()) return;
   const ready = agents.filter((a) => a.ready).map((a) => a.id);
   const installed = agents.filter((a) => a.installed).map((a) => a.id);
   if (!installed.length) return;
+  claiming=true;
+  saveState();
   try {
     const { run } = await hub("/api/runner/claim", { agents: ready, installed });
     if (run) {
       active.set(run.id, { child: null, buf: "", cancelled: false, timedOut: false, kill: () => {} }); // reserve the slot
+      saveState();
       await startRun(run);
     }
   } catch (e) {
     log("claim failed:", e.message);
-  }
+  } finally {claiming=false;saveState();}
 }
 
 // ---------- main ----------

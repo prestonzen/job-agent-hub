@@ -7,6 +7,7 @@ next tick. Each batch is small enough to review without losing the evidence to c
 import hashlib
 import json
 import re
+import time
 import urllib.request
 from pathlib import Path
 
@@ -28,6 +29,8 @@ def main():
         for f in files:
             if not f.is_file():
                 continue
+            if time.time() - f.stat().st_mtime < 120:
+                continue  # do not ingest partially written live artifacts
             raw = f.read_text(errors='replace')
             raw = re.sub(r'\x1b\[[0-9;]*m', '', raw)
             if f.name == 'nuclei.clean.txt':

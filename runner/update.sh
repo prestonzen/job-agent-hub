@@ -11,6 +11,7 @@ BRANCH="${RUNNER_BRANCH:-main}"
 DIR=/opt/job-agent-runner/repo
 STAMP=/var/lib/job-agent-runner/deployed-runner-tree
 STATE=/var/lib/job-agent-runner/state.json
+DRAIN=/run/job-agent-runner.drain
 
 # One update at a time (timer + manual runs).
 exec 9>/run/job-agent-updater.lock
@@ -25,6 +26,21 @@ OLD=$(cat "$STAMP" 2>/dev/null || true)
 BUSY=$(node -e 'try{process.stdout.write(String(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).busy||0))}catch{process.stdout.write("0")}' "$STATE")
 if [ "$BUSY" != "0" ]; then
   echo "runner/ changed (${OLD:0:8} -> ${NEW:0:8}) but $BUSY run(s) in progress; deferring"
+  exit 0
+fi
+
+# Prevent a new claim between the idle check and setup's service restart. Require
+# acknowledgement from the claim loop, including any in-flight HTTP claim.
+touch "$DRAIN"
+trap 'rm -f "$DRAIN"' EXIT
+ACK=0
+for _ in $(seq 1 12); do
+  ACK=$(node -e 'try{const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(s.draining&&!s.claiming&&!s.busy&&Date.now()-Date.parse(s.at)<45000?"1":"0")}catch{process.stdout.write("0")}' "$STATE")
+  [ "$ACK" = "1" ] && break
+  sleep 5
+done
+if [ "$ACK" != "1" ]; then
+  echo "runner did not acknowledge idle drain; deferring restart"
   exit 0
 fi
 

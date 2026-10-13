@@ -47,5 +47,8 @@ job application context or concurrent profile writes contaminating cyber reviews
 - Admin PUT `/api/admin/cyber/continuous`: enabled boolean.
 
 Existing artifacts lacking a current catalog provenance are skipped, not used to expand scope.
+Runner updates now require an acknowledged idle drain before restarting. A run claimed during
+the old idle-check/setup race cannot be interrupted by the new updater. Artifact files must be
+quiet for two minutes before ingestion to avoid reviewing partially written output.
 Scanners and Dark Moon retain their existing schedule/scope. Changes to either require their own
 explicit scope controls; this evidence review queue does not authorize additional testing.
