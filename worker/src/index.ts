@@ -1,7 +1,7 @@
 import { assistedQueue } from "./assisted";
 import { buildAnalytics } from "./analytics";
 import { sendApplicationEmail, sendTestEmail } from "./emailer";
-import { adminUser, agentName, agentNames, clearedCookie, isAdminToken, sessionCookie } from "./auth";
+import { adminUser, agentName, agentNames, clearedCookie, isAdminToken, resolveIdentity, sessionCookie } from "./auth";
 import { HttpError, addComment, appendDocPage, getDocPage, getPlaybook, patchDocPage, replayWrite, setStatus } from "./clickup";
 import { flushOutbox, mirrorAge, mirrorTasks, outboxSize, usageToday } from "./mirror";
 import { isApplication } from "./classify";
@@ -210,6 +210,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   if (path.startsWith("/api/agent/")) {
     const agent = agentName(request, env);
     if (!agent) return unauthorizedAgent();
+    const identity = resolveIdentity(request, env)?.id ?? null;
     ctx.waitUntil(heartbeat(env, agent, `rest ${request.headers.get("User-Agent") ?? ""}`).catch(() => {}));
     const sub = path.slice("/api/agent".length);
 
@@ -242,7 +243,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
 
     if (sub === "/claim" && method === "POST") {
       const body = await readJson<{ count?: number; ats?: string[] }>(request).catch(() => ({}) as { count?: number; ats?: string[] });
-      return json(await claimJobs(env, agent, { count: body.count, ats: Array.isArray(body.ats) ? body.ats : undefined }));
+      return json(await claimJobs(env, agent, { count: body.count, ats: Array.isArray(body.ats) ? body.ats : undefined }, identity));
     }
 
     if (sub === "/jobs" && method === "POST") {
@@ -250,7 +251,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     }
 
     if (sub === "/applications" && method === "POST") {
-      return json({ ok: true, agent, ...(await logApplication(env, agent, newJob(await readJson(request)))) }, 201);
+      return json({ ok: true, agent, ...(await logApplication(env, agent, newJob(await readJson(request)), identity)) }, 201);
     }
 
     const cyberWork = sub.match(/^\/cyber\/(\d+)(?:\/(complete))?$/);
@@ -280,7 +281,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
         return json(await sendApplicationEmail(env, agent, id, { body: b.body, subject: b.subject, resumeId: b.resumeId }));
       }
       if (job[2] === "renew" && method === "POST") return json(await renewLease(env, agent, id));
-      if (job[2] === "report" && method === "POST") return json(await reportResult(env, agent, id, await readJson<Report>(request)));
+      if (job[2] === "report" && method === "POST") return json(await reportResult(env, agent, id, await readJson<Report>(request), false, identity));
       if (job[2] === "handoff" && method === "POST") {
         const b = await readJson<{ reason?: string; to?: string; log?: string }>(request);
         return json(await handoffJob(env, agent, id, String(b.reason ?? ""), b.to, false, typeof b.log === "string" ? b.log : null));

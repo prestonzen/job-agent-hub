@@ -12,6 +12,7 @@ import { inLane } from "../worker/src/lanes";
 import type { Env, Job } from "../worker/src/types";
 import { resolveIdentity, identityId, agentName } from "../worker/src/auth";
 import { cyberDb } from "../worker/src/cyber";
+import { logApplication } from "../worker/src/jobs";
 
 const sqlite = new DatabaseSync(":memory:");
 const D1 = {
@@ -163,5 +164,14 @@ test("identity columns exist after schema init",async()=>{
 test("logEvent stores identity when provided",async()=>{
   await logEvent(env,{agent:"claude",type:"applied",identity:"roman/claude/hermes"} as any);
   const row:any=sqlite.prepare("SELECT agent, identity FROM events ORDER BY id DESC LIMIT 1").get();
+  assert.equal(row.agent,"claude");assert.equal(row.identity,"roman/claude/hermes");
+});
+
+
+// --- identity threaded to application reporting (Task 4) ---
+test("logApplication tags the applied event with the identity",async()=>{
+  const menv={...(env as any),MOCK:"true"} as unknown as Env;
+  await logApplication(menv,"claude",{company:"Acme",role:"AI Eng",platform:"Ashby"} as any,"roman/claude/hermes" as any);
+  const row:any=sqlite.prepare("SELECT agent, identity, type FROM events WHERE type='applied' ORDER BY id DESC LIMIT 1").get();
   assert.equal(row.agent,"claude");assert.equal(row.identity,"roman/claude/hermes");
 });

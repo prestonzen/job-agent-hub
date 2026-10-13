@@ -210,6 +210,7 @@ export async function claimJobs(
   env: Env,
   agent: string,
   opts: { count?: number; ats?: string[] } = {},
+  identity: string | null = null,
 ): Promise<{ jobs: Job[]; remaining: number; paced: { ats: string; reason: string; retryAt: string | null }[] }> {
   if ((await workSettings(env)).agents?.[agent] === false) throw new HttpError(403, `${agent} is switched off`);
   const count = Math.min(10, Math.max(1, Math.floor(opts.count ?? 1)));
@@ -245,7 +246,7 @@ export async function claimJobs(
     if (!expiresAt) continue; // another agent won the race
     notePacedClaim(job, pace);
     await write(env, () => setField(env, job.id, env.FIELD_NEXT_ACTION, claimNote(agent, expiresAt)));
-    await logEvent(env, { agent, taskId: job.id, taskName: job.name, type: "claimed", ats: atsKey(job.ats), company: companyKey(job.company) });
+    await logEvent(env, { agent, taskId: job.id, taskName: job.name, type: "claimed", ats: atsKey(job.ats), company: companyKey(job.company), identity });
     out.push({ ...job, claimedBy: agent, claimExpiresAt: new Date(expiresAt).toISOString() });
   }
 
@@ -358,6 +359,7 @@ export async function reportResult(
   id: string,
   r: Report,
   admin = false,
+  identity: string | null = null,
 ): Promise<{ job: Job; warnings: string[] }> {
   if (!OUTCOMES.includes(r.outcome)) throw new HttpError(400, `outcome must be one of ${OUTCOMES.join(", ")}`);
   const note = r.note?.trim().slice(0, 4000) || null;
@@ -447,7 +449,7 @@ export async function reportResult(
   if ((r.outcome === "needs_human" && !routed) || parkFailed) {
     await notify(env, `🙋 <b>${esc(who)} needs you</b> on <a href="${task.url}">${esc(task.name)}</a>${parkFailed ? " (failed twice)" : ""}\n${esc(note ?? "")}${job.applyUrl ? `\n<a href="${job.applyUrl}">Open the posting</a>` : ""}`);
   }
-  await logEvent(env, { agent, taskId: id, taskName: task.name, type: r.outcome, message: note, ats: atsKey(platform), company: companyKey(job.company) });
+  await logEvent(env, { agent, taskId: id, taskName: task.name, type: r.outcome, message: note, ats: atsKey(platform), company: companyKey(job.company), identity });
   return { job: await getJob(env, id).catch(() => job), warnings };
 }
 
@@ -513,10 +515,11 @@ export async function logApplication(
   env: Env,
   agent: string,
   a: NewJob & { platform?: string },
+  identity: string | null = null,
 ): Promise<{ id: string; created: boolean; warnings: string[] }> {
   const existing = await findExisting(env, a.company, a.role, a.url);
   if (existing && existing.status === "not started") {
-    const { warnings } = await reportResult(env, agent, existing.id, { outcome: "applied", platform: a.platform ?? a.ats, note: a.notes });
+    const { warnings } = await reportResult(env, agent, existing.id, { outcome: "applied", platform: a.platform ?? a.ats, note: a.notes }, false, identity);
     return { id: existing.id, created: false, warnings };
   }
   if (existing) {
@@ -538,6 +541,6 @@ export async function logApplication(
     });
   });
   await invalidateMirror(env);
-  await logEvent(env, { agent, taskId: id, taskName: `${a.company} — ${a.role}`, type: "applied", message: a.notes ?? null, ats: atsKey(a.platform ?? a.ats), company: companyKey(a.company) });
+  await logEvent(env, { agent, taskId: id, taskName: `${a.company} — ${a.role}`, type: "applied", message: a.notes ?? null, ats: atsKey(a.platform ?? a.ats), company: companyKey(a.company), identity });
   return { id, created: true, warnings: [] };
 }
