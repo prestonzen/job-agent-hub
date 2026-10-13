@@ -157,3 +157,11 @@ test("identity columns exist after schema init",async()=>{
   assert.ok(cols("cyber_work").includes("identity"),"cyber_work.identity");
   assert.ok(cols("cyber_review_passes").includes("identity"),"cyber_review_passes.identity");
 });
+
+
+// --- logEvent records identity (Task 3) ---
+test("logEvent stores identity when provided",async()=>{
+  await logEvent(env,{agent:"claude",type:"applied",identity:"roman/claude/hermes"} as any);
+  const row:any=sqlite.prepare("SELECT agent, identity FROM events ORDER BY id DESC LIMIT 1").get();
+  assert.equal(row.agent,"claude");assert.equal(row.identity,"roman/claude/hermes");
+});

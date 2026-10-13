@@ -143,13 +143,15 @@ export async function logEvent(
     /** Normalized ATS key and company, for pacing. */
     ats?: string | null;
     company?: string | null;
+    /** Full acting identity (user/model/approach); the agent column stays the model. */
+    identity?: string | null;
   },
 ): Promise<void> {
   const d = await db(env);
   // Never guess which concurrent manual run should receive outcome credit.
   const owner = await d.prepare("SELECT CASE WHEN COUNT(*) = 1 THEN MIN(id) ELSE NULL END AS id FROM runs WHERE agent = ? AND status = 'running'").bind(e.agent).first<{ id: number | null }>().catch(() => null);
-  await d.prepare("INSERT INTO events (at, agent, task_id, task_name, type, message, ats, company, run_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-    .bind(Date.now(), e.agent, e.taskId ?? null, e.taskName ?? null, e.type, e.message ? e.message.slice(0, 2000) : null, e.ats ?? null, e.company ?? null, owner?.id ?? null)
+  await d.prepare("INSERT INTO events (at, agent, task_id, task_name, type, message, ats, company, run_id, identity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(Date.now(), e.agent, e.taskId ?? null, e.taskName ?? null, e.type, e.message ? e.message.slice(0, 2000) : null, e.ats ?? null, e.company ?? null, owner?.id ?? null, e.identity ?? null)
     .run();
 }
 
