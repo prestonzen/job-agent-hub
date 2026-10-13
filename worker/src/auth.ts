@@ -114,6 +114,13 @@ export function agentNames(env: Env): string[] {
   return Object.keys(tokenMap(env)).map((n) => n.toLowerCase());
 }
 
+/** All distinct agent model names configured via AGENT_TOKENS or AGENT_IDENTITIES. */
+export function agentModels(env: Env): string[] {
+  const set = new Set<string>(agentNames(env));
+  for (const raw of Object.values(identityMap(env))) if (raw.model) set.add(raw.model.toLowerCase());
+  return [...set];
+}
+
 /** Agent API auth: Authorization: Bearer <token>, matched against the AGENT_TOKENS secret. */
 export function agentName(request: Request, env: Env): string | null {
   return resolveIdentity(request, env)?.model ?? null;

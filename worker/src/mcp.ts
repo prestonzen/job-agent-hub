@@ -177,9 +177,9 @@ async function callTool(env: Env, agent: string, name: string, args: Args, origi
       return { ...pick, runnerPath: `./resumes/${pick.filename}`, downloadUrl: `${origin}/api/agent/resumes/${pick.id}/file` };
     }
     case "handoff_job":
-      return await handoffJob(env, agent, String(args.id), String(args.reason ?? ""), s(args.to) ?? undefined, false, s(args.log));
+      return await handoffJob(env, agent, String(args.id), String(args.reason ?? ""), s(args.to) ?? undefined, false, s(args.log), identity);
     case "send_application_email":
-      return await sendApplicationEmail(env, agent, String(args.id), { body: s(args.body), subject: s(args.subject), resumeId: Number(args.resume_id) || null });
+      return await sendApplicationEmail(env, agent, String(args.id), { body: s(args.body), subject: s(args.subject), resumeId: Number(args.resume_id) || null }, identity);
     case "request_code": {
       const job = await jobById(env, String(args.job_id)).catch(() => null);
       const r = await requestCode(env, { agent, jobId: job?.id ?? String(args.job_id), jobName: job?.name ?? null, kind: s(args.kind), hint: s(args.hint) });
@@ -199,7 +199,7 @@ async function callTool(env: Env, agent: string, name: string, args: Args, origi
         log: s(args.log),
       }, false, identity);
     case "release_job":
-      await releaseJob(env, agent, String(args.id), s(args.note));
+      await releaseJob(env, agent, String(args.id), s(args.note), false, identity);
       return { ok: true };
     case "add_job":
       if (!s(args.company) || !s(args.role)) throw new HttpError(400, "company and role are required");
@@ -212,7 +212,7 @@ async function callTool(env: Env, agent: string, name: string, args: Args, origi
         travel: s(args.travel),
         fit: s(args.fit),
         notes: s(args.notes),
-      });
+      }, identity);
     case "log_application":
       if (!s(args.company) || !s(args.role)) throw new HttpError(400, "company and role are required");
       return await logApplication(env, agent, {

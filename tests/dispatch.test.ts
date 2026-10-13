@@ -11,8 +11,8 @@ import { eligibleAgents, EMPTY_OUTCOME, outcomeSummary, taskSwitches } from "../
 import { inLane } from "../worker/src/lanes";
 import type { Env, Job } from "../worker/src/types";
 import { resolveIdentity, identityId, agentName } from "../worker/src/auth";
-import { cyberDb, completeCyber } from "../worker/src/cyber";
-import { logApplication } from "../worker/src/jobs";
+import { cyberDb, completeCyber, enqueueCyber } from "../worker/src/cyber";
+import { logApplication, addJob } from "../worker/src/jobs";
 import { buildAnalytics } from "../worker/src/analytics";
 import { identityLabel } from "../src/agents";
 
@@ -209,4 +209,21 @@ test("analytics groups applied events by identity",async()=>{
 test("identityLabel renders user, model and non-default approach",()=>{
   assert.equal(identityLabel("roman/claude/hermes"),"Roman · Claude · Hermes");
   assert.equal(identityLabel("brandon/claude/default"),"Brandon · Claude");
+});
+
+
+// --- Fix pass: addJob records identity (audit Important 1) ---
+test("addJob tags the added event with the identity",async()=>{
+  const menv={...(env as any),MOCK:"true"} as unknown as Env;
+  await addJob(menv,"codex",{company:"Beta",role:"ML Eng",url:"https://x/1"} as any,"brandon/codex/default" as any);
+  const row:any=sqlite.prepare("SELECT agent, identity, type FROM events WHERE type='added' ORDER BY id DESC LIMIT 1").get();
+  assert.equal(row.agent,"codex");assert.equal(row.identity,"brandon/codex/default");
+});
+
+// --- Fix pass: cyber pass agents include AGENT_IDENTITIES models (audit Important 2) ---
+test("enqueueCyber sources pass agents from AGENT_IDENTITIES, not only AGENT_TOKENS",async()=>{
+  const ienv={...(env as any),AGENT_TOKENS:"{}",AGENT_IDENTITIES:JSON.stringify({["a".repeat(30)]:{user:"brandon",model:"codex",approach:"default"}})} as unknown as Env;
+  await enqueueCyber(ienv,{sourceKey:"idsrc1",program:"P",platform:"H",target:"t",source:"s",evidence:"evidence",offlineOnly:true} as any);
+  const row:any=sqlite.prepare("SELECT pass_agents FROM cyber_work WHERE source_key='idsrc1'").get();
+  assert.ok(JSON.parse(row.pass_agents).includes("codex"),row.pass_agents);
 });

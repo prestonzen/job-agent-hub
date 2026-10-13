@@ -58,6 +58,7 @@ export async function sendApplicationEmail(
   agent: string,
   jobId: string,
   a: { body?: string | null; subject?: string | null; resumeId?: number | null },
+  identity: string | null = null,
 ): Promise<{ ok: true; messageId: string; to: string; resume: string; subject: string }> {
   if (!taskSwitches(await workSettings(env), agent).email) throw new HttpError(403, "Email applications are switched off for this agent");
   if (!emailEnabled(env)) throw new HttpError(503, "email sending is not enabled on the hub; release_job and stop");
@@ -81,7 +82,7 @@ export async function sendApplicationEmail(
     attachment: { filename: file.filename, type: file.contentType, bytes: file.bytes },
   });
 
-  await logEvent(env, { agent, taskId: job.id, taskName: job.name, type: "emailed", message: `${job.applyEmail} · ${file.filename}` });
+  await logEvent(env, { agent, taskId: job.id, taskName: job.name, type: "emailed", message: `${job.applyEmail} · ${file.filename}`, identity });
   await reportResult(env, agent, job.id, { outcome: "applied", platform: "Email to employer", note: `Emailed ${job.applyEmail} with ${file.filename} (message ${messageId}).` });
   return { ok: true, messageId, to: job.applyEmail, resume: file.filename, subject };
 }

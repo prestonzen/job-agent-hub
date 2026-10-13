@@ -269,7 +269,7 @@ export async function getJob(env: Env, id: string): Promise<Job> {
  * Route a job to the fallback agent (Kimi) with the reason and the failing agent's action log.
  * Kimi is the backlog: Codex, Claude, Mistral and Gemini take fresh jobs first, and anything they can't finish lands here.
  */
-async function routeToFallback(env: Env, agent: string, task: Task, why: string, log: string | null): Promise<void> {
+async function routeToFallback(env: Env, agent: string, task: Task, why: string, log: string | null, identity: string | null = null): Promise<void> {
   const today = new Date().toISOString().slice(0, 10);
   await assignJob(env, task.id, FALLBACK_AGENT, why, agent);
   const next = `Assigned to ${FALLBACK_AGENT}: ${why}`.slice(0, 250);
@@ -282,7 +282,7 @@ async function routeToFallback(env: Env, agent: string, task: Task, why: string,
     );
   });
   if (!mock(env)) await patchMirror(env, task.id, { nextAction: next });
-  await logEvent(env, { agent, taskId: task.id, taskName: task.name, type: "handoff", message: `→ ${FALLBACK_AGENT}: ${why}` });
+  await logEvent(env, { agent, taskId: task.id, taskName: task.name, type: "handoff", message: `→ ${FALLBACK_AGENT}: ${why}`, identity });
   await notify(env, `🔀 <b>${esc(displayAgent(agent))}</b> couldn't finish <a href="${task.url}">${esc(task.name)}</a>; sent to <b>${esc(displayAgent(FALLBACK_AGENT))}</b>${log ? " with its log" : ""}: ${esc(why.slice(0, 160))}`, { silent: true });
 }
 
@@ -290,7 +290,7 @@ async function routeToFallback(env: Env, agent: string, task: Task, why: string,
  * Give a job you can't finish to another agent (default Kimi) instead of skipping it.
  * Only the holder (or an admin) can hand it off; the assignee gets it ahead of the queue for 6 h.
  */
-export async function handoffJob(env: Env, agent: string, id: string, reason: string, to: string = FALLBACK_AGENT, admin = false, log: string | null = null): Promise<{ ok: true; assignedTo: string }> {
+export async function handoffJob(env: Env, agent: string, id: string, reason: string, to: string = FALLBACK_AGENT, admin = false, log: string | null = null, identity: string | null = null): Promise<{ ok: true; assignedTo: string }> {
   const target = to.toLowerCase();
   const why = reason?.trim();
   if (!why) throw new HttpError(400, "reason is required: say what you couldn't do");
@@ -309,7 +309,7 @@ export async function handoffJob(env: Env, agent: string, id: string, reason: st
     await addComment(env, id, `[hub] ${today}: ${displayAgent(agent)} handed this to ${displayAgent(target)}: ${why}`);
   });
   if (!mock(env)) await patchMirror(env, id, { nextAction: `Assigned to ${target}: ${why}`.slice(0, 250) });
-  await logEvent(env, { agent, taskId: id, taskName: task.name, type: "handoff", message: `→ ${target}: ${why}` });
+  await logEvent(env, { agent, taskId: id, taskName: task.name, type: "handoff", message: `→ ${target}: ${why}`, identity });
   await notify(env, `🔀 <b>${esc(displayAgent(agent))}</b> handed <a href="${task.url}">${esc(task.name)}</a> to <b>${esc(displayAgent(target))}</b>: ${esc(why.slice(0, 200))}`, { silent: true });
   return { ok: true, assignedTo: target };
 }
@@ -331,7 +331,7 @@ export async function renewLease(env: Env, agent: string, id: string): Promise<J
   return { ...job, claimedBy: agent, claimExpiresAt: new Date(expiresAt).toISOString() };
 }
 
-export async function releaseJob(env: Env, agent: string, id: string, note?: string, admin = false): Promise<void> {
+export async function releaseJob(env: Env, agent: string, id: string, note?: string, admin = false, identity: string | null = null): Promise<void> {
   const [task, claim] = await Promise.all([loadTask(env, id), getClaim(env, id)]);
   const job = toJob(task, claim);
   assertHolder(job, agent, admin);
@@ -342,7 +342,7 @@ export async function releaseJob(env: Env, agent: string, id: string, note?: str
     if (!mock(env)) await patchMirror(env, id, { nextAction: null });
   }
   if (note) await write(env, () => addComment(env, id, `[hub] Released by ${displayAgent(agent)}: ${note}`));
-  await logEvent(env, { agent, taskId: id, taskName: task.name, type: "released", message: note });
+  await logEvent(env, { agent, taskId: id, taskName: task.name, type: "released", message: note, identity });
 }
 
 export interface Report {
@@ -404,7 +404,7 @@ export async function reportResult(
     }
     case "needs_human": {
       if (toFallback) {
-        await routeToFallback(env, agent, task, note ?? "needs a written answer", log);
+        await routeToFallback(env, agent, task, note ?? "needs a written answer", log, identity);
         routed = true;
         break;
       }
@@ -424,7 +424,7 @@ export async function reportResult(
     }
     case "failed": {
       if (toFallback) {
-        await routeToFallback(env, agent, task, note ?? "failed; see the log", log);
+        await routeToFallback(env, agent, task, note ?? "failed; see the log", log, identity);
         routed = true;
         break;
       }
@@ -480,7 +480,7 @@ export interface NewJob {
 }
 
 /** Add a posting to the queue (status "not started"). Returns the existing task if it's already tracked. */
-export async function addJob(env: Env, agent: string, j: NewJob): Promise<{ id: string; created: boolean; status: string }> {
+export async function addJob(env: Env, agent: string, j: NewJob, identity: string | null = null): Promise<{ id: string; created: boolean; status: string }> {
   const settings = await workSettings(env);
   if (settings.agents?.[agent] === false || !taskSwitches(settings,agent).sourcing) throw new HttpError(403, `Sourcing is switched off for ${agent}`);
   if(j.applyEmail && !/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(j.applyEmail))throw new HttpError(400,"applyEmail must be a valid advertised address");
@@ -503,7 +503,7 @@ export async function addJob(env: Env, agent: string, j: NewJob): Promise<{ id: 
     });
   });
   await invalidateMirror(env);
-  await logEvent(env, { agent, taskId: id, taskName: `${j.company} — ${j.role}`, type: "added", message: j.url ?? null });
+  await logEvent(env, { agent, taskId: id, taskName: `${j.company} — ${j.role}`, type: "added", message: j.url ?? null, identity });
   return { id, created: true, status: "not started" };
 }
 

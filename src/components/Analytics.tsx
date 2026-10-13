@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { getAnalytics, type Analytics as AnalyticsData } from "../api";
-import { agentColor, agentLabel } from "../agents";
+import { agentColor, agentLabel, identityLabel } from "../agents";
 import { Spark, StackedColumns } from "./Charts";
 import { Card } from "./Panels";
 
@@ -115,6 +115,12 @@ export default function Analytics() {
           </tr>)}
           {!data.byAgent.length&&<tr><td colSpan={6}>No recorded agent work in this window.</td></tr>}
         </tbody></table>
+        {(data.byIdentity?.length??0)>0&&<>
+          <p className="muted small" style={{marginTop:14}}>Applications credited to each agent variant — distinct configs sharing a base model are counted separately (legacy rows fall back to the model name).</p>
+          <table className="score"><thead><tr><th>Identity</th><th>Applied</th></tr></thead><tbody>
+            {data.byIdentity!.map(r=><tr key={r.identity}><td className="who">{r.identity.includes("/")?identityLabel(r.identity):agentLabel(r.identity)}</td><td>{r.applied}</td></tr>)}
+          </tbody></table>
+        </>}
       </Card>
 
       <div className="grid two">

@@ -248,7 +248,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     }
 
     if (sub === "/jobs" && method === "POST") {
-      return json(await addJob(env, agent, newJob(await readJson(request))), 201);
+      return json(await addJob(env, agent, newJob(await readJson(request)), identity), 201);
     }
 
     if (sub === "/applications" && method === "POST") {
@@ -279,17 +279,17 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       if (!job[2] && method === "GET") return json(await getJob(env, id));
       if (job[2] === "email" && method === "POST") {
         const b = await readJson<{ body?: string; subject?: string; resumeId?: number }>(request);
-        return json(await sendApplicationEmail(env, agent, id, { body: b.body, subject: b.subject, resumeId: b.resumeId }));
+        return json(await sendApplicationEmail(env, agent, id, { body: b.body, subject: b.subject, resumeId: b.resumeId }, identity));
       }
       if (job[2] === "renew" && method === "POST") return json(await renewLease(env, agent, id));
       if (job[2] === "report" && method === "POST") return json(await reportResult(env, agent, id, await readJson<Report>(request), false, identity));
       if (job[2] === "handoff" && method === "POST") {
         const b = await readJson<{ reason?: string; to?: string; log?: string }>(request);
-        return json(await handoffJob(env, agent, id, String(b.reason ?? ""), b.to, false, typeof b.log === "string" ? b.log : null));
+        return json(await handoffJob(env, agent, id, String(b.reason ?? ""), b.to, false, typeof b.log === "string" ? b.log : null, identity));
       }
       if (job[2] === "release" && method === "POST") {
         const { note } = await readJson<{ note?: string }>(request).catch(() => ({}) as { note?: string });
-        await releaseJob(env, agent, id, note);
+        await releaseJob(env, agent, id, note, false, identity);
         return json({ ok: true });
       }
     }

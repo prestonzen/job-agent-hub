@@ -3,7 +3,7 @@ import { HttpError } from './clickup';
 import { cancelRun, createRun, getRun, listRunners, listRuns } from './runs';
 import { eligibleAgents, taskSwitches, workSettings } from './work';
 import { esc, notify } from './telegram';
-import { agentNames } from './auth';
+import { agentModels } from './auth';
 import type { Env } from './types';
 
 const SCHEMA = `CREATE TABLE IF NOT EXISTS cyber_work (
@@ -40,7 +40,7 @@ export async function enqueueCyber(env: Env, body: Record<string,unknown>) {
  if(body.offlineOnly!==true)throw new HttpError(400,'This queue only reviews existing evidence offline; offlineOnly must be true');
  const d=await cyberDb(env);
  const settings=await workSettings(env);
- const configured=agentNames(env).filter(a=>settings.agents?.[a]!==false&&taskSwitches(settings,a).cyber);
+ const configured=agentModels(env).filter(a=>settings.agents?.[a]!==false&&taskSwitches(settings,a).cyber);
  const passAgents=configured.length?configured:['ollama','kimi','claude'].filter(a=>settings.agents?.[a]!==false&&taskSwitches(settings,a).cyber);
  await d.prepare('INSERT OR IGNORE INTO cyber_work (source_key,created_at,program,platform,target,source,evidence,pass_agents) VALUES (?,?,?,?,?,?,?,?)').bind(key,Date.now(),program,platform,target,source,evidence,JSON.stringify(passAgents)).run();
  return d.prepare('SELECT id,status FROM cyber_work WHERE source_key=?').bind(key).first();
