@@ -46,7 +46,9 @@ ssh root@kloud "pct exec 134 -- sh /opt/darkmoon-smoke-test.sh"
 ## Pipeline and policy gate
 
 1. **Queue** — `bounty/scope-fetch.py` pulls the four public catalogs and checks policy pages for
-   every paying program with scannable in-scope web assets before ranking the top 60. A seven-day
+   every paying program with scannable in-scope web assets before ranking all default-allow programs.
+   The complete eligible backlog (552 at the latest review; count changes as catalogs and policies change)
+   stays in `/opt/bounty/queue.json`. A seven-day
    cache avoids redundant reads. Only clauses explicitly
    prohibiting automated/AI scanning (including human-supervision or prior-approval requirements
    the unattended scanner cannot satisfy) enter `/opt/bounty/policy-blacklist.json`. Everything
@@ -55,7 +57,8 @@ ssh root@kloud "pct exec 134 -- sh /opt/darkmoon-smoke-test.sh"
    latest evidence, check time, source URL and content hash. The classifier is local text matching;
    it does not currently use Ollama, and policy wording outside its patterns can be missed.
 2. **Daily scans** — `bounty-daily.timer` (05:17 UTC) runs `bounty/bounty-daily.sh`: refresh the
-   queue, then scan up to 6 not-recently-scanned programs sequentially (`TOP` tunable).
+   full queue, then scan up to 6 not-recently-scanned programs sequentially (`TOP` tunable). Queueing
+   all default-allow programs does not increase the number scanned in a run.
    Each scan (`bounty/bounty-scan.sh`): subfinder → httpx → nuclei (non-intrusive, rate-limited),
    posts a summary event to the hub (`POST /api/admin/bounty-events`) → admin
    **Bug bounty** tab. CT 134 authenticates as a service; these events are attributed to
@@ -67,7 +70,13 @@ ssh root@kloud "pct exec 134 -- sh /opt/darkmoon-smoke-test.sh"
    cannot detect every policy nuance or every program-specific requirement; blacklist additions
    should be reviewed when policy pages change.
 3. **Validation + report** — anything above info level goes to Dark-Moon for exploitation-proof
-   and report drafting. One master report template internally (severity, summary, repro steps,
+   and report drafting. Dark-Moon's original evidence stays the same for each independent model
+   interpretation. The hub records a per-evidence pass log: enabled Ollama, Kimi, and Claude cyber
+   agents review sequentially, with each later pass reading earlier notes and recording agreement,
+   disagreement, and next direction. An agent only participates when its existing global and Cyber
+   switches permit it; this workflow does not turn Claude on. The final pass becomes the report
+   draft or rejection, while all pass results remain visible in the Cyber evidence history. One master
+   report template internally (severity, summary, repro steps,
    exact commands + raw output, impact, remediation); rendered per platform on submit
    (HackerOne markdown via FORMAT=h1, Bugcrowd/Intigriti/YesWeHack variants). Reports are always
    reviewed by Preston before submission — nothing auto-submits.

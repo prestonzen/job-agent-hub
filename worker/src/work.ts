@@ -11,7 +11,7 @@ export interface WorkSettings { enabled?: boolean; agents?: Record<string, boole
 export function taskSwitches(settings: WorkSettings, agent: string): TaskSwitches {
   return {
     applications: (settings.lanes?.[agent] ?? (agent === "gemini" ? "email" : null)) !== "email",
-    email: true, sourcing: true, cyber: ["codex", "claude", "kimi"].includes(agent),
+    email: true, sourcing: true, cyber: ["codex", "claude", "kimi", "ollama"].includes(agent),
     ...settings.tasks?.[agent],
   };
 }

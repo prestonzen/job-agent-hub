@@ -7,6 +7,9 @@ candidate's policy page for an explicit automation clause, and writes a ranked
 queue to /opt/bounty/queue.json for bounty-scan.sh to work through.
 
 Usage:  python3 scope-fetch.py [--top N]
+
+By default every default-allow program is written to the queue. --top N is an
+optional preview/legacy cap; daily scan volume is controlled by bounty-daily.sh.
 """
 
 import json
@@ -197,7 +200,7 @@ def norm_program(platform: str, p: dict) -> dict | None:
 
 
 def main() -> None:
-    top = 40
+    top: int | None = None
     args = sys.argv[1:]
     if "--no-policy-check" in args:
         raise SystemExit("--no-policy-check is disabled: every fresh program must pass the explicit-ban check")
@@ -273,7 +276,9 @@ def main() -> None:
     candidates = [c for c in candidates if c["automation"] == "default-allow"]
     candidates.sort(key=lambda c: (c["triage_h"] if c["triage_h"] is not None else 9999, -c["asset_count"]))
 
-    queue = candidates[:top]
+    # Keep the whole default-allow backlog available. The daily scheduler selects
+    # only TOP entries, so queue size never becomes an instruction to scan them all.
+    queue = candidates if top is None else candidates[:top]
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps({"generated": __import__("time").time(), "programs": queue}, indent=2))
     OUT.chmod(0o644)
