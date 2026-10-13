@@ -1,3 +1,4 @@
+import { autopilotStatus } from "./autopilot";
 import { monthlyBilling, type MonthlyBilling } from "./billing";
 import { db } from "./db";
 import { bountyTotals } from "./bounty";
@@ -225,6 +226,7 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
   }
 
   const billing=await monthlyBilling(env);
+  const work=await autopilotStatus(env);
   const byAgent: AgentStats[] = [...agents.values()]
     .map(({ _toApply, ...a }) => ({
       ...a,
@@ -291,7 +293,7 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
     queue: { ready, claimed: q.filter((j) => j.claimedBy).length, parked: q.filter((j) => j.needsHuman).length, total: q.length },
     clickup: usage.results,
     fleet: {
-      agentsReady: new Set(online.flatMap((r) => r.agents.filter((a) => a.ready).map((a) => a.id))).size,
+      agentsReady: work.agents.filter(a=>a.state==="ready").length,
       runnersOnline: online.length,
       slots: online.reduce((s, r) => s + r.slots, 0),
       busy: online.reduce((s, r) => s + r.busy, 0),
