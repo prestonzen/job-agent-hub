@@ -187,10 +187,10 @@ def main() -> None:
         banned = [c for c in candidates if c["automation"] == "banned"]
         for b in banned:
             print(f"  dropped (automation banned): {b['program']}")
-        candidates = [c for c in candidates if c["automation"] != "banned"]
-        # Order: allowed > rate-limited > unspecified > unknown, then scope size.
-        rank = {"allowed": 0, "rate-limited": 1, "unspecified": 2, "unknown": 3, "unchecked": 2}
-        candidates.sort(key=lambda c: (rank.get(c["automation"], 3), c["triage_h"] if c["triage_h"] is not None else 9999, -c["asset_count"]))
+        # Fail closed: a public bounty listing is not permission to automate.
+    # Even --no-policy-check cannot make unchecked programs scannable.
+    candidates = [c for c in candidates if c["automation"] == "allowed"]
+    candidates.sort(key=lambda c: (c["triage_h"] if c["triage_h"] is not None else 9999, -c["asset_count"]))
 
     queue = candidates[:top]
     OUT.parent.mkdir(parents=True, exist_ok=True)

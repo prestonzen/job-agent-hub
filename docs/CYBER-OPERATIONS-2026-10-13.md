@@ -21,6 +21,14 @@ rejection with a required explanation/receipt. No external submission happens au
 Human-reviewed reasons enter subsequent task context. Synthetic calibration is separate from
 actual report outcomes. Unreviewed work cannot increment accepted/plausible counts.
 
+As of October 13, routine evidence saves, needs-validation/reject verdicts, cyber run
+completions and scanner `confirmed` labels remain silent in Telegram. A single Ava alert is
+sent when a **complete report draft** with reproduction, impact and remediation is saved;
+its link opens the full draft for Preston's pre-submission review. Payouts still alert.
+The admin Cyber panel opens unreviewed report drafts in full and keeps the other triage
+items in history. No report is submitted automatically. See
+[Model outcomes](MODEL-OUTCOMES-2026-10-13.md) for the separate synthetic matrix.
+
 ## Local model and learning
 
 Sparky already contained Qwen3-Coder-Next Q4_K_M: about 52 GB weights, 80B total parameters and
@@ -50,5 +58,8 @@ Existing artifacts lacking a current catalog provenance are skipped, not used to
 Runner updates now require an acknowledged idle drain before restarting. A run claimed during
 the old idle-check/setup race cannot be interrupted by the new updater. Artifact files must be
 quiet for two minutes before ingestion to avoid reviewing partially written output.
-Scanners and Dark Moon retain their existing schedule/scope. Changes to either require their own
-explicit scope controls; this evidence review queue does not authorize additional testing.
+The CT 134 `bounty-daily.timer` was disabled October 13 after its public catalog queue
+failed to establish explicit automation permission for the listed programs. Existing
+offline evidence review continues. Scanning resumes only after per-program policy, scope
+and rate controls are verified; see [Bug bounty lane](BOUNTY.md). This evidence review
+queue does not authorize additional testing.

@@ -9,8 +9,8 @@
 # non-intrusive). Results go to /root/bbscans/<program>/ and a summary event is posted
 # to the hub (POST /api/agent/bounty), which feeds the admin Bug bounty tab.
 #
-# Scope discipline: only assets listed in the program's bounty-targets-data entry are
-# touched. Automation-banned programs never reach the queue (scope-fetch.py drops them).
+# Scope discipline: a queue row plus a manually reviewed, exact program approval are
+# required. The timer is disabled until policy and scope controls have been verified.
 
 set -u
 QUEUE=/opt/bounty/queue.json
@@ -47,6 +47,22 @@ print(json.dumps(row) if row else "NOTFOUND")
 EOF
 )
 [ "$ROW" = "NOTFOUND" ] && { echo "program not found in queue"; exit 1; }
+echo "$ROW" | python3 -c "import json,sys; sys.exit(0 if json.load(sys.stdin).get('automation') == 'allowed' else 1)" || { echo "automated scanning not explicitly allowed for this program; refusing scan"; exit 3; }
+SCAN_RPS=$(echo "$ROW" | python3 -c '
+import json,sys
+from pathlib import Path
+row=json.load(sys.stdin)
+path=Path("/opt/bounty/approved-programs.json")
+if not path.is_file(): sys.exit(1)
+try: approvals=json.loads(path.read_text())
+except (ValueError,OSError): sys.exit(1)
+if not isinstance(approvals,list): sys.exit(1)
+matches=[a for a in approvals if isinstance(a,dict) and a.get("program")==row.get("program") and a.get("platform")==row.get("platform") and a.get("policy_url")==row.get("url") and a.get("automation_allowed") is True and a.get("reviewed_at") and a.get("scope_note") and sorted(a.get("approved_assets",[]))==sorted(row.get("assets",[]))]
+if len(matches)!=1: sys.exit(1)
+rps=matches[0].get("max_rps")
+if type(rps) is not int or not 1<=rps<=30: sys.exit(1)
+print(rps)
+') || { echo "missing exact manual policy/scope approval; refusing scan"; exit 3; }
 
 PROGRAM=$(echo "$ROW" | python3 -c "import json,sys; print(json.load(sys.stdin)['program'])")
 PLATFORM=$(echo "$ROW" | python3 -c "import json,sys; print(json.load(sys.stdin)['platform'])")
@@ -81,22 +97,22 @@ cat "$OUT/apex.txt" | sed 's/^/  /'
 [ "$DOMAINS" = "0" ] && { echo "no scannable apex domains"; exit 1; }
 
 # Recon inside the scanner image.
-docker run --rm -v "$OUT":/out "$IMAGE" /bin/bash -c '
+docker run --rm -e SCAN_RPS="$SCAN_RPS" -v "$OUT":/out "$IMAGE" /bin/bash -c '
   set -u
   nuclei -update-templates > /dev/null 2>&1 || true   # fresh CVE templates every run
   subfinder -silent -dL /out/apex.txt -o /out/subs.txt 2>/dev/null
   cat /out/apex.txt >> /out/subs.txt
   sort -u /out/subs.txt -o /out/subs.txt
-  httpx -silent -l /out/subs.txt -status-code -title -tech-detect -rl 30 -o /out/live.txt 2>/dev/null
+  httpx -silent -l /out/subs.txt -status-code -title -tech-detect -rl "$SCAN_RPS" -o /out/live.txt 2>/dev/null
   cut -d" " -f1 /out/live.txt > /out/live-hosts.txt 2>/dev/null || true
   # Endpoint harvesting: historical URLs give nuclei real paths, not just root pages.
   if command -v waybackurls > /dev/null 2>&1; then
     cat /out/live-hosts.txt | sed "s|https\?://||" | waybackurls 2>/dev/null | head -3000 > /out/urls.txt || true
   fi
   if [ -s /out/urls.txt ]; then
-    nuclei -silent -l /out/urls.txt -tags exposure,misconfig,cve -rl 30 -timeout 10 -o /out/nuclei.txt 2>/dev/null
+    nuclei -silent -l /out/urls.txt -tags exposure,misconfig,cve -rl "$SCAN_RPS" -timeout 10 -o /out/nuclei.txt 2>/dev/null
   else
-    nuclei -silent -l /out/live-hosts.txt -tags exposure,misconfig,cve -rl 30 -timeout 10 -o /out/nuclei.txt 2>/dev/null
+    nuclei -silent -l /out/live-hosts.txt -tags exposure,misconfig,cve -rl "$SCAN_RPS" -timeout 10 -o /out/nuclei.txt 2>/dev/null
   fi
   true
 '

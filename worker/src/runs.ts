@@ -331,12 +331,12 @@ export async function finishRun(env: Env, id: number, runner: string, f: { exitC
       .bind(r.agent, Date.now() + quota.restMs)
       .run();
     const result = await getRun(env,id);
-    await notify(env, `⏳ <b>${esc(r.agent)}</b> ran out of quota (run #${id}); resting until ${new Date(Date.now() + quota.restMs).toISOString()}.\n${esc(result.summary ?? "No work result recorded")}`, { silent: true });
+    if (result.task !== "cyber") await notify(env, `⏳ <b>${esc(r.agent)}</b> ran out of quota (run #${id}); resting until ${new Date(Date.now() + quota.restMs).toISOString()}.\n${esc(result.summary ?? "No work result recorded")}`, { silent: true });
   }
   if (r && !quota) {
     const mins = Math.max(1, Math.round((r.finished_at - r.started_at) / 60_000));
     const result = await getRun(env, id);
-    if (result.task === "diagnostic" && status === "succeeded") return;
+    if (result.task === "cyber" || (result.task === "diagnostic" && status === "succeeded")) return;
     const o=result.outcome!;
     const icon=status==='cancelled'?'⏹️':status==='failed'||o.blocked+o.failed+o.unfinished>0?'⚠️':o.applied+o.emailed+o.added+o.cyber+o.triaged>0?'✅':'ℹ️';
     await notify(

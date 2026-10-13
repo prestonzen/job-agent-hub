@@ -18,7 +18,7 @@ LOG=/root/bounty-daily.log
 echo "=== bounty-daily $(date -u) ===" >> "$LOG"
 
 echo "[1/2] refreshing queue..." | tee -a "$LOG"
-python3 /opt/bounty/scope-fetch.py --top 60 >> "$LOG" 2>&1
+python3 /opt/bounty/scope-fetch.py --top 60 >> "$LOG" 2>&1 || { echo "scope refresh failed; refusing stale queue" | tee -a "$LOG"; exit 1; }
 
 # Next N unscanned programs.
 TOP="$TOP" python3 - <<'EOF' > /tmp/bounty-batch.txt

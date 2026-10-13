@@ -66,8 +66,6 @@ export interface BountySummary {
   };
   programs: BountyProgramRollup[];
   recent: BountyEvent[];
-  /** Benchmark (matrix) events: identical triage tasks fired at every agent, for the leaderboard. */
-  matrix: BountyEvent[];
 }
 
 const s = (v: unknown, n: number): string | null => (typeof v === "string" && v.trim() ? v.trim().slice(0, n) : null);
@@ -136,22 +134,22 @@ export async function bountyTotals(env: Env): Promise<BountySummary["totals"]> {
     d
       .prepare(
         `SELECT
-           COUNT(DISTINCT CASE WHEN kind = 'program' THEN program END) AS programs,
+           COUNT(DISTINCT CASE WHEN kind = 'scan' THEN program END) AS programs,
            SUM(CASE WHEN kind = 'scan' THEN 1 ELSE 0 END) AS scans,
            COUNT(DISTINCT CASE WHEN kind = 'scan' THEN target END) AS hostsScanned,
            SUM(CASE WHEN kind = 'finding' THEN 1 ELSE 0 END) AS findings,
            SUM(CASE WHEN kind = 'report' THEN 1 ELSE 0 END) AS reports,
            SUM(CASE WHEN kind = 'payout' THEN 1 ELSE 0 END) AS payouts
-         FROM bounty_events WHERE COALESCE(platform,'') != 'benchmark'`,
+         FROM bounty_events WHERE COALESCE(platform,'') != 'benchmark' AND COALESCE(program,'') != 'Pipeline Test' AND COALESCE(title,'') NOT IN ('Account enrolled','Recon probe (httpx + nuclei, low-noise)')`,
       )
       .first<Omit<typeof empty, "bySeverity" | "payoutsUsd">>()
       .catch(() => null),
     d
-      .prepare("SELECT severity, COUNT(*) AS n FROM bounty_events WHERE COALESCE(platform,'') != 'benchmark' AND kind = 'finding' AND severity IS NOT NULL GROUP BY severity")
+      .prepare("SELECT severity, COUNT(*) AS n FROM bounty_events WHERE COALESCE(platform,'') != 'benchmark' AND COALESCE(program,'') != 'Pipeline Test' AND COALESCE(title,'') NOT IN ('Account enrolled','Recon probe (httpx + nuclei, low-noise)') AND kind = 'finding' AND severity IS NOT NULL GROUP BY severity")
       .all<{ severity: string; n: number }>()
       .catch(() => ({ results: [] as { severity: string; n: number }[] })),
     d
-      .prepare("SELECT SUM(amount) AS usd FROM bounty_events WHERE COALESCE(platform,'') != 'benchmark' AND kind = 'payout'")
+      .prepare("SELECT SUM(amount) AS usd FROM bounty_events WHERE COALESCE(platform,'') != 'benchmark' AND COALESCE(program,'') != 'Pipeline Test' AND COALESCE(title,'') NOT IN ('Account enrolled','Recon probe (httpx + nuclei, low-noise)') AND kind = 'payout'")
       .first<{ usd: number | null }>()
       .catch(() => null),
   ]);
@@ -171,7 +169,7 @@ export async function bountyTotals(env: Env): Promise<BountySummary["totals"]> {
 /** Full view for the admin Bug bounty tab. */
 export async function bountySummary(env: Env): Promise<BountySummary> {
   const d = await db(env);
-  const [totals, progs, recent, matrix] = await Promise.all([
+  const [totals, progs, recent] = await Promise.all([
     bountyTotals(env),
     d
       .prepare(
@@ -181,17 +179,13 @@ export async function bountySummary(env: Env): Promise<BountySummary> {
                 SUM(CASE WHEN kind = 'report' THEN 1 ELSE 0 END) AS reports,
                 SUM(CASE WHEN kind = 'payout' THEN amount ELSE 0 END) AS payoutsUsd,
                 MAX(at) AS lastAt
-         FROM bounty_events WHERE COALESCE(platform,'') != 'benchmark' AND program IS NOT NULL
+         FROM bounty_events WHERE COALESCE(platform,'') != 'benchmark' AND COALESCE(program,'') != 'Pipeline Test' AND COALESCE(title,'') NOT IN ('Account enrolled','Recon probe (httpx + nuclei, low-noise)') AND program IS NOT NULL
          GROUP BY program ORDER BY lastAt DESC LIMIT 50`,
       )
       .all<{ program: string; platform: string | null; scans: number; findings: number; reports: number; payoutsUsd: number | null; lastAt: number }>()
       .catch(() => ({ results: [] as { program: string; platform: string | null; scans: number; findings: number; reports: number; payoutsUsd: number | null; lastAt: number }[] })),
     d
-      .prepare("SELECT * FROM bounty_events ORDER BY at DESC LIMIT 50")
-      .all<Row>()
-      .catch(() => ({ results: [] as Row[] })),
-    d
-      .prepare("SELECT * FROM bounty_events WHERE platform = 'benchmark' ORDER BY at DESC LIMIT 200")
+      .prepare("SELECT * FROM bounty_events WHERE COALESCE(platform,'') != 'benchmark' AND COALESCE(program,'') != 'Pipeline Test' AND COALESCE(title,'') NOT IN ('Account enrolled','Recon probe (httpx + nuclei, low-noise)') ORDER BY at DESC LIMIT 50")
       .all<Row>()
       .catch(() => ({ results: [] as Row[] })),
   ]);
@@ -208,6 +202,5 @@ export async function bountySummary(env: Env): Promise<BountySummary> {
       lastAt: new Date(r.lastAt).toISOString(),
     })),
     recent: recent.results.map(toEvent),
-    matrix: matrix.results.map(toEvent),
   };
 }

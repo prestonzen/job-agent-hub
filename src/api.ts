@@ -106,7 +106,6 @@ export interface BountySummary {
   totals: { programs: number; scans: number; hostsScanned: number; findings: number; bySeverity: Record<string, number>; reports: number; payouts: number; payoutsUsd: number };
   programs: BountyProgram[];
   recent: BountyEvent[];
-  matrix: BountyEvent[];
   cyber?: { enabled:boolean; counts: {evidence:number;pending:number;running:number;blocked:number;drafts:number;plausible:number;accepted:number;falsePositive:number;reviewed:number};
     byAgent:{agent:string;completed:number;reviewed:number;plausible:number;accepted:number;falsePositive:number}[];
     items:{id:number;program:string;platform:string;target:string;source:string;status:string;agent:string|null;run_id:number|null;verdict:string|null;result:string|null;review:string|null;feedback:string|null;detail:string|null}[] };

@@ -5,6 +5,10 @@ using open-weight models served by Ollama. This page records what was measured w
 choice is evidence rather than taste. It is written for three audiences: people evaluating this project, people
 building something similar, and applicants who want to know how far a free local model gets on a real form.
 
+This page measures **mock form completion and field accuracy**, not real employer submissions,
+responses, interviews or offers. For current local cyber and email evidence, Kimi's synthetic
+scoring matrix and production outcome definitions, see [Model outcomes](MODEL-OUTCOMES-2026-10-13.md).
+
 **Short answer (Oct 2026):**
 
 | Question | Answer |

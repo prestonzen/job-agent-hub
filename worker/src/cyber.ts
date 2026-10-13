@@ -2,6 +2,7 @@ import { db, getSetting, logEvent } from './db';
 import { HttpError } from './clickup';
 import { cancelRun, createRun, getRun, listRunners, listRuns } from './runs';
 import { eligibleAgents, workSettings } from './work';
+import { esc, notify } from './telegram';
 import type { Env } from './types';
 
 const SCHEMA = `CREATE TABLE IF NOT EXISTS cyber_work (
@@ -35,6 +36,7 @@ export async function getCyberWork(env: Env, id:number, agent:string) {
 export async function completeCyber(env: Env, id:number, agent:string, body:Record<string,unknown>) {
  const verdict=text(body.verdict,30), result=text(body.result,20000);
  if(!(VERDICTS as readonly string[]).includes(verdict)||result.length<80)throw new HttpError(400,'verdict must be draft, needs-validation or reject; result must explain evidence and impact');
+ if(verdict==='draft'&&(!/reproduc|steps to/i.test(result)||!/impact/i.test(result)||!/remediat/i.test(result)))throw new HttpError(400,'A report draft must include reproduction, impact and remediation before human review');
  const d=await cyberDb(env);
  const row=await d.prepare('SELECT * FROM cyber_work WHERE id=? AND agent=?').bind(id,agent).first<CyberWork>();
  if(!row)throw new HttpError(404,'No assigned work');
@@ -42,9 +44,14 @@ export async function completeCyber(env: Env, id:number, agent:string, body:Reco
  if(row.status!=='running'||!row.run_id)throw new HttpError(409,'Work is not running');
  const run=await getRun(env,row.run_id);
  if(run.status!=='running')throw new HttpError(409,'Owning run is no longer running');
- const saved=await d.prepare("UPDATE cyber_work SET status='completed',verdict=?,result=?,detail='Awaiting human review' WHERE id=? AND status='running' AND run_id=?").bind(verdict,result,id,row.run_id).run();
+ const detail=verdict==='draft'?'Full report draft awaiting human review':verdict==='needs-validation'?'Needs more validation before any report':'Evidence rejected';
+ const saved=await d.prepare("UPDATE cyber_work SET status='completed',verdict=?,result=?,detail=? WHERE id=? AND status='running' AND run_id=?").bind(verdict,result,detail,id,row.run_id).run();
  if(saved.meta.changes!==1)throw new HttpError(409,'Work ownership changed');
- await logEvent(env,{agent,type:'cyber_triage',message:`Evidence #${id}: ${verdict}; awaiting human review`});
+ await logEvent(env,{agent,type:'cyber_triage',message:`Evidence #${id}: ${verdict}; ${detail.toLowerCase()}`});
+ if(verdict==='draft'){
+  const error=await notify(env,`📝 <b>Bug bounty report draft ready for review</b>\n${esc(row.program)} · evidence #${id}\nReview the full report before any submission: https://jobhunter.prestonzen.com/admin#bounty`);
+  if(error)console.error('cyber report draft notify:',error);
+ }
  return {ok:true,id,verdict};
 }
 export async function reviewCyber(env: Env,id:number,body:Record<string,unknown>) {
@@ -57,9 +64,9 @@ export async function reviewCyber(env: Env,id:number,body:Record<string,unknown>
 export async function cyberSummary(env:Env) {
  const d=await cyberDb(env);
  const [items,counts,byAgent]=await Promise.all([
-  d.prepare('SELECT id,created_at,program,platform,target,source,status,agent,run_id,attempts,verdict,result,review,feedback,detail FROM cyber_work ORDER BY id DESC LIMIT 60').all(),
+  d.prepare("SELECT id,created_at,program,platform,target,source,status,agent,run_id,attempts,verdict,result,review,feedback,detail FROM cyber_work ORDER BY CASE WHEN status='completed' AND verdict='draft' AND review IS NULL THEN 0 ELSE 1 END,id DESC LIMIT 60").all(),
   d.prepare(`SELECT COUNT(*) AS evidence, SUM(status='pending') AS pending, SUM(status='running') AS running,
-   SUM(status='blocked') AS blocked, SUM(status='completed' AND verdict='draft') AS drafts,
+   SUM(status='blocked') AS blocked, SUM(status='completed' AND verdict='draft' AND review IS NULL) AS drafts,
    SUM(review IN ('plausible','submitted','accepted')) AS plausible,
    SUM(review='accepted') AS accepted, SUM(review='false-positive') AS falsePositive,
    SUM(review IS NOT NULL) AS reviewed FROM cyber_work`).first(),

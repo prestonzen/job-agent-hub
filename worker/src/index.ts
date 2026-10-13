@@ -259,10 +259,9 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     if (sub === "/bounty" && method === "POST") {
       const b = await readJson<BountyEventInput>(request);
       const created = await addBountyEvent(env, agent, b);
-      // Ava ping on the events that matter: a confirmed finding or money.
-      const status = (b.status ?? "").toLowerCase();
-      if (b.kind === "payout" || (b.kind === "finding" && status === "confirmed")) {
-        const what = b.kind === "payout" ? `💰 Bounty payout${b.amount ? ` — $${b.amount}` : ""}` : `🐞 Confirmed finding${b.severity ? ` (${b.severity})` : ""}`;
+      // Scanner labels and unreviewed findings do not need a human notification.
+      if (b.kind === "payout") {
+        const what = `💰 Bounty payout${b.amount ? ` — $${b.amount}` : ""}`;
         const lines = [what, `${b.program ?? "unknown program"}${b.target ? ` · ${b.target}` : ""}`];
         if (b.title) lines.push(b.title);
         lines.push(`${url.origin}/admin#bounty`);
@@ -343,15 +342,6 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       const kind = b.kind?.toLowerCase();
       if (kind !== "scan" && kind !== "finding") return json({ error: "Only scan and finding events are accepted" }, 400);
       const created = await addBountyEvent(env, "bounty-pipeline", b);
-      if (kind === "finding" && b.status?.toLowerCase() === "confirmed") {
-        const lines = [
-          `🐞 Confirmed finding${b.severity ? ` (${b.severity})` : ""}`,
-          `${b.program ?? "unknown program"}${b.target ? ` · ${b.target}` : ""}`,
-        ];
-        if (b.title) lines.push(b.title);
-        lines.push(`${url.origin}/admin#bounty`);
-        ctx.waitUntil(notify(env, lines.join("\n")).then((e) => e && console.error("bounty notify:", e)));
-      }
       return json({ ok: true, agent: "bounty-pipeline", ...created }, 201);
     }
     if(path==='/api/admin/cyber' && method==='POST')return json(await enqueueCyber(env,await readJson(request)),201);

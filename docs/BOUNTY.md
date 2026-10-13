@@ -1,8 +1,9 @@
 # Bug bounty lane
 
-Status 2026-10-11: infrastructure live and smoke-tested. Dark-Moon verified end-to-end against
-a local OWASP Juice Shop lab (recon → confirmed finding → finalized report). Pipeline to real
-programs still manual.
+Status 2026-10-13: Dark-Moon passed a local OWASP Juice Shop lab smoke test. The CT 134
+`bounty-daily.timer` is **disabled** while program-specific automation permission, scope and
+rate limits are reviewed. Historical scanner events are leads, not validated findings or
+accepted reports. Offline review of existing artifacts can continue.
 
 Part of the Job Agent Hub's "find work of all types" mandate: bounty payouts count as income
 alongside jobs, contracts and freelance platforms. ClickUp parent task: "HackerOne / Bugcrowd"
@@ -42,24 +43,41 @@ ssh root@kloud "pct exec 134 -- sh /opt/darkmoon-smoke-test.sh"
 4. Findings are reported through the platform's official channel only; FORMAT=h1 for HackerOne reports.
 5. Every run logs to the ClickUp task: target, scope source URL, tool, start/end, findings count.
 
-## Pipeline (automated recon, 2026-10-11)
+## Pipeline and current scan hold
 
-1. **Queue** — `bounty/scope-fetch.py` pulls all 4 platform dumps from bounty-targets-data,
-   normalizes schemas, drops automation-banned programs (policy check), merges cross-platform
-   duplicates, ranks by attack surface → `/opt/bounty/queue.json`.
-2. **Daily scans** — `bounty-daily.timer` (05:17 UTC) runs `bounty/bounty-daily.sh`: refreshes the
+1. **Queue** — `bounty/scope-fetch.py` pulls public program catalogs and checks available policy
+   pages. Only an explicit automation-allowed classification reaches `/opt/bounty/queue.json`;
+   `--no-policy-check` cannot add unchecked programs. Public catalog membership alone does not
+   prove permission. A human must still verify the *current* policy, exact assets, exclusions,
+   account enrollment, identification requirements and permitted scan rate before reactivation.
+2. **Daily scans, paused** — `bounty-daily.timer` (05:17 UTC) would run `bounty/bounty-daily.sh`: refresh the
    queue, scans the top 6 not-recently-scanned programs, 3 in parallel (`PARALLEL`/`TOP` tunable).
    Each scan (`bounty/bounty-scan.sh`): subfinder → httpx → nuclei (non-intrusive, rate-limited),
    posts a summary event to the hub (`POST /api/admin/bounty-events`) → admin
    **Bug bounty** tab. CT 134 authenticates as a service; these events are attributed to
    `bounty-pipeline`, not an AI agent.
-   Programs re-scan at most every 7 days.
+   Programs re-scan at most every 7 days. The daily script refuses a failed queue refresh; the
+   scanner refuses rows without `automation=allowed` and an exact match in CT 134's
+   `/opt/bounty/approved-programs.json` for program, platform, policy URL and full asset list.
+   Each approval records `automation_allowed`, `reviewed_at`, `scope_note`, and `max_rps`
+   (integer 1–30); that cap is passed to httpx and nuclei. The approval file starts absent,
+   so scans fail closed. These are backstops, not a substitute for manual policy review.
+   Keep the timer disabled until per-program requirements are implemented and verified.
 3. **Validation + report** — anything above info level goes to Dark-Moon for exploitation-proof
    and report drafting. One master report template internally (severity, summary, repro steps,
    exact commands + raw output, impact, remediation); rendered per platform on submit
    (HackerOne markdown via FORMAT=h1, Bugcrowd/Intigriti/YesWeHack variants). Reports are always
    reviewed by Preston before submission — nothing auto-submits.
-4. Payouts logged as `payout` events → hub analytics.
+4. Payouts logged as `payout` events → hub analytics. Only a complete report draft triggers
+   an Ava review alert; routine evidence saves, scanner finding labels and completed cyber runs
+   are silent. Preston reviews the entire draft before any external submission.
+
+On 2026-10-13 the existing queue contained 60 programs with automation marked `unspecified`,
+and the timer had already recorded low-noise scans of real company assets. That did not establish
+policy compliance. The timer was stopped immediately. Synthetic matrix events, a `Pipeline Test`
+event, account enrollments and a recon probe are excluded from production bounty analytics but
+retained in source history. See [model outcomes](MODEL-OUTCOMES-2026-10-13.md) for the separate
+calibration data and limits of the current results.
 
 ## TODO
 
@@ -67,16 +85,16 @@ ssh root@kloud "pct exec 134 -- sh /opt/darkmoon-smoke-test.sh"
       against a deliberately vulnerable lab (e.g. OWASP Juice Shop) before any real target.
       Done 2026-10-11: found + documented a confirmed info-disclosure vuln on the lab; repeatable
       via `bounty/darkmoon-smoke-test.sh`.
-- [x] Telegram notifications — done 2026-10-11, server-side in the hub: any `finding` event with
-      status `confirmed`, and any `payout` event, pings Ava's Telegram topic automatically.
+- [x] Telegram notifications — revised 2026-10-13: notify on complete cyber report drafts and
+      payouts; routine evidence saves, run completions and scanner labels remain in the hub.
 - [x] Program-scope fetcher: built on `arkadiyt/bounty-targets-data` (hourly-updated JSON per
       platform: `data/hackerone_data.json`, `bugcrowd_data.json`, `intigriti_data.json`,
       `yeswehack_data.json` — validated 2026-10-11). `bounty/scope-fetch.py` normalizes all 4
       schemas, drops automation-banned programs via policy check, merges cross-platform dupes,
       ranks by attack surface → `/opt/bounty/queue.json`.
-- [x] Scheduled low-noise re-scans — `bounty-daily.timer` (05:17 UTC): refresh queue, scan top 6
-      unscanned programs, 3 parallel (`PARALLEL`/`TOP` tunable), 7-day rescan guard, per-run nuclei
-      template update, waybackurls endpoint harvesting, Dark-Moon auto-engage on medium+ hits.
+- [ ] Re-enable scoped scans after verifying each program's current automation clause, assets,
+      exclusions, identification and rate limits, and encoding those limits in the scanner.
+- [x] Low-noise scan plumbing and timer created; timer disabled 2026-10-13 pending the above.
 - [ ] Per-platform report renderers for Bugcrowd / Intigriti / YesWeHack (Dark-Moon emits H1
       markdown today; one master template internally, render at submission time).
 - [ ] Prioritize queue by historical payout speed (H1 dumps carry avg time-to-bounty stats).
