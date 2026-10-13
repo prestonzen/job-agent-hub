@@ -5,13 +5,14 @@ const ICON: Record<string, string> = { rejection: "❌", interview: "🗓️", a
 
 /** Telegram alerts and the recruiter-reply log (from the Gmail reply tracker). */
 export default function Alerts() {
+  const [loading,setLoading]=useState(true);
   const [emails, setEmails] = useState<InboundEmail[]>([]);
   const [showAll,setShowAll]=useState(false);
   const [limit,setLimit]=useState(12);
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    getInbound().then((r) => setEmails(r.emails)).catch((e: Error) => setMsg(e.message));
+    getInbound().then((r) => setEmails(r.emails)).catch((e: Error) => setMsg(e.message)).finally(()=>setLoading(false));
   }, []);
 
   const run = async (fn: () => Promise<{ ok: boolean; error: string | null }>, ok: string) => {
@@ -45,7 +46,7 @@ export default function Alerts() {
           <h2>Recruiter replies</h2>
           <label className="small"><input type="checkbox" checked={showAll} onChange={e=>setShowAll(e.target.checked)}/> Include confirmations and other mail</label>
         </div>
-        {emails.length === 0 ? (
+        {loading?<p className="muted">Loading recent replies…</p>:emails.length === 0 ? (
           <p className="muted">No replies tracked yet. Install integrations/gmail-reply-tracker.gs (see the README).</p>
         ) : (
           <ul className="activity">
