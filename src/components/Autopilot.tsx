@@ -41,7 +41,7 @@ export default function Autopilot({compact=false}:{compact?:boolean}) {
   const patch = (p: Partial<AutopilotSettings>) => saveAutopilot(p).then(apply).catch((e: Error) => setErr(e.message));
   const working = agents.filter((a) => a.state === "working").length;
 
-  if(compact)return <section className="card compact-autopilot"><div className="card-head"><h2>Autopilot {s.enabled?'active':'paused'}</h2><a href="#run">Manage agents &amp; task focus →</a></div><p>{agents.filter(a=>a.state==='working').map(a=>`${agentLabel(a.agent)}: ${a.detail}`).join(' · ')||'No task running right now'}</p><p className="small muted">Email applications preferred · sourcing twice daily with backups · {agents.filter(a=>a.state==='off').map(a=>agentLabel(a.agent)).join(', ')} switched off</p></section>;
+  if(compact)return <section className="card compact-autopilot"><div className="card-head"><h2>Autopilot {s.enabled?'active':'paused'}</h2><a href="#run">Manage agents &amp; task focus →</a></div><p>{agents.filter(a=>a.state==='working').map(a=>`${agentLabel(a.agent)}: ${a.detail}`).join(' · ')||'No task running right now'}</p><p className="small muted">Email applications preferred · sourcing twice daily with backups · {agents.filter(a=>a.state==='off').map(a=>agentLabel(a.agent)).join(', ')} switched off</p>{agents.filter(a=>a.state==="idle"||a.state==="paused").map(a=><p key={a.agent} className="small">{agentLabel(a.agent)}: {a.detail}</p>)}</section>;
   return (
     <section className={`card autopilot ${s.enabled ? "active" : "disabled"}`}>
       <div className="ap-head">

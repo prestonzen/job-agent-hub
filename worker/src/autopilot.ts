@@ -179,7 +179,7 @@ export async function autopilotStatus(env: Env) {
     if (!s.enabled) return { ...base, state: "idle", nextAt: null, detail: "Autopilot disabled" };
     const eligible = jobs.filter((j) => isAvailableFor(j, agent) && inLane(j, lane));
     const claimable = eligible.filter((j) => checkJob(j, pace, policy).ok);
-    if (!eligible.length) return { ...base, state: "idle", nextAt: null, detail: tasks.applications || tasks.email ? `No eligible application work${tasks.sourcing ? "; sourcing fallback enabled" : ""}` : "No task queued for enabled work types" };
+    if (!eligible.length) return { ...base, state: "idle", nextAt: null, detail: tasks.applications || tasks.email ? `No eligible ${lane==="email"?"email":"application"} work${tasks.sourcing ? "; sourcing fallback enabled" : ""}` : "No task queued for enabled work types" };
     if (!claimable.length) return { ...base, state: "waiting", nextAt: null, detail: "Application pacing limit" };
     if (!runners.some((r) => r.online && r.busy < r.slots && r.agents.some((a) => a.id === agent && a.ready))) return { ...base, state: "waiting", nextAt: null, detail: "Runner capacity is full" };
     return { ...base, state: "ready", nextAt: null, detail: `${claimable.length} eligible jobs for enabled tasks` };

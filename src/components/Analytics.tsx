@@ -103,6 +103,7 @@ export default function Analytics() {
       </Card>
 
       <Card title="Agent scorecard" className="wide">
+        <p className="muted small">Monthly $/app uses fixed subscriptions allocated by tracked monthly token usage, then divided by reported applications. Cyber and sourcing share the bill by their own usage. Figures are provisional where usage is missing or work occurred outside this hub.</p>
         <div className="table-scroll">
           <table className="score">
             <thead>

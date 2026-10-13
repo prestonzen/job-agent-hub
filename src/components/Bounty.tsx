@@ -62,8 +62,8 @@ export default function Bounty() {
         <Kpi label="Programs" value={t.programs} />
         <Kpi label="Scans run" value={t.scans} />
         <Kpi label="Hosts scanned" value={t.hostsScanned} />
-        <Kpi label="Findings" value={t.findings} />
-        <Kpi label="Reports submitted" value={t.reports} />
+        <Kpi label="Finding leads" value={t.findings} />
+        <Kpi label="Report records" value={t.reports} />
         <Kpi label="Payouts" value={t.payoutsUsd} money />
       </section>
 
@@ -103,7 +103,8 @@ export default function Bounty() {
       )}
 
       {data.programs.length > 0 && (
-        <section className="card wide">
+        <details className="card wide">
+          <summary>Programs ({data.programs.length})</summary>
           <div className="card-head">
             <h2>Programs</h2>
           </div>
@@ -133,7 +134,7 @@ export default function Bounty() {
               ))}
             </tbody>
           </table>
-        </section>
+        </details>
       )}
 
       {(data.matrix??[]).length>0 && <section className="card wide">
@@ -143,7 +144,7 @@ export default function Bounty() {
           {cyberLeaderboard(data.matrix).map(r=><tr key={r.agent}><td><b>{r.agent}</b></td><td>{r.score??'Unscored'}</td><td>{r.verdict??'—'}</td><td>{r.severity??'—'}</td><td>{r.validation??'—'}</td><td>{r.priority??'—'}</td><td>{r.coverage}/3{r.coverage<3?' · provisional':''}{r.unscored?` · ${r.unscored} unscored`:''}</td></tr>)}
         </tbody></table>
         <details><summary>Scoring details and recent attempts</summary><p className="small">HTTP 200 alone does not prove secrets, historical snapshots do not prove current exposure, public assets and missing headers do not justify high severity. Validation and conditional severity receive credit. Repeated runs do not increase scenario weight.</p>
-        <table><thead><tr><th>When</th><th>Agent</th><th>Scenario</th><th>Score</th><th>Feedback</th></tr></thead><tbody>{data.matrix.slice(0,25).map(e=>{const r=scoreCyber(e.program,e.detail);return <tr key={e.id}><td>{ago(e.at)}</td><td>{e.agent}</td><td>{r.scenario}</td><td>{r.score??'Unscored'}</td><td>{r.notes.join(' · ')||'Rubric criteria met'}</td></tr>})}</tbody></table></details>
+        <table><thead><tr><th>When</th><th>Agent</th><th>Scenario</th><th>Score</th><th>Feedback</th></tr></thead><tbody>{data.matrix.slice(0,25).map(e=>{const r=scoreCyber(e.program,e.detail);return <tr key={e.id}><td>{ago(e.at)}</td><td>{e.kind==="scan"?`${e.agent} · scanner tooling`:e.agent}</td><td>{r.scenario}</td><td>{r.score??'Unscored'}</td><td>{r.notes.join(' · ')||'Rubric criteria met'}</td></tr>})}</tbody></table></details>
       </section>}
 
       {activity.length > 0 && (
@@ -158,7 +159,7 @@ export default function Bounty() {
                 <th>Kind</th>
                 <th>What</th>
                 <th>Program / target</th>
-                <th>By</th>
+                <th title="Authenticated collector identity; scanner events are not LLM runs">Recorded by</th>
               </tr>
             </thead>
             <tbody>
@@ -178,7 +179,7 @@ export default function Bounty() {
                     {e.program ?? "—"}
                     {e.target && <div className="sub">{e.target}</div>}
                   </td>
-                  <td>{e.agent}</td>
+                  <td>{e.kind==="scan"?`${e.agent} · scanner tooling`:e.agent}</td>
                 </tr>
               ))}
             </tbody>

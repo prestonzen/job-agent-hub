@@ -2,10 +2,10 @@
 export const CYBER_RUBRIC = 'Evidence calibration v1';
 const rubric: Record<string,{verdict:string[];severity:number[];validation:RegExp;first:number[]}> = {
   '1': {verdict:['real|needs-manual-check','real|needs-manual-check','real','needs-manual-check','needs-manual-check'],severity:[0,0,2,2,2],validation:/verify|confirm|inspect|handshake|frame|fetch|replay|request|curl|check/i,first:[3,4,2]},
-  '2': {verdict:['false-positive','needs-manual-check','real|false-positive','real|false-positive','real'],severity:[0,2,0,0,1],validation:/verify|confirm|inspect|compare|origin|credential|browser|response|cookie|check/i,first:[1]},
+  '2': {verdict:['false-positive','real|needs-manual-check','real|false-positive','real|false-positive','real'],severity:[0,2,0,0,1],validation:/verify|confirm|inspect|compare|origin|credential|browser|response|cookie|check/i,first:[1]},
   '3': {verdict:['needs-manual-check','real','needs-manual-check|real','real','real|false-positive'],severity:[0,3,0,1,0],validation:/verify|confirm|inspect|auth|owner|account|login|invoice|check/i,first:[1]},
 };
-type Entry={id?:string;verdict?:string;severity?:string;why?:string;finding?:string;observation?:string;next_step?:string;next_validation_step?:string};
+type Entry={id?:string;verdict?:string;severity?:string;why?:string;finding?:string;observation?:string;next_step?:string;next_validation_step?:string;next_validation?:string;next?:string;validation_step?:string};
 export type CyberScore={scenario:string;score:number|null;verdict:number;severity:number;validation:number;priority:number;notes:string[]};
 const severityLevel=(s:string)=> /critical|p1/i.test(s)?4:/high|p2/i.test(s)?3:/medium|p3/i.test(s)?2:/low|p4/i.test(s)?1:0;
 const aliases=[['tls','header','git','actuator','user|pii|wayback'],['cve|apache|traversal','cors|api.me','s3|bucket|logo','swagger','cookie'],['default|admin','invoice','rate','stack|debug','cert']];
@@ -34,7 +34,7 @@ export function scoreCyber(program:string|null,detail:string|null):CyberScore{
     const conditional=/\bif\b|unverified|conditional|potential/i.test(String(e.severity??''));
     if(e.severity && (level<=expected.severity[i]||(expected.severity[i]>=2&&level<=3&&verdict==='needs-manual-check'&&conditional)))out.severity+=4;
     else out.notes.push(`Observation ${i+1}: severity unsupported or missing`);
-    const next=String(e.next_step??e.next_validation_step??'');
+    const next=String(e.next_step??e.next_validation_step??e.next_validation??e.next??e.validation_step??'');
     if(next.length>=12&&expected.validation.test(next)&&String(e.why??'').length>=10)out.validation+=4;
   }
   const first=String(j.first_report??'');

@@ -116,7 +116,7 @@ export default function CommandCenter() {
       {hub.demo && <p className="badge">Demo data</p>}
       <Autopilot compact />
       <section className="kpis">
-        <Kpi label="Ready to claim" value={available.length} onClick={() => setFilter("available")} active={filter === "available"} />
+        <Kpi label="Open postings" value={available.length} onClick={() => setFilter("available")} active={filter === "available"} />
         <Kpi label="In progress" value={claimed.length} onClick={() => setFilter("claimed")} active={filter === "claimed"} />
         <Kpi label="Needs you" value={human.length} onClick={() => setFilter("human")} active={filter === "human"} warn={human.length > 0} />
         <Kpi label="Agents online" value={`${agents.filter((a) => a.online).length}/${agents.length}`} />
@@ -236,7 +236,7 @@ export default function CommandCenter() {
                   ) : j.assignedTo ? (
                     <span className="pill live idle" title="Handed to this agent; it gets it first">for {cap(j.assignedTo)}</span>
                   ) : j.applyUrl ? (
-                    <span className="pill s-not-started">ready</span>
+                    <span className="pill s-not-started">queued</span>
                   ) : (
                     <span className="muted">no apply link</span>
                   )}
