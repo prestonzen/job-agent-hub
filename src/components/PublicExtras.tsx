@@ -1,4 +1,4 @@
-import { agentColor, agentKey, agentLabel, sortAgents } from "../agents";
+import { HUMANS, agentColor, agentKey, agentLabel, sortAgents } from "../agents";
 import type { PublicSummary } from "../types";
 import { Card } from "./Panels";
 
@@ -11,7 +11,7 @@ const PLANNED: Record<string, string> = { qwen: "Alibaba · planned", deepseek: 
 export function Constellation({ byAgent, working, ready }: { byAgent: Record<string, number>; working: string[]; ready: string[] }) {
   // Everyone who has applied, plus agents that are logged in and standing by (they haven't sent anything yet).
   const seen = new Map<string, string>();
-  for (const a of [...Object.keys(byAgent), ...working, ...ready]) if (!["unknown", "human"].includes(agentKey(a))) seen.set(agentKey(a), a);
+  for (const a of [...Object.keys(byAgent), ...working, ...ready]) if (agentKey(a) !== "unknown" && !HUMANS.includes(agentKey(a))) seen.set(agentKey(a), a);
   const names = sortAgents([...seen.values(), ...Object.keys(PLANNED).filter((p) => !seen.has(p))]);
   const isPlanned = (a: string) => !seen.has(agentKey(a));
   const sent = (a: string) => byAgent[a] ?? byAgent[agentLabel(a)] ?? Object.entries(byAgent).find(([k]) => agentKey(k) === agentKey(a))?.[1] ?? 0;

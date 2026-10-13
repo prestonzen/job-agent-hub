@@ -11,7 +11,7 @@ const SEV_ORDER = ["critical", "high", "medium", "low", "info"] as const;
 function EvidenceReview({item,onSaved,open=false}:{item:NonNullable<BountySummary['cyber']>['items'][number];onSaved:()=>void;open?:boolean}){
  const [review,setReview]=useState(item.review??''),[feedback,setFeedback]=useState(item.feedback??''),[error,setError]=useState(''),[saving,setSaving]=useState(false);
  const [expanded,setExpanded]=useState(open);
- return <details className="card" open={expanded} onToggle={e=>setExpanded(e.currentTarget.open)}><summary>#{item.id} · {item.program} · {item.target} · {item.verdict??item.status}{item.review?` · reviewed: ${item.review}`:''}</summary>
+ return <details className="card" open={expanded} onToggle={e=>setExpanded(e.currentTarget.open)}><summary>#{item.id} · {item.program} · {item.target} · {item.verdict??item.status}{item.review?` · reviewed: ${item.review}${item.reviewed_by?` by ${item.reviewed_by}`:''}`:''}</summary>
   <p className="muted small">{item.agent??'Waiting for agent'} · {item.source} · {item.detail}</p>
   {item.passes?.length>0&&<details><summary>Model pass log ({item.passes.length})</summary>{item.passes.map(pass=><article key={pass.sequence}><h4>Pass {pass.sequence}: {pass.agent} · {pass.verdict??'in progress'}</h4><p className="muted small">{pass.detail}</p>{pass.result&&<pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:400,overflow:'auto'}}>{pass.result}</pre>}</article>)}</details>}
   {item.result&&<pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:open?undefined:400,overflow:'auto'}}>{item.result}</pre>}

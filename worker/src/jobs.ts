@@ -43,6 +43,9 @@ export const OUTCOMES = ["applied", "needs_human", "skipped", "failed"] as const
 export type Outcome = (typeof OUTCOMES)[number];
 
 /** "kimi" -> "Kimi" for comments and ClickUp dropdowns. */
+/** Who the admin's own actions are recorded as: ADMIN_NAME, or "human". */
+export const adminName = (env: Env) => (env.ADMIN_NAME ?? "").trim().toLowerCase() || "human";
+
 export const displayAgent = (a: string) => (a.length ? a[0].toUpperCase() + a.slice(1) : a);
 
 /**

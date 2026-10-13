@@ -11,6 +11,8 @@ export interface Env {
   MAILER_URL?: string;
   /** Pages secret shared with the mailer Worker. */
   MAILER_TOKEN?: string;
+  /** Name the admin's own actions are recorded under (Applied By, activity). Defaults to "human". */
+  ADMIN_NAME?: string;
 
   // --- non-secret vars (wrangler.jsonc) ---
   MOCK: string;

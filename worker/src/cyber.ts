@@ -12,13 +12,14 @@ const SCHEMA = `CREATE TABLE IF NOT EXISTS cyber_work (
  status TEXT NOT NULL DEFAULT 'pending', agent TEXT, run_id INTEGER,
  attempts INTEGER NOT NULL DEFAULT 0, next_try INTEGER NOT NULL DEFAULT 0,
  lease_until INTEGER NOT NULL DEFAULT 0, verdict TEXT, result TEXT,
- review TEXT, feedback TEXT, reviewed_at INTEGER, detail TEXT,
+ review TEXT, feedback TEXT, reviewed_at INTEGER, reviewed_by TEXT, detail TEXT,
  pass_agents TEXT NOT NULL DEFAULT '[]')`;
 const VERDICTS = ['draft', 'needs-validation', 'reject'] as const;
 const REVIEWS = ['plausible', 'false-positive', 'duplicate', 'submitted', 'accepted', 'rejected'] as const;
 export async function cyberDb(env: Env) {
  const d = await db(env); await d.prepare(SCHEMA).run();
  await d.prepare("ALTER TABLE cyber_work ADD COLUMN pass_agents TEXT NOT NULL DEFAULT '[]'").run().catch(()=>{});
+ await d.prepare("ALTER TABLE cyber_work ADD COLUMN reviewed_by TEXT").run().catch(()=>{});
  await d.prepare(`CREATE TABLE IF NOT EXISTS cyber_review_passes (
   work_id INTEGER NOT NULL, sequence INTEGER NOT NULL, agent TEXT NOT NULL, run_id INTEGER,
   status TEXT NOT NULL DEFAULT 'running', verdict TEXT, result TEXT, detail TEXT,
@@ -26,7 +27,7 @@ export async function cyberDb(env: Env) {
   FOREIGN KEY(work_id) REFERENCES cyber_work(id))`).run();
  return d;
 }
-export interface CyberWork { id:number; source_key:string; created_at:number; program:string; platform:string; target:string; source:string; evidence:string; status:string; agent:string|null; run_id:number|null; attempts:number; next_try:number; lease_until:number; verdict:string|null; result:string|null; review:string|null; feedback:string|null; reviewed_at:number|null; detail:string|null; pass_agents:string }
+export interface CyberWork { id:number; source_key:string; created_at:number; program:string; platform:string; target:string; source:string; evidence:string; status:string; agent:string|null; run_id:number|null; attempts:number; next_try:number; lease_until:number; verdict:string|null; result:string|null; review:string|null; feedback:string|null; reviewed_at:number|null; reviewed_by:string|null; detail:string|null; pass_agents:string }
 interface CyberPass { work_id:number; sequence:number; agent:string; run_id:number|null; status:string; verdict:string|null; result:string|null; detail:string|null; created_at:number; completed_at:number|null }
 const text = (v: unknown, max: number) => typeof v==='string' ? v.trim().slice(0,max) : '';
 /** Ingestion is admin-only. Existing artifacts are evidence, never instructions to execute. */
@@ -80,17 +81,19 @@ export async function completeCyber(env: Env, id:number, agent:string, body:Reco
  }
  return {ok:true,id,verdict,pass:pass.sequence,complete};
 }
-export async function reviewCyber(env: Env,id:number,body:Record<string,unknown>) {
+export async function reviewCyber(env: Env,id:number,body:Record<string,unknown>,by:string) {
  const review=text(body.review,30), feedback=text(body.feedback,4000);
  if(!(REVIEWS as readonly string[]).includes(review)||!feedback)throw new HttpError(400,'Choose a review outcome and record evidence or feedback');
- const saved=await(await cyberDb(env)).prepare("UPDATE cyber_work SET review=?,feedback=?,reviewed_at=? WHERE id=? AND status='completed'").bind(review,feedback,Date.now(),id).run();
+ const who=(by||'').trim().toLowerCase()||'human';
+ const saved=await(await cyberDb(env)).prepare("UPDATE cyber_work SET review=?,feedback=?,reviewed_at=?,reviewed_by=? WHERE id=? AND status='completed'").bind(review,feedback,Date.now(),who,id).run();
  if(saved.meta.changes!==1)throw new HttpError(409,'Only completed work can be reviewed');
- return {ok:true};
+ await logEvent(env,{agent:who,type:'cyber_review',taskId:`cyber-${id}`,message:`Evidence #${id}: human review ${review}`});
+ return {ok:true,reviewedBy:who};
 }
 export async function cyberSummary(env:Env) {
  const d=await cyberDb(env);
  const [items,counts,byAgent,passByAgent]=await Promise.all([
-  d.prepare("SELECT id,created_at,program,platform,target,source,status,agent,run_id,attempts,verdict,result,review,feedback,detail FROM cyber_work ORDER BY CASE WHEN status='completed' AND verdict='draft' AND review IS NULL THEN 0 ELSE 1 END,id DESC LIMIT 60").all(),
+  d.prepare("SELECT id,created_at,program,platform,target,source,status,agent,run_id,attempts,verdict,result,review,feedback,reviewed_by,detail FROM cyber_work ORDER BY CASE WHEN status='completed' AND verdict='draft' AND review IS NULL THEN 0 ELSE 1 END,id DESC LIMIT 60").all(),
   d.prepare(`SELECT COUNT(*) AS evidence, SUM(status='pending') AS pending, SUM(status='running') AS running,
    SUM(status='blocked') AS blocked, SUM(status='completed' AND verdict='draft' AND review IS NULL) AS drafts,
    SUM(review IN ('plausible','submitted','accepted')) AS plausible,

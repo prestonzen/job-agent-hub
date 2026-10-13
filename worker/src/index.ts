@@ -9,6 +9,7 @@ import { activeClaims, db as dbHandle, heartbeat, lastEventAt, listEvents, listH
 import { agentInstructions } from "./instructions";
 import {
   addJob,
+  adminName,
   handoffJob,
   claimJobs,
   getJob,
@@ -346,7 +347,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     }
     if(path==='/api/admin/cyber' && method==='POST')return json(await enqueueCyber(env,await readJson(request)),201);
     const cyberReview=path.match(/^\/api\/admin\/cyber\/(\d+)\/review$/);
-    if(cyberReview && method==='POST')return json(await reviewCyber(env,Number(cyberReview[1]),await readJson(request)));
+    if(cyberReview && method==='POST')return json(await reviewCyber(env,Number(cyberReview[1]),await readJson(request),adminName(env)));
     if(path==='/api/admin/cyber/continuous' && method==='PUT'){
       const b=await readJson<{enabled:boolean}>(request);
       if(typeof b.enabled!=='boolean')return json({error:'enabled must be boolean'},400);
@@ -502,10 +503,10 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       const id = decodeURIComponent(adminJob[1]);
       if (adminJob[2] === "release") {
         const { note } = await readJson<{ note?: string }>(request).catch(() => ({}) as { note?: string });
-        await releaseJob(env, "human", id, note, true);
+        await releaseJob(env, adminName(env), id, note, true);
         return json({ ok: true });
       }
-      return json(await reportResult(env, "human", id, await readJson<Report>(request), true));
+      return json(await reportResult(env, adminName(env), id, await readJson<Report>(request), true));
     }
 
     const status = path.match(/^\/api\/admin\/tasks\/([^/]+)\/status$/);

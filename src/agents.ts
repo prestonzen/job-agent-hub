@@ -6,10 +6,13 @@
  */
 export const AGENT_ORDER = ["gemini", "claude", "codex", "mistral", "ollama", "human", "kimi", "qwen", "deepseek"] as const;
 
+/** People, not agents: they share the "human" color and stay off the agent constellation. */
+export const HUMANS = ["human", "roman"];
+
 export const agentKey = (name: string | null | undefined) => (name ?? "unknown").trim().toLowerCase() || "unknown";
 
 export const agentColor = (name: string | null | undefined) => {
-  const k = agentKey(name);
+  const k = HUMANS.includes(agentKey(name)) ? "human" : agentKey(name);
   return (AGENT_ORDER as readonly string[]).includes(k) ? `var(--agent-${k})` : "var(--agent-unknown)";
 };
 

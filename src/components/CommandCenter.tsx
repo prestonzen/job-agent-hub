@@ -108,7 +108,7 @@ export default function CommandCenter() {
   }
 
   function markApplied(job: Job) {
-    if (window.confirm(`Mark "${job.name}" as applied by you (Human)?`)) void act(job, () => reportJob(job.id, "applied"));
+    if (window.confirm(`Mark "${job.name}" as applied by you?`)) void act(job, () => reportJob(job.id, "applied"));
   }
 
   return (
