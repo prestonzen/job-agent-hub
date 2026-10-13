@@ -50,6 +50,7 @@ async function db(env: Env): Promise<D1Database> {
     await env.DB.prepare("ALTER TABLE runs ADD COLUMN tokens INTEGER").run().catch(() => {});
     await env.DB.prepare("ALTER TABLE runs ADD COLUMN task TEXT").run().catch(() => {});
     await env.DB.prepare("ALTER TABLE runs ADD COLUMN dispatch_key TEXT").run().catch(() => {});
+    await env.DB.prepare("ALTER TABLE runs ADD COLUMN identity TEXT").run().catch(() => {});
     await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS runs_dispatch_key ON runs(dispatch_key)").run();
     ready = true;
   }

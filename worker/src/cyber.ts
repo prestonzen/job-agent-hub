@@ -20,11 +20,13 @@ export async function cyberDb(env: Env) {
  const d = await db(env); await d.prepare(SCHEMA).run();
  await d.prepare("ALTER TABLE cyber_work ADD COLUMN pass_agents TEXT NOT NULL DEFAULT '[]'").run().catch(()=>{});
  await d.prepare("ALTER TABLE cyber_work ADD COLUMN reviewed_by TEXT").run().catch(()=>{});
+ await d.prepare("ALTER TABLE cyber_work ADD COLUMN identity TEXT").run().catch(()=>{});
  await d.prepare(`CREATE TABLE IF NOT EXISTS cyber_review_passes (
   work_id INTEGER NOT NULL, sequence INTEGER NOT NULL, agent TEXT NOT NULL, run_id INTEGER,
   status TEXT NOT NULL DEFAULT 'running', verdict TEXT, result TEXT, detail TEXT,
   created_at INTEGER NOT NULL, completed_at INTEGER, PRIMARY KEY(work_id,sequence),
   FOREIGN KEY(work_id) REFERENCES cyber_work(id))`).run();
+ await d.prepare("ALTER TABLE cyber_review_passes ADD COLUMN identity TEXT").run().catch(()=>{});
  return d;
 }
 export interface CyberWork { id:number; source_key:string; created_at:number; program:string; platform:string; target:string; source:string; evidence:string; status:string; agent:string|null; run_id:number|null; attempts:number; next_try:number; lease_until:number; verdict:string|null; result:string|null; review:string|null; feedback:string|null; reviewed_at:number|null; reviewed_by:string|null; detail:string|null; pass_agents:string }

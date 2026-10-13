@@ -11,6 +11,7 @@ import { eligibleAgents, EMPTY_OUTCOME, outcomeSummary, taskSwitches } from "../
 import { inLane } from "../worker/src/lanes";
 import type { Env, Job } from "../worker/src/types";
 import { resolveIdentity, identityId, agentName } from "../worker/src/auth";
+import { cyberDb } from "../worker/src/cyber";
 
 const sqlite = new DatabaseSync(":memory:");
 const D1 = {
@@ -145,3 +146,14 @@ test("a DB failure after accepting dispatch is recovered without a duplicate run
     assert.equal(identityId({user:"A",model:"B",approach:"C"}),"a/b/c");
   });
 }
+
+
+// --- Identity schema columns (Task 2) ---
+test("identity columns exist after schema init",async()=>{
+  await cyberDb(env);
+  const cols=(t:string)=>sqlite.prepare(`PRAGMA table_info(${t})`).all().map((r:any)=>r.name);
+  assert.ok(cols("events").includes("identity"),"events.identity");
+  assert.ok(cols("runs").includes("identity"),"runs.identity");
+  assert.ok(cols("cyber_work").includes("identity"),"cyber_work.identity");
+  assert.ok(cols("cyber_review_passes").includes("identity"),"cyber_review_passes.identity");
+});

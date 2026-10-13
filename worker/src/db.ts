@@ -55,7 +55,7 @@ const SCHEMA = [
 ];
 
 /** Columns added after the first release; ALTER fails harmlessly when they already exist. */
-const ADDED_COLUMNS = ["ALTER TABLE events ADD COLUMN ats TEXT", "ALTER TABLE events ADD COLUMN company TEXT", "ALTER TABLE events ADD COLUMN run_id INTEGER"];
+const ADDED_COLUMNS = ["ALTER TABLE events ADD COLUMN ats TEXT", "ALTER TABLE events ADD COLUMN company TEXT", "ALTER TABLE events ADD COLUMN run_id INTEGER", "ALTER TABLE events ADD COLUMN identity TEXT"];
 
 let ready = false;
 
