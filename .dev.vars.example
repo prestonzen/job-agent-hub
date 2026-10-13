@@ -3,3 +3,6 @@
 CLICKUP_TOKEN=pk_your_clickup_personal_token
 # JSON map: agent name -> bearer token (24+ chars). Names should match ClickUp "Applied By" options.
 AGENT_TOKENS={"claude":"change-me-to-a-long-random-token","codex":"change-me-to-a-long-random-token"}
+# Supersedes AGENT_TOKENS per token. JSON: token -> {user, model, approach, billing}.
+# billing: {"mode":"api"} or {"mode":"subscription","period":"weekly"|"monthly","quota":<number>}
+# AGENT_IDENTITIES={"<token>":{"user":"roman","model":"claude","approach":"hermes","billing":{"mode":"subscription","period":"weekly","quota":2000000}}}

@@ -152,7 +152,7 @@ const TOOLS = [
 type Args = Record<string, unknown>;
 const s = (v: unknown) => (typeof v === "string" ? v : undefined);
 
-async function callTool(env: Env, agent: string, name: string, args: Args, origin: string): Promise<unknown> {
+async function callTool(env: Env, agent: string, name: string, args: Args, origin: string, identity: string | null = null): Promise<unknown> {
   switch (name) {
     case "get_playbook":
       return await playbook(env);
@@ -170,7 +170,7 @@ async function callTool(env: Env, agent: string, name: string, args: Args, origi
       return await claimJobs(env, agent, {
         count: Number(args.count) || 1,
         ats: Array.isArray(args.ats) ? args.ats.map(String) : undefined,
-      });
+      }, identity);
     case "get_resume": {
       const pick = await pickResume(env, String(args.role ?? ""));
       if (!pick) return { error: "resume bank is empty; use the resume named in the playbook" };
@@ -197,7 +197,7 @@ async function callTool(env: Env, agent: string, name: string, args: Args, origi
         platform: s(args.platform),
         note: s(args.note),
         log: s(args.log),
-      });
+      }, false, identity);
     case "release_job":
       await releaseJob(env, agent, String(args.id), s(args.note));
       return { ok: true };
@@ -221,13 +221,13 @@ async function callTool(env: Env, agent: string, name: string, args: Args, origi
         url: s(args.url),
         platform: s(args.platform),
         notes: s(args.notes),
-      });
+      }, identity);
     default:
       throw new HttpError(404, `unknown tool ${name}`);
   }
 }
 
-async function handleOne(env: Env, agent: string, origin: string, msg: RpcRequest): Promise<object | null> {
+async function handleOne(env: Env, agent: string, origin: string, msg: RpcRequest, identity: string | null = null): Promise<object | null> {
   if (msg.id === undefined || msg.id === null) return null; // notification
   const ok = (result: unknown) => ({ jsonrpc: "2.0", id: msg.id, result });
   const fail = (code: number, message: string) => ({ jsonrpc: "2.0", id: msg.id, error: { code, message } });
@@ -250,7 +250,7 @@ async function handleOne(env: Env, agent: string, origin: string, msg: RpcReques
       const name = String(msg.params?.name ?? "");
       const args = (msg.params?.arguments ?? {}) as Args;
       try {
-        const result = await callTool(env, agent, name, args, origin);
+        const result = await callTool(env, agent, name, args, origin, identity);
         const text = typeof result === "string" ? result : JSON.stringify(result, null, 2);
         return ok({ content: [{ type: "text", text }] });
       } catch (err) {
@@ -265,7 +265,7 @@ async function handleOne(env: Env, agent: string, origin: string, msg: RpcReques
   }
 }
 
-export async function handleMcp(request: Request, env: Env, agent: string): Promise<Response> {
+export async function handleMcp(request: Request, env: Env, agent: string, identity: string | null = null): Promise<Response> {
   if (request.method !== "POST") {
     return new Response("This MCP server supports POST only (stateless Streamable HTTP).", {
       status: 405,
@@ -280,7 +280,7 @@ export async function handleMcp(request: Request, env: Env, agent: string): Prom
   }
   const origin = new URL(request.url).origin;
   const msgs = Array.isArray(body) ? body : [body];
-  const replies = (await Promise.all(msgs.map((m) => handleOne(env, agent, origin, m)))).filter(Boolean);
+  const replies = (await Promise.all(msgs.map((m) => handleOne(env, agent, origin, m, identity)))).filter(Boolean);
   if (replies.length === 0) return new Response(null, { status: 202 });
   return Response.json(Array.isArray(body) ? replies : replies[0]);
 }

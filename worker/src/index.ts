@@ -156,8 +156,9 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   if (path === "/mcp" || path === "/api/mcp") {
     const agent = agentName(request, env);
     if (!agent) return unauthorizedAgent();
+    const identity = resolveIdentity(request, env)?.id ?? null;
     ctx.waitUntil(heartbeat(env, agent, `mcp ${request.headers.get("User-Agent") ?? ""}`).catch(() => {}));
-    return handleMcp(request, env, agent);
+    return handleMcp(request, env, agent, identity);
   }
 
   // ---------- Runner API (RUNNER_TOKEN): machines that execute agent runs ----------
