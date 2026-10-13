@@ -91,7 +91,7 @@ export interface HubState {
 export interface Run {
   task: RunTask;
   summary?: string;
-  outcome?: { applied: number; emailed: number; added: number; blocked: number; failed: number; skipped: number; claimed: number; cyber: number; unfinished: number };
+  outcome?: { applied: number; emailed: number; added: number; blocked: number; failed: number; skipped: number; claimed: number; cyber: number; triaged: number; unfinished: number };
   id: number;
   agent: string;
   kind: "queue" | "prompt" | "login";

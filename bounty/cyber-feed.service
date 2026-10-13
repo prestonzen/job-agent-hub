@@ -1,0 +1,8 @@
+[Unit]
+Description=Queue existing bounty artifacts for offline AI evidence review
+After=network-online.target
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/bounty/cyber-feed.py
+TimeoutStartSec=180
+UMask=0077

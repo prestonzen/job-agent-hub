@@ -30,7 +30,7 @@ if [ "$CONFIRMED" -gt 0 ]; then
   STATUS=confirmed
   KIND=finding
 else
-  STATUS=refuted
+  STATUS=needs-validation
   KIND=finding
 fi
 
@@ -39,8 +39,8 @@ curl -s -X POST "$HUB/api/agent/bounty" -H "Authorization: Bearer $TOKEN" -H "Co
 EOF
 echo
 
-# Confirmed finding → hand report drafting to the on-point cyber agent (codex) via the hub.
-if [ "$STATUS" = "confirmed" ] && [ -f /etc/hub-admin-token ]; then
+# Every validation log enters durable offline review; no log marker is treated as proof.
+if [ -f /etc/hub-admin-token ]; then
   python3 /opt/bounty/cyber-dispatch.py --mode report --agents "${CYBER_AGENTS:-codex}" \
     --program "$PROGRAM" --platform "$PLATFORM" --host "$HOST" --title "$TITLE" --log "$LOG" \
     || echo "[engage] cyber dispatch failed (non-fatal)"

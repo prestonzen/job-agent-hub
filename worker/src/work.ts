@@ -26,11 +26,11 @@ export function eligibleAgents(runners: RunnerInfo[], runs: RunRow[], settings: 
   );
 }
 
-export interface RunOutcome { applied: number; emailed: number; added: number; blocked: number; failed: number; skipped: number; claimed: number; cyber: number; unfinished: number }
-export const EMPTY_OUTCOME: RunOutcome = { applied: 0, emailed: 0, added: 0, blocked: 0, failed: 0, skipped: 0, claimed: 0, cyber: 0, unfinished: 0 };
+export interface RunOutcome { applied: number; emailed: number; added: number; blocked: number; failed: number; skipped: number; claimed: number; cyber: number; triaged: number; unfinished: number }
+export const EMPTY_OUTCOME: RunOutcome = { applied: 0, emailed: 0, added: 0, blocked: 0, failed: 0, skipped: 0, claimed: 0, cyber: 0, triaged: 0, unfinished: 0 };
 export function outcomeSummary(task: RunTask, status: RunRow["status"], o: RunOutcome): string {
   if (task === "diagnostic") return status === "succeeded" ? "Diagnostic passed; no application work performed" : `Diagnostic ${status}`;
-  const results = [o.applied && `${o.applied} application${o.applied===1?'':'s'} reported submitted`, o.emailed && `${o.emailed} email${o.emailed===1?'':'s'} sent`, o.added && `${o.added} new role${o.added===1?'':'s'} added`, o.cyber && `${o.cyber} cyber report${o.cyber===1?'':'s'} recorded`, o.blocked && `${o.blocked} need review`, o.failed && `${o.failed} failed attempt${o.failed===1?'':'s'}`, o.skipped && `${o.skipped} skipped`, o.unfinished && `${o.unfinished} claimed job${o.unfinished===1?'':'s'} ${status==='running'?'awaiting results':o.unfinished===1?'has no final result recorded':'have no final result recorded'}`].filter(Boolean);
+  const results = [o.triaged && `${o.triaged} evidence review${o.triaged===1?'':'s'} saved for human review`, o.applied && `${o.applied} application${o.applied===1?'':'s'} reported submitted`, o.emailed && `${o.emailed} email${o.emailed===1?'':'s'} sent`, o.added && `${o.added} new role${o.added===1?'':'s'} added`, o.cyber && `${o.cyber} cyber report${o.cyber===1?'':'s'} recorded`, o.blocked && `${o.blocked} need review`, o.failed && `${o.failed} failed attempt${o.failed===1?'':'s'}`, o.skipped && `${o.skipped} skipped`, o.unfinished && `${o.unfinished} claimed job${o.unfinished===1?'':'s'} ${status==='running'?'awaiting results':o.unfinished===1?'has no final result recorded':'have no final result recorded'}`].filter(Boolean);
   if (results.length) return results.join(" · ") + (status === "failed" ? " · process failed" : "");
   if (status === "running") return o.claimed ? `${o.claimed} jobs claimed; no result reported yet` : "Running; no work result reported yet";
   if (status === "queued") return "Waiting to start";

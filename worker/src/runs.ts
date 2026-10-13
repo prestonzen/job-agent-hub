@@ -177,7 +177,7 @@ async function attachOutcomes(env: Env, rows: RunRow[]): Promise<RunRow[]> {
   if (!rows.length) return rows;
   const { results } = await (await eventDb(env)).prepare("SELECT run_id, type, COUNT(*) AS n FROM events WHERE run_id IN (SELECT value FROM json_each(?)) GROUP BY run_id, type").bind(JSON.stringify(rows.map((r) => r.id))).all<{ run_id: number; type: string; n: number }>();
   const counts = new Map<number, RunOutcome>();
-  const keys: Record<string, keyof RunOutcome> = { applied: "applied", emailed: "emailed", added: "added", needs_human: "blocked", failed: "failed", skipped: "skipped", claimed: "claimed", cyber_report: "cyber" };
+  const keys: Record<string, keyof RunOutcome> = { applied: "applied", emailed: "emailed", added: "added", needs_human: "blocked", failed: "failed", skipped: "skipped", claimed: "claimed", cyber_report: "cyber", cyber_triage: "triaged" };
   for (const r of results) { const o = counts.get(r.run_id) ?? { ...EMPTY_OUTCOME }; if (keys[r.type]) o[keys[r.type]] += r.n; counts.set(r.run_id, o); }
   const { results: unfinished } = await (await eventDb(env)).prepare(`SELECT e.run_id,COUNT(DISTINCT e.task_id) AS n FROM events e
     WHERE e.type='claimed' AND e.run_id IN (SELECT value FROM json_each(?))
@@ -338,7 +338,7 @@ export async function finishRun(env: Env, id: number, runner: string, f: { exitC
     const result = await getRun(env, id);
     if (result.task === "diagnostic" && status === "succeeded") return;
     const o=result.outcome!;
-    const icon=status==='cancelled'?'⏹️':status==='failed'||o.blocked+o.failed+o.unfinished>0?'⚠️':o.applied+o.emailed+o.added+o.cyber>0?'✅':'ℹ️';
+    const icon=status==='cancelled'?'⏹️':status==='failed'||o.blocked+o.failed+o.unfinished>0?'⚠️':o.applied+o.emailed+o.added+o.cyber+o.triaged>0?'✅':'ℹ️';
     await notify(
       env,
       `${icon} Run #${id} <b>${esc(r.agent)}</b> (${esc(result.task)}) on ${esc(runner)} after ${mins} min\n${esc(result.summary ?? status)}`,

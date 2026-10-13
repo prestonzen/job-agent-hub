@@ -19,6 +19,9 @@ Reports are drafts only — Preston reviews before anything is submitted anywher
 
 import argparse
 import json
+import hashlib
+import re
+from pathlib import Path
 import sys
 import time
 import urllib.request
@@ -102,6 +105,19 @@ def main() -> int:
     a = p.parse_args()
 
     admin = open(ADMIN_FILE).read().strip()
+    if a.mode == "report":
+        if not a.log:
+            raise ValueError("--log is required: drafts need evidence")
+        path = Path(a.log)
+        evidence = re.sub(r'\x1b\[[0-9;]*m', '', path.read_text(errors="replace"))[:22000]
+        digest = hashlib.sha256((a.program+'\n'+path.name+'\n'+evidence).encode()).hexdigest()
+        payload = dict(sourceKey='artifact:'+digest,program=a.program,platform=a.platform,
+                       target=a.host,source='CT134:'+str(path),evidence=evidence,offlineOnly=True)
+        req=urllib.request.Request(HUB+'/api/admin/cyber',data=json.dumps(payload).encode(),
+              headers={'Authorization':'Bearer '+admin,'Content-Type':'application/json','User-Agent':'curl/8.5.0'})
+        with urllib.request.urlopen(req,timeout=30) as response:
+            print('[dispatch] durable evidence queue:',json.load(response))
+        return 0
     agents = [x.strip() for x in a.agents.split(",") if x.strip()]
     state_req = urllib.request.Request(HUB + "/api/admin/autopilot", headers={"Authorization": "Bearer " + admin, "User-Agent": "curl/8.5.0"})
     with urllib.request.urlopen(state_req, timeout=30) as response:

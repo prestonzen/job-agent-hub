@@ -107,8 +107,13 @@ export interface BountySummary {
   programs: BountyProgram[];
   recent: BountyEvent[];
   matrix: BountyEvent[];
+  cyber?: { enabled:boolean; counts: {evidence:number;pending:number;running:number;blocked:number;drafts:number;plausible:number;accepted:number;falsePositive:number;reviewed:number};
+    byAgent:{agent:string;completed:number;reviewed:number;plausible:number;accepted:number;falsePositive:number}[];
+    items:{id:number;program:string;platform:string;target:string;source:string;status:string;agent:string|null;run_id:number|null;verdict:string|null;result:string|null;review:string|null;feedback:string|null;detail:string|null}[] };
 }
 export const getBounty = () => request<BountySummary>("/api/admin/bounty");
+export const reviewCyberEvidence=(id:number,review:string,feedback:string)=>request(`/api/admin/cyber/${id}/review`,{method:'POST',body:JSON.stringify({review,feedback})});
+export const setCyberContinuous=(enabled:boolean)=>request('/api/admin/cyber/continuous',{method:'PUT',body:JSON.stringify({enabled})});
 
 // ---------- assisted queue ----------
 export interface AttemptLog { agent: string; at: string; outcome: string; note: string | null; log: string | null }

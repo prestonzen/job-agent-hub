@@ -1,0 +1,7 @@
+{
+  "taskEnvs": {"cyber": {"HERMES_HOME": "/home/agent/.hermes-cyber"}},
+  "taskModels": {"cyber": "qwen3-coder-next:latest"},
+  "taskHarnesses": {"cyber": "Hermes"},
+  "taskTimeoutMinutes": {"cyber": 60},
+  "notes": "Cyber profile uses local Ollama, 65536 context, compression threshold 0.8, eight protected recent turns. Clone existing MCP configuration and canonical runner agent identity. Preserve ComfyUI GPU gate and other task models. Continuous review stops when fresh evidence is exhausted."
+}

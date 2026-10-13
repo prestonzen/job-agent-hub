@@ -38,6 +38,7 @@ import { notify, setHubWebhook, telegramConfigured, webhookInfo } from "./telegr
 import { handleTelegramUpdate } from "./telegram-bot";
 import { getCodeRequest, requestCode, waitForCode } from "./codes";
 import { addBountyEvent, bountySummary, type BountyEventInput } from "./bounty";
+import { cyberTick, cyberSummary, enqueueCyber, getCyberWork, completeCyber, reviewCyber } from "./cyber";
 import { toPublicSummary } from "./sanitize";
 import type { Env, PublicSummary } from "./types";
 import { zadarmaGet } from "./zadarma";
@@ -166,7 +167,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       const b = await readJson<Parameters<typeof runnerHeartbeat>[1]>(request);
       if (!b.name) return json({ error: "name is required" }, 400);
       await runnerHeartbeat(env, b);
-      ctx.waitUntil(tick(env, () => sendDigest(env, url.origin).then(() => {})).catch((e) => console.error("schedule tick:", e)));
+      ctx.waitUntil(tick(env, () => sendDigest(env, url.origin).then(() => {})).then(()=>cyberTick(env)).catch((e) => console.error("work tick:", e)));
       // Autopilot: keep every ready agent working while it is Active.
       ctx.waitUntil(autopilotTick(env).then((n) => n && console.log("autopilot:", n)).catch((e) => console.error("autopilot tick:", e)));
       ctx.waitUntil(flushReplyNotifications(env).catch((e)=>console.error("reply delivery:",e)));
@@ -247,6 +248,9 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       return json({ ok: true, agent, ...(await logApplication(env, agent, newJob(await readJson(request)))) }, 201);
     }
 
+    const cyberWork = sub.match(/^\/cyber\/(\d+)(?:\/(complete))?$/);
+    if(cyberWork && method==='GET' && !cyberWork[2])return json(await getCyberWork(env,Number(cyberWork[1]),agent));
+    if(cyberWork && method==='POST' && cyberWork[2])return json(await completeCyber(env,Number(cyberWork[1]),agent,await readJson(request)));
     // Bug bounty lane: runner tooling and agents push program/scan/finding/report/payout events.
     if (sub === "/bounty" && method === "POST") {
       const b = await readJson<BountyEventInput>(request);
@@ -326,7 +330,15 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     }
 
     // Bug bounty lane: programs, scans, findings, reports, payouts.
-    if (path === "/api/admin/bounty" && method === "GET") return json(await bountySummary(env));
+    if (path === "/api/admin/bounty" && method === "GET") return json({...await bountySummary(env),cyber:await cyberSummary(env)});
+    if(path==='/api/admin/cyber' && method==='POST')return json(await enqueueCyber(env,await readJson(request)),201);
+    const cyberReview=path.match(/^\/api\/admin\/cyber\/(\d+)\/review$/);
+    if(cyberReview && method==='POST')return json(await reviewCyber(env,Number(cyberReview[1]),await readJson(request)));
+    if(path==='/api/admin/cyber/continuous' && method==='PUT'){
+      const b=await readJson<{enabled:boolean}>(request);
+      if(typeof b.enabled!=='boolean')return json({error:'enabled must be boolean'},400);
+      await setSetting(env,'cyber_continuous',b.enabled);return json({enabled:b.enabled});
+    }
 
     // Command center: queue + claims, agent activity and check-ins, per-agent totals.
     if (path === "/api/admin/hub" && method === "GET") {
