@@ -42,7 +42,7 @@ def main():
                 if not evidence.strip():
                     continue
                 digest = hashlib.sha256((p['program']+'\n'+f.name+'\n'+evidence).encode()).hexdigest()
-                provenance = json.dumps({k:v for k,v in p.items() if k in ('program','platform','url','scope','domains','targets','in_scope')})
+                provenance = json.dumps({k:v for k,v in p.items() if k in ('program','platform','url','assets','wildcards','automation')})
                 payload = dict(sourceKey='artifact:'+digest, program=p['program'],
                     platform=p.get('platform','unknown'), target='existing artifact batch',
                     source=f'CT134:{f} batch {i+1}; mtime={int(f.stat().st_mtime)}',offlineOnly=True,

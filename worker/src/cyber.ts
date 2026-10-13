@@ -67,7 +67,8 @@ export async function cyberSummary(env:Env) {
    SUM(review IN ('plausible','submitted','accepted')) AS plausible,SUM(review='accepted') AS accepted,
    SUM(review='false-positive') AS falsePositive FROM cyber_work WHERE status='completed' GROUP BY agent`).all()
  ]);
- return {enabled:!!await getSetting<boolean>(env,'cyber_continuous'),items:items.results,counts,byAgent:byAgent.results};
+ const zeroNulls=(row:Record<string,unknown>)=>Object.fromEntries(Object.entries(row).map(([key,value])=>[key,value??0]));
+ return {enabled:!!await getSetting<boolean>(env,'cyber_continuous'),items:items.results,counts:zeroNulls(counts??{}),byAgent:byAgent.results.map(zeroNulls)};
 }
 /** Runs are finite but dispatch continues each heartbeat. Empty evidence never launches busywork. */
 export async function cyberTick(env:Env):Promise<number> {
