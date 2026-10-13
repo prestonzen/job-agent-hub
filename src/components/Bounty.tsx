@@ -10,13 +10,13 @@ import { getBounty, reviewCyberEvidence, setCyberContinuous, type BountyEvent, t
 
 const SEV_ORDER = ["critical", "high", "medium", "low", "info"] as const;
 function EvidenceReview({item,onSaved}:{item:NonNullable<BountySummary['cyber']>['items'][number];onSaved:()=>void}){
- const [review,setReview]=useState(item.review??'plausible'),[feedback,setFeedback]=useState(item.feedback??''),[error,setError]=useState(''),[saving,setSaving]=useState(false);
+ const [review,setReview]=useState(item.review??''),[feedback,setFeedback]=useState(item.feedback??''),[error,setError]=useState(''),[saving,setSaving]=useState(false);
  return <details className="card"><summary>#{item.id} · {item.program} · {item.verdict??item.status}{item.review?` · reviewed: ${item.review}`:''}</summary>
   <p className="muted small">{item.agent??'Waiting for agent'} · {item.source} · {item.detail}</p>
   {item.result&&<pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere',maxHeight:400,overflow:'auto'}}>{item.result}</pre>}
-  {item.status==='completed'&&<div><label>Human outcome <select value={review} onChange={e=>setReview(e.target.value)}>{['plausible','false-positive','duplicate','submitted','accepted','rejected'].map(v=><option key={v}>{v}</option>)}</select></label>
+  {item.status==='completed'&&<div><label>Human outcome <select value={review} onChange={e=>setReview(e.target.value)}><option value="" disabled>Choose outcome</option>{['plausible','false-positive','duplicate','submitted','accepted','rejected'].map(v=><option key={v}>{v}</option>)}</select></label>
   <label>Evidence / feedback <textarea value={feedback} onChange={e=>setFeedback(e.target.value)} placeholder="Why this is plausible, refuted or accepted; include receipt for external outcomes" rows={3}/></label>
-  <button disabled={saving||!feedback.trim()} onClick={()=>{setSaving(true);void reviewCyberEvidence(item.id,review,feedback).then(onSaved).catch(e=>setError(e.message)).finally(()=>setSaving(false));}}>Save human review</button>{error&&<p className="notice">{error}</p>}</div>}
+  <button disabled={saving||!review||!feedback.trim()} onClick={()=>{setSaving(true);void reviewCyberEvidence(item.id,review,feedback).then(onSaved).catch(e=>setError(e.message)).finally(()=>setSaving(false));}}>Save human review</button>{error&&<p className="notice">{error}</p>}</div>}
  </details>;
 }
 
@@ -70,7 +70,8 @@ export default function Bounty() {
 
       {data.cyber&&<section className="card wide"><div className="card-head"><h2>Report quality & evidence queue</h2><label><input type="checkbox" checked={data.cyber.enabled} onChange={e=>{void setCyberContinuous(e.target.checked).then(()=>getBounty().then(setData)).catch(e=>setErr(e.message));}}/> Continuous review</label></div>
       <p className="muted small">Ollama reviews existing Dark Moon and scanner artifacts offline, then chooses draft, needs validation or reject. Human review determines plausibility; accepted means a recorded program acceptance. Fresh evidence is deduplicated; an empty queue waits.</p>
-      <section className="kpis"><Kpi label="Awaiting AI" value={data.cyber.counts.pending??0}/><Kpi label="Reviewing" value={data.cyber.counts.running??0}/><Kpi label="Human plausible" value={data.cyber.counts.plausible??0}/><Kpi label="Program accepted" value={data.cyber.counts.accepted??0}/><Kpi label="False positives" value={data.cyber.counts.falsePositive??0}/><Kpi label="Blocked" value={data.cyber.counts.blocked??0}/></section>
+      <section className="kpis"><Kpi label="Awaiting AI" value={data.cyber.counts.pending??0}/><Kpi label="Reviewing" value={data.cyber.counts.running??0}/><Kpi label="Human plausible" value={data.cyber.counts.plausible??0}/><Kpi label="Program accepted" value={data.cyber.counts.accepted??0}/><Kpi label="False positives" value={data.cyber.counts.falsePositive??0}/></section>
+      {data.cyber.counts.blocked>0&&<p className="notice">{data.cyber.counts.blocked} evidence batches need attention after unsuccessful attempts.</p>}
       {data.cyber.byAgent.length>0&&<table><thead><tr><th>Agent</th><th>Evidence reviewed</th><th>Human reviewed</th><th>Plausible</th><th>Accepted</th><th>False positives</th></tr></thead><tbody>{data.cyber.byAgent.map(a=><tr key={a.agent}><td>{a.agent}</td><td>{a.completed}</td><td>{a.reviewed}</td><td>{a.plausible}</td><td>{a.accepted}</td><td>{a.falsePositive}</td></tr>)}</tbody></table>}
       <details><summary>Evidence & human feedback ({data.cyber.counts.evidence??0})</summary>{data.cyber.items.map(item=><EvidenceReview key={item.id} item={item} onSaved={()=>{void getBounty().then(setData);}}/>)}</details></section>}
 
