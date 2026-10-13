@@ -101,87 +101,20 @@ export default function Analytics() {
       </Card>
 
       <Card title="Agent scorecard" className="wide">
-        <p className="muted small">Monthly $/app uses fixed subscriptions allocated by tracked monthly token usage, then divided by reported applications. Cyber and sourcing share the bill by their own usage. Figures are provisional where usage is missing or work occurred outside this hub.</p>
-        <div className="table-scroll">
-          <table className="score">
-            <thead>
-              <tr>
-                <th>Agent</th>
-                <th className="r">Applied</th>
-                <th className="r">Claimed</th>
-                <th className="r" title="Marked needs-a-person">Parked</th>
-                <th className="r">Skipped</th>
-                <th className="r">Failed</th>
-                <th>Success</th>
-                <th className="r">Median apply</th>
-                <th>Runs</th>
-                <th className="r">Avg run</th>
-                <th className="r">Run time</th>
-                <th className="r" title="Fixed monthly plan for subscription agents; otherwise CLI-reported charges">Plan / charges</th>
-                <th className="r" title="Current Tokyo calendar month: application allocation ÷ distinct reported submissions">Month $/app</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.byAgent.map((a) => {
-                const done = a.runsOk + a.runsFailed;
-                return (
-                  <tr key={a.agent}>
-                    <td className="who">
-                      <i className="dot" style={{ background: agentColor(a.agent) }} aria-hidden="true" />
-                      {agentLabel(a.agent)}
-                    </td>
-                    <td className="r">
-                      <b>{a.applied}</b>
-                    </td>
-                    <td className="r">{a.claimed}</td>
-                    <td className="r">{a.needsHuman}</td>
-                    <td className="r">{a.skipped}</td>
-                    <td className="r">{a.failed}</td>
-                    <td>
-                      <span className="mini">
-                        <span className="mini-track">
-                          <span style={{ width: `${(a.successRate ?? 0) * 100}%`, background: agentColor(a.agent) }} />
-                        </span>
-                        <span className="mini-n">{pct(a.successRate)}</span>
-                      </span>
-                    </td>
-                    <td className="r">{mins(a.medianMinToApply)}</td>
-                    <td>
-                      {done ? (
-                        <span className="mini" title={`${a.runsOk} processes completed, ${a.runsFailed} processes failed; these are not application outcomes`}>
-                          <span className="mini-track">
-                            <span style={{ width: `${(a.runsOk / done) * 100}%`, background: "var(--accent)" }} />
-                          </span>
-                          <span className="mini-n">
-                            {a.runsOk}/{done}
-                          </span>
-                        </span>
-                      ) : (
-                        <span className="muted">—</span>
-                      )}
-                    </td>
-                    <td className="r">{mins(a.avgRunMin)}</td>
-                    <td className="r">{a.runMinutes ? `${(a.runMinutes / 60).toFixed(1)} h` : "—"}</td>
-                    <td className="r" title={(a.tokens ?? 0) ? `${(a.tokens ?? 0).toLocaleString()} tokens · tracked usage` : "Usage missing; no spend inferred"}>
-                      {a.monthlyPlanUsd!=null?`$${a.monthlyPlanUsd}/mo`:(a.costUsd??0)?`$${a.costUsd.toFixed(2)}`:'—'}
-                    </td>
-                    <td className="r" title={`${a.billingMonth}: ${a.costBasis} Usage coverage ${a.monthlyTokenCoverage}`}>
-                      {a.monthlyCostPerApplicationUsd!=null?`~$${a.monthlyCostPerApplicationUsd.toFixed(2)}`:(a.monthlyApplications??0)===0?'No submissions':'Usage missing'}
-                      {a.monthlyPlanUsd!=null&&<div className="sub">${a.monthlyPlanUsd}/month · {a.monthlyApplications} apps<br/>{a.monthlyTokenCoverage} with usage</div>}
-                    </td>
-                  </tr>
-                );
-              })}
-              {!data.byAgent.length && (
-                <tr>
-                  <td colSpan={13} className="muted">
-                    No agent activity in this window yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <p className="muted small">Monthly $/app allocates the fixed subscription by tracked monthly token usage, then divides by reported applications. Cyber and sourcing share the bill by their own usage. Missing or outside-hub usage makes these figures provisional.</p>
+        <table className="score"><thead><tr><th>Agent</th><th>Reported apps</th><th>Success</th><th>Plan / charges</th><th>Month $/app</th><th>Details</th></tr></thead><tbody>
+          {data.byAgent.map(a=><tr key={a.agent}>
+            <td className="who"><i className="dot" style={{background:agentColor(a.agent)}} aria-hidden="true"/>{agentLabel(a.agent)}</td>
+            <td>{a.applied}</td><td>{pct(a.successRate)}</td>
+            <td>{a.monthlyPlanUsd!=null?`$${a.monthlyPlanUsd}/mo`:(a.costUsd??0)?`$${a.costUsd.toFixed(2)} reported`:'—'}</td>
+            <td title={`${a.billingMonth}: ${a.costBasis}`}>
+              {a.monthlyCostPerApplicationUsd!=null?`~$${a.monthlyCostPerApplicationUsd.toFixed(2)}`:(a.monthlyApplications??0)===0?'No submissions':'Usage missing'}
+              {a.monthlyPlanUsd!=null&&<div className="sub">{a.billingMonth} · {a.monthlyApplications} submissions<br/>Usage: {a.monthlyTokenCoverage}</div>}
+            </td>
+            <td><details><summary>{agentLabel(a.agent)} run details</summary><div className="small">Claimed {a.claimed} · review {a.needsHuman} · skipped {a.skipped} · failed {a.failed}<br/>Median apply: {mins(a.medianMinToApply)}<br/>Processes: {a.runsOk}/{a.runs} completed · average {mins(a.avgRunMin)} · {(a.runMinutes/60).toFixed(1)} h<br/>{(a.monthlyTokens??0).toLocaleString()} tracked monthly tokens</div></details></td>
+          </tr>)}
+          {!data.byAgent.length&&<tr><td colSpan={6}>No recorded agent work in this window.</td></tr>}
+        </tbody></table>
       </Card>
 
       <div className="grid two">
