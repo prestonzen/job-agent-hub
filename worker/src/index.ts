@@ -256,7 +256,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
 
     const cyberWork = sub.match(/^\/cyber\/(\d+)(?:\/(complete))?$/);
     if(cyberWork && method==='GET' && !cyberWork[2])return json(await getCyberWork(env,Number(cyberWork[1]),agent));
-    if(cyberWork && method==='POST' && cyberWork[2])return json(await completeCyber(env,Number(cyberWork[1]),agent,await readJson(request)));
+    if(cyberWork && method==='POST' && cyberWork[2])return json(await completeCyber(env,Number(cyberWork[1]),agent,await readJson(request),identity));
     // Bug bounty lane: runner tooling and agents push program/scan/finding/report/payout events.
     if (sub === "/bounty" && method === "POST") {
       const b = await readJson<BountyEventInput>(request);

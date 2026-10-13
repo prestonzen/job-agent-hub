@@ -11,7 +11,7 @@ import { eligibleAgents, EMPTY_OUTCOME, outcomeSummary, taskSwitches } from "../
 import { inLane } from "../worker/src/lanes";
 import type { Env, Job } from "../worker/src/types";
 import { resolveIdentity, identityId, agentName } from "../worker/src/auth";
-import { cyberDb } from "../worker/src/cyber";
+import { cyberDb, completeCyber } from "../worker/src/cyber";
 import { logApplication } from "../worker/src/jobs";
 
 const sqlite = new DatabaseSync(":memory:");
@@ -174,4 +174,18 @@ test("logApplication tags the applied event with the identity",async()=>{
   await logApplication(menv,"claude",{company:"Acme",role:"AI Eng",platform:"Ashby"} as any,"roman/claude/hermes" as any);
   const row:any=sqlite.prepare("SELECT agent, identity, type FROM events WHERE type='applied' ORDER BY id DESC LIMIT 1").get();
   assert.equal(row.agent,"claude");assert.equal(row.identity,"roman/claude/hermes");
+});
+
+// --- cyber pass credited to identity (Task 5) ---
+test("completeCyber stamps the reviewing identity on the pass",async()=>{
+  await cyberDb(env);
+  const run=await createRun(env,{agent:"codex",kind:"prompt",task:"cyber",prompt:"cyber review"} as any);
+  sqlite.exec(`UPDATE runs SET status='running' WHERE id=${run.id}`);
+  sqlite.prepare("INSERT INTO cyber_work (source_key,created_at,program,platform,target,source,evidence,status,run_id,agent,pass_agents) VALUES ('k5',1,'P','H','t','s','ev','running',?,'codex','[\"codex\"]')").run(run.id);
+  const wid:any=sqlite.prepare("SELECT id FROM cyber_work WHERE source_key='k5'").get();
+  sqlite.prepare("INSERT INTO cyber_review_passes (work_id,sequence,agent,run_id,status,created_at) VALUES (?,1,'codex',?,'running',1)").run(wid.id,run.id);
+  const result="Observed no trust boundary violation; the response was a public asset returning HTTP 200 with no sensitive data, so there is no exploitable impact.";
+  await completeCyber(env,wid.id,"codex",{verdict:"reject",result},"roman/codex/hermes" as any);
+  const pass:any=sqlite.prepare("SELECT identity FROM cyber_review_passes WHERE work_id=? AND sequence=1").get(wid.id);
+  assert.equal(pass.identity,"roman/codex/hermes");
 });

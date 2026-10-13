@@ -3,6 +3,7 @@ import { HttpError } from './clickup';
 import { cancelRun, createRun, getRun, listRunners, listRuns } from './runs';
 import { eligibleAgents, taskSwitches, workSettings } from './work';
 import { esc, notify } from './telegram';
+import { agentNames } from './auth';
 import type { Env } from './types';
 
 const SCHEMA = `CREATE TABLE IF NOT EXISTS cyber_work (
@@ -39,7 +40,8 @@ export async function enqueueCyber(env: Env, body: Record<string,unknown>) {
  if(body.offlineOnly!==true)throw new HttpError(400,'This queue only reviews existing evidence offline; offlineOnly must be true');
  const d=await cyberDb(env);
  const settings=await workSettings(env);
- const passAgents=['ollama','kimi','claude'].filter(a=>settings.agents?.[a]!==false&&taskSwitches(settings,a).cyber);
+ const configured=agentNames(env).filter(a=>settings.agents?.[a]!==false&&taskSwitches(settings,a).cyber);
+ const passAgents=configured.length?configured:['ollama','kimi','claude'].filter(a=>settings.agents?.[a]!==false&&taskSwitches(settings,a).cyber);
  await d.prepare('INSERT OR IGNORE INTO cyber_work (source_key,created_at,program,platform,target,source,evidence,pass_agents) VALUES (?,?,?,?,?,?,?,?)').bind(key,Date.now(),program,platform,target,source,evidence,JSON.stringify(passAgents)).run();
  return d.prepare('SELECT id,status FROM cyber_work WHERE source_key=?').bind(key).first();
 }
@@ -53,7 +55,7 @@ export async function getCyberWork(env: Env, id:number, agent:string) {
  ]);
  return {work:row,reviewedFeedback:feedback.results,priorPasses:passes.results};
 }
-export async function completeCyber(env: Env, id:number, agent:string, body:Record<string,unknown>) {
+export async function completeCyber(env: Env, id:number, agent:string, body:Record<string,unknown>, identity:string|null=null) {
  const verdict=text(body.verdict,30), result=text(body.result,20000);
  if(!(VERDICTS as readonly string[]).includes(verdict)||result.length<80)throw new HttpError(400,'verdict must be draft, needs-validation or reject; result must explain evidence and impact');
  if(verdict==='draft'&&(!/reproduc|steps to/i.test(result)||!/impact/i.test(result)||!/remediat/i.test(result)))throw new HttpError(400,'A report draft must include reproduction, impact and remediation before human review');
@@ -68,15 +70,15 @@ export async function completeCyber(env: Env, id:number, agent:string, body:Reco
  const pass=await d.prepare("SELECT sequence FROM cyber_review_passes WHERE work_id=? AND run_id=? AND agent=? AND status='running'").bind(id,row.run_id,agent).first<{sequence:number}>();
  if(!pass)throw new HttpError(409,'No active review pass owns this run');
  const passDetail=verdict==='draft'?'Report draft proposed':verdict==='needs-validation'?'Further validation proposed':'Evidence rejected';
- const savedPass=await d.prepare("UPDATE cyber_review_passes SET status='completed',verdict=?,result=?,detail=?,completed_at=? WHERE work_id=? AND sequence=? AND run_id=? AND status='running'").bind(verdict,result,passDetail,Date.now(),id,pass.sequence,row.run_id).run();
+ const savedPass=await d.prepare("UPDATE cyber_review_passes SET status='completed',verdict=?,result=?,detail=?,completed_at=?,identity=? WHERE work_id=? AND sequence=? AND run_id=? AND status='running'").bind(verdict,result,passDetail,Date.now(),identity,id,pass.sequence,row.run_id).run();
  if(savedPass.meta.changes!==1)throw new HttpError(409,'Review pass ownership changed');
  const previous=await d.prepare("SELECT agent FROM cyber_review_passes WHERE work_id=? AND status='completed'").bind(id).all<{agent:string}>();
  const completedAgents=new Set(previous.results.map(p=>p.agent));
  const complete=plan.every(a=>completedAgents.has(a));
  const detail=complete?(verdict==='draft'?'Multi-model report draft awaiting human review':verdict==='needs-validation'?'Multi-model review recommends further validation':'Multi-model review rejected evidence'):`Pass ${pass.sequence}/${plan.length} complete; waiting for remaining models`;
- const saved=await d.prepare("UPDATE cyber_work SET status=?,run_id=NULL,agent=CASE WHEN ?='completed' THEN ? ELSE NULL END,verdict=?,result=?,detail=? WHERE id=? AND status='running' AND run_id=?").bind(complete?'completed':'pending',complete?'completed':'pending',agent,complete?verdict:null,complete?result:null,detail,id,row.run_id).run();
+ const saved=await d.prepare("UPDATE cyber_work SET status=?,run_id=NULL,agent=CASE WHEN ?='completed' THEN ? ELSE NULL END,verdict=?,result=?,detail=?,identity=? WHERE id=? AND status='running' AND run_id=?").bind(complete?'completed':'pending',complete?'completed':'pending',agent,complete?verdict:null,complete?result:null,detail,identity,id,row.run_id).run();
  if(saved.meta.changes!==1)throw new HttpError(409,'Work ownership changed');
- await logEvent(env,{agent,type:'cyber_triage',message:`Evidence #${id}: ${verdict}; ${detail.toLowerCase()}`});
+ await logEvent(env,{agent,type:'cyber_triage',message:`Evidence #${id}: ${verdict}; ${detail.toLowerCase()}`,identity});
  if(complete&&verdict==='draft'){
   const error=await notify(env,`📝 <b>Bug bounty report draft ready for review</b>\n${esc(row.program)} · evidence #${id}\nReview the full report before any submission: https://jobhunter.prestonzen.com/admin#bounty`);
   if(error)console.error('cyber report draft notify:',error);
