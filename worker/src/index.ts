@@ -167,9 +167,13 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       const b = await readJson<Parameters<typeof runnerHeartbeat>[1]>(request);
       if (!b.name) return json({ error: "name is required" }, 400);
       await runnerHeartbeat(env, b);
-      ctx.waitUntil(tick(env, () => sendDigest(env, url.origin).then(() => {})).then(()=>cyberTick(env)).catch((e) => console.error("work tick:", e)));
-      // Autopilot: keep every ready agent working while it is Active.
-      ctx.waitUntil(autopilotTick(env).then((n) => n && console.log("autopilot:", n)).catch((e) => console.error("autopilot tick:", e)));
+      // Reserve scheduled sourcing first, then any eligible email application, then cyber evidence.
+      // One ordered dispatch avoids the email and cyber ticks racing for the same agent.
+      ctx.waitUntil((async () => {
+        await tick(env, () => sendDigest(env, url.origin).then(() => {})).catch((e) => console.error("schedule tick:", e));
+        await autopilotTick(env).then((n) => n && console.log("autopilot:", n)).catch((e) => console.error("autopilot tick:", e));
+        await cyberTick(env).then((n) => n && console.log("cyber tick:", n)).catch((e) => console.error("cyber tick:", e));
+      })());
       ctx.waitUntil(flushReplyNotifications(env).catch((e)=>console.error("reply delivery:",e)));
       // Replay ClickUp writes that were deferred by a rate limit or outage.
       ctx.waitUntil(

@@ -16,6 +16,7 @@ Build order: reply-delivery, email-sourcing, cyber-scoring, application-cost, ta
 ## Scope and acceptance
 
 - Prefer public employer-authorized email routes. Reddit and accessible Discord hiring posts are leads: verify employer, freshness, role and explicitly supplied address. Never guess emails or send community DMs. Preserve provenance and advertised pay; use existing deduplication.
+- The twice-daily sourcing check now adds only roles with an explicitly advertised application email. A completed zero-addition search is recorded as zero, preserving cyber capacity instead of retrying it as a failure. Runner heartbeat dispatch orders due sourcing, eligible email applications, then cyber evidence; ATS-only jobs stay in the tracker for manual or separately enabled work.
 - Keep twice-daily sourcing and disabled-agent preferences. Claude remains off; its cyber harness configuration does not authorize a paid run or new security targets.
 - Treat platform onboarding as actionable separately from interviews. Record Telegram message ID, delivery errors and attempts. Retry definite failures; an uncertain network delivery needs review instead of blind duplication.
 - Cyber scores are a transparent 0–100 rubric: verdict 50, severity 20, validation 20, prioritization 10. Equal weight per scenario; use the latest attempt per agent/scenario. Incomplete scenario coverage is provisional. Unknown/malformed scenarios are visibly unscored. Benchmarks are separate from real bounty outcomes.
