@@ -1,5 +1,5 @@
 [Unit]
-Description=Bug bounty daily: refresh scope queue + parallel low-noise scans
+Description=Bug bounty daily: refresh policy-gated scope queue + sequential low-noise scans
 After=docker.service
 
 [Service]

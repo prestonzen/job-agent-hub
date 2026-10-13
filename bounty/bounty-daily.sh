@@ -2,16 +2,15 @@
 # bounty-daily.sh — daily bounty lane routine for CT 134.
 #
 # 1. Refresh the program queue from bounty-targets-data (hourly-updated upstream).
-# 2. Pick the top N not-recently-scanned programs and scan them IN PARALLEL
-#    (default 3 at a time — watch T-Mobile uplink; each scan is rate-limited internally).
+# 2. Pick the top N not-recently-scanned programs and scan them sequentially at one
+#    request per second to keep traffic low and policy limits easy to honor.
 # 3. Each scan posts its summary to the hub Bug bounty tab.
 #
 # Run by systemd timer (bounty-daily.timer) or by hand:
-#   ./bounty-daily.sh            # 3 parallel scans
-#   PARALLEL=5 TOP=6 ./bounty-daily.sh
+#   ./bounty-daily.sh            # 6 sequential scans
+#   TOP=6 ./bounty-daily.sh
 
 set -u
-PARALLEL=${PARALLEL:-3}
 TOP=${TOP:-6}
 LOG=/root/bounty-daily.log
 
@@ -40,11 +39,13 @@ print("\n".join(picked))
 EOF
 
 N=$(grep -c . /tmp/bounty-batch.txt || true)
-echo "[2/2] scanning $N programs, $PARALLEL at a time" | tee -a "$LOG"
+echo "[2/2] scanning $N programs sequentially" | tee -a "$LOG"
 cat /tmp/bounty-batch.txt | tee -a "$LOG" | sed 's/^/  /'
 
-export -f 2>/dev/null || true
-cat /tmp/bounty-batch.txt | xargs -P "$PARALLEL" -I {} sh -c 'bash /opt/bounty/bounty-scan.sh "{}" >> /root/bounty-daily.log 2>&1'
+while IFS= read -r PROGRAM; do
+  [ -n "$PROGRAM" ] || continue
+  bash /opt/bounty/bounty-scan.sh "$PROGRAM" >> "$LOG" 2>&1
+done < /tmp/bounty-batch.txt
 
 echo "=== done $(date -u) ===" >> "$LOG"
 tail -5 "$LOG"

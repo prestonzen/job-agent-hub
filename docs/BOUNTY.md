@@ -1,9 +1,9 @@
 # Bug bounty lane
 
 Status 2026-10-13: Dark-Moon passed a local OWASP Juice Shop lab smoke test. The CT 134
-`bounty-daily.timer` is **disabled** while program-specific automation permission, scope and
-rate limits are reviewed. Historical scanner events are leads, not validated findings or
-accepted reports. Offline review of existing artifacts can continue.
+`bounty-daily.timer` is enabled after deployment and dry-run verification of the explicit-policy
+blacklist and strict asset-scope filter. Its next run is scheduled for 2026-10-14 05:17 UTC.
+Historical scanner events are leads, not validated findings or accepted reports.
 
 Part of the Job Agent Hub's "find work of all types" mandate: bounty payouts count as income
 alongside jobs, contracts and freelance platforms. ClickUp parent task: "HackerOne / Bugcrowd"
@@ -32,37 +32,40 @@ pointing the stack at a real program:
 ssh root@kloud "pct exec 134 -- sh /opt/darkmoon-smoke-test.sh"
 ```
 
-## Scope discipline (hard rules)
+## Scope discipline
 
-1. **Only scan assets explicitly in scope** of a program Preston is enrolled in on
-   HackerOne/Bugcrowd, and only programs whose policy permits automated scanning. Read the
-   policy first; paste the scope + automation clause into the task before running anything.
-2. Honor per-program rate limits; default to `NOISE=low` / `--quick` until a program proves tolerant.
+1. **Only scan assets explicitly in scope** in the public program catalog, honoring its
+   out-of-scope exceptions. Wildcards may be enumerated; exact hosts and URLs do not expand.
+2. Honor stated rate limits; default to one request per second. Never run DoS, brute-force,
+   or intrusive templates.
 3. No intrusive nuclei templates (default), no DoS classes, no credential brute-forcing beyond
    what the policy allows.
 4. Findings are reported through the platform's official channel only; FORMAT=h1 for HackerOne reports.
 5. Every run logs to the ClickUp task: target, scope source URL, tool, start/end, findings count.
 
-## Pipeline and current scan hold
+## Pipeline and policy gate
 
-1. **Queue** — `bounty/scope-fetch.py` pulls public program catalogs and checks available policy
-   pages. Only an explicit automation-allowed classification reaches `/opt/bounty/queue.json`;
-   `--no-policy-check` cannot add unchecked programs. Public catalog membership alone does not
-   prove permission. A human must still verify the *current* policy, exact assets, exclusions,
-   account enrollment, identification requirements and permitted scan rate before reactivation.
-2. **Daily scans, paused** — `bounty-daily.timer` (05:17 UTC) would run `bounty/bounty-daily.sh`: refresh the
-   queue, scans the top 6 not-recently-scanned programs, 3 in parallel (`PARALLEL`/`TOP` tunable).
+1. **Queue** — `bounty/scope-fetch.py` pulls the four public catalogs and checks policy pages for
+   every paying program with scannable in-scope web assets before ranking the top 60. A seven-day
+   cache avoids redundant reads. Only clauses explicitly
+   prohibiting automated/AI scanning (including human-supervision or prior-approval requirements
+   the unattended scanner cannot satisfy) enter `/opt/bounty/policy-blacklist.json`. Everything
+   else follows the requested default-allow rule and may enter `/opt/bounty/queue.json`; a rule
+   that rejects scanner-only reports is not treated as a scan ban. `policy-audit.json` stores the
+   latest evidence, check time, source URL and content hash. The classifier is local text matching;
+   it does not currently use Ollama, and policy wording outside its patterns can be missed.
+2. **Daily scans** — `bounty-daily.timer` (05:17 UTC) runs `bounty/bounty-daily.sh`: refresh the
+   queue, then scan up to 6 not-recently-scanned programs sequentially (`TOP` tunable).
    Each scan (`bounty/bounty-scan.sh`): subfinder → httpx → nuclei (non-intrusive, rate-limited),
    posts a summary event to the hub (`POST /api/admin/bounty-events`) → admin
    **Bug bounty** tab. CT 134 authenticates as a service; these events are attributed to
    `bounty-pipeline`, not an AI agent.
    Programs re-scan at most every 7 days. The daily script refuses a failed queue refresh; the
-   scanner refuses rows without `automation=allowed` and an exact match in CT 134's
-   `/opt/bounty/approved-programs.json` for program, platform, policy URL and full asset list.
-   Each approval records `automation_allowed`, `reviewed_at`, `scope_note`, and `max_rps`
-   (integer 1–30); that cap is passed to httpx and nuclei. The approval file starts absent,
-   so scans fail closed. These are backstops, not a substitute for manual policy review.
-   Keep the timer disabled until per-program requirements are implemented and verified.
+   scanner refuses rows that are explicitly blacklisted or not marked `default-allow`. It applies
+   the program's exact in-scope and out-of-scope rules again before probing targets, httpx results,
+   historical URLs and nuclei inputs. Each tool is limited to one request per second. These checks
+   cannot detect every policy nuance or every program-specific requirement; blacklist additions
+   should be reviewed when policy pages change.
 3. **Validation + report** — anything above info level goes to Dark-Moon for exploitation-proof
    and report drafting. One master report template internally (severity, summary, repro steps,
    exact commands + raw output, impact, remediation); rendered per platform on submit
@@ -90,11 +93,11 @@ calibration data and limits of the current results.
 - [x] Program-scope fetcher: built on `arkadiyt/bounty-targets-data` (hourly-updated JSON per
       platform: `data/hackerone_data.json`, `bugcrowd_data.json`, `intigriti_data.json`,
       `yeswehack_data.json` — validated 2026-10-11). `bounty/scope-fetch.py` normalizes all 4
-      schemas, drops automation-banned programs via policy check, merges cross-platform dupes,
-      ranks by attack surface → `/opt/bounty/queue.json`.
-- [ ] Re-enable scoped scans after verifying each program's current automation clause, assets,
-      exclusions, identification and rate limits, and encoding those limits in the scanner.
-- [x] Low-noise scan plumbing and timer created; timer disabled 2026-10-13 pending the above.
+      schemas, checks program policies against the explicit-ban patterns, records its blacklist
+      and audit, merges cross-platform dupes, then ranks remaining programs → `/opt/bounty/queue.json`.
+- [x] Explicit-policy gate and strict asset scope deployed/tested on CT 134 on 2026-10-13;
+      daily timer enabled. Test runs did not send target requests.
+- [x] Low-noise scan plumbing and timer created; only report drafts are sent for human review.
 - [ ] Per-platform report renderers for Bugcrowd / Intigriti / YesWeHack (Dark-Moon emits H1
       markdown today; one master template internally, render at submission time).
 - [ ] Prioritize queue by historical payout speed (H1 dumps carry avg time-to-bounty stats).

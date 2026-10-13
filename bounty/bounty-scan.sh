@@ -9,8 +9,8 @@
 # non-intrusive). Results go to /root/bbscans/<program>/ and a summary event is posted
 # to the hub (POST /api/agent/bounty), which feeds the admin Bug bounty tab.
 #
-# Scope discipline: a queue row plus a manually reviewed, exact program approval are
-# required. The timer is disabled until policy and scope controls have been verified.
+# Scope discipline: only default-allow queue rows are scanned, and each active target is
+# checked against the row's declared in-scope/out-of-scope assets before httpx or nuclei.
 
 set -u
 QUEUE=/opt/bounty/queue.json
@@ -23,7 +23,29 @@ IMAGE=chvancooten/bugbountyscanner:latest
 SCANNED=/opt/bounty/scanned.log
 touch "$SCANNED"
 
-NAME="${1:-}"
+DRY_RUN=0
+if [ "${1:-}" = "--dry-run" ]; then
+  DRY_RUN=1
+  NAME="${2:-}"
+else
+  NAME="${1:-}"
+fi
+if [ -n "$NAME" ] && [ -f /opt/bounty/policy-blacklist.json ]; then
+  BLOCKED=$(python3 - "/opt/bounty/policy-blacklist.json" "$NAME" <<'EOF'
+import json, sys
+try:
+    programs = json.load(open(sys.argv[1])).get("programs", [])
+except Exception:
+    programs = []
+name = sys.argv[2].strip().casefold()
+for item in programs:
+    if item.get("program", "").strip().casefold() == name:
+        print(item.get("evidence") or "explicit automated-scanning prohibition")
+        break
+EOF
+  )
+  [ -z "$BLOCKED" ] || { echo "program is explicitly policy-blacklisted: $BLOCKED"; exit 3; }
+fi
 ROW=$(python3 - "$QUEUE" "$NAME" "$SCANNED" <<'EOF'
 import json, re, sys, time
 q = json.load(open(sys.argv[1]))["programs"]
@@ -47,22 +69,8 @@ print(json.dumps(row) if row else "NOTFOUND")
 EOF
 )
 [ "$ROW" = "NOTFOUND" ] && { echo "program not found in queue"; exit 1; }
-echo "$ROW" | python3 -c "import json,sys; sys.exit(0 if json.load(sys.stdin).get('automation') == 'allowed' else 1)" || { echo "automated scanning not explicitly allowed for this program; refusing scan"; exit 3; }
-SCAN_RPS=$(echo "$ROW" | python3 -c '
-import json,sys
-from pathlib import Path
-row=json.load(sys.stdin)
-path=Path("/opt/bounty/approved-programs.json")
-if not path.is_file(): sys.exit(1)
-try: approvals=json.loads(path.read_text())
-except (ValueError,OSError): sys.exit(1)
-if not isinstance(approvals,list): sys.exit(1)
-matches=[a for a in approvals if isinstance(a,dict) and a.get("program")==row.get("program") and a.get("platform")==row.get("platform") and a.get("policy_url")==row.get("url") and a.get("automation_allowed") is True and a.get("reviewed_at") and a.get("scope_note") and sorted(a.get("approved_assets",[]))==sorted(row.get("assets",[]))]
-if len(matches)!=1: sys.exit(1)
-rps=matches[0].get("max_rps")
-if type(rps) is not int or not 1<=rps<=30: sys.exit(1)
-print(rps)
-') || { echo "missing exact manual policy/scope approval; refusing scan"; exit 3; }
+echo "$ROW" | python3 -c "import json,sys; sys.exit(0 if json.load(sys.stdin).get('automation') == 'default-allow' else 1)" || { echo "program is explicitly policy-blacklisted; refusing scan"; exit 3; }
+SCAN_RPS=1
 
 PROGRAM=$(echo "$ROW" | python3 -c "import json,sys; print(json.load(sys.stdin)['program'])")
 PLATFORM=$(echo "$ROW" | python3 -c "import json,sys; print(json.load(sys.stdin)['platform'])")
@@ -77,37 +85,71 @@ if [ -z "$NAME" ] && grep -q "^$SAFE|" "$SCANNED"; then
 fi
 mkdir -p "$OUT"
 
-# Apex domains: strip '*.' from wildcards, keep plain in-scope domains, cap at 10.
-echo "$ROW" | python3 -c "
-import json, sys
-row = json.load(sys.stdin)
-apex = set()
-for a in row['wildcards'] + row['assets']:
-    a = a.strip().lower()
-    if a.startswith('*.'):
-        a = a[2:]
-    a = a.lstrip('*')
-    if '.' in a and ' ' not in a and '/' not in a:
-        apex.add(a)
-print('\n'.join(sorted(apex)[:10]))
-" > "$OUT/apex.txt"
-DOMAINS=$(wc -l < "$OUT/apex.txt")
-echo "program: $PROGRAM ($PLATFORM) — $DOMAINS apex domains"
-cat "$OUT/apex.txt" | sed 's/^/  /'
-[ "$DOMAINS" = "0" ] && { echo "no scannable apex domains"; exit 1; }
+# Build strict scan seeds from only the catalog's explicit scope entries. Wildcards may
+# be enumerated; exact hosts and URLs are scanned as listed, without subdomain expansion.
+printf '%s' "$ROW" | PYTHONPATH=/opt/bounty OUTDIR="$OUT" python3 -c '
+import json,sys
+from scope import scope_rules
+row=json.load(sys.stdin); rules=scope_rules(row.get("assets",[]), row.get("out_of_scope",[]))
+import os
+out=os.environ["OUTDIR"]
+with open(out+"/scope.json","w") as f: json.dump(rules,f)
+wild=sorted({host for kind,host,path in rules["in"] if kind=="wildcard-host"})
+direct=sorted({host if kind=="host" else "https://"+host+path for kind,host,path in rules["in"] if kind in ("host","url")})
+open(out+"/wildcards.txt","w").write("\n".join(wild)+("\n" if wild else ""))
+open(out+"/direct.txt","w").write("\n".join(direct)+("\n" if direct else ""))
+' || { echo "could not parse program scope"; exit 3; }
+DOMAINS=$(wc -l < "$OUT/wildcards.txt")
+DIRECT=$(wc -l < "$OUT/direct.txt")
+echo "program: $PROGRAM ($PLATFORM) — $DOMAINS wildcard domains, $DIRECT exact targets"
+cat "$OUT/wildcards.txt" "$OUT/direct.txt" | sed 's/^/  /'
+[ "$DOMAINS" = "0" ] && [ "$DIRECT" = "0" ] && { echo "no scannable explicit in-scope targets"; exit 1; }
+if [ "$DRY_RUN" = "1" ]; then
+  echo "dry run: policy gate and target scope parsed; no active requests sent"
+  exit 0
+fi
 
 # Recon inside the scanner image.
-docker run --rm -e SCAN_RPS="$SCAN_RPS" -v "$OUT":/out "$IMAGE" /bin/bash -c '
+docker run --rm -e SCAN_RPS="$SCAN_RPS" -v "$OUT":/out -v /opt/bounty/scope.py:/scope.py:ro "$IMAGE" /bin/bash -c '
   set -u
   nuclei -update-templates > /dev/null 2>&1 || true   # fresh CVE templates every run
-  subfinder -silent -dL /out/apex.txt -o /out/subs.txt 2>/dev/null
-  cat /out/apex.txt >> /out/subs.txt
-  sort -u /out/subs.txt -o /out/subs.txt
-  httpx -silent -l /out/subs.txt -status-code -title -tech-detect -rl "$SCAN_RPS" -o /out/live.txt 2>/dev/null
+  : > /out/urls.txt
+  touch /out/subs.raw.txt
+  if [ -s /out/wildcards.txt ]; then subfinder -silent -dL /out/wildcards.txt -o /out/subs.raw.txt 2>/dev/null || true; fi
+  cat /out/wildcards.txt /out/direct.txt >> /out/subs.raw.txt
+  sort -u /out/subs.raw.txt -o /out/subs.raw.txt
+  PYTHONPATH=/ python3 - <<"PY"
+import json,sys
+from scope import in_scope
+rules=json.load(open("/out/scope.json"))
+with open("/out/subs.raw.txt") as src, open("/out/subs.txt","w") as dst:
+    for line in src:
+        target=line.strip()
+        if target and in_scope(target,rules): dst.write(target+"\n")
+PY
+  httpx -silent -l /out/subs.txt -status-code -title -tech-detect -rl "$SCAN_RPS" -o /out/live.raw.txt 2>/dev/null || true
+  PYTHONPATH=/ python3 - <<"PY"
+import json
+from scope import in_scope
+rules=json.load(open("/out/scope.json"))
+with open("/out/live.raw.txt") as src, open("/out/live.txt","w") as dst:
+    for line in src:
+        parts=line.split()
+        if parts and in_scope(parts[0],rules): dst.write(line)
+PY
   cut -d" " -f1 /out/live.txt > /out/live-hosts.txt 2>/dev/null || true
   # Endpoint harvesting: historical URLs give nuclei real paths, not just root pages.
   if command -v waybackurls > /dev/null 2>&1; then
-    cat /out/live-hosts.txt | sed "s|https\?://||" | waybackurls 2>/dev/null | head -3000 > /out/urls.txt || true
+    cat /out/live-hosts.txt | sed "s|https\?://||" | waybackurls 2>/dev/null | head -3000 > /out/urls.raw.txt || true
+    PYTHONPATH=/ python3 - <<"PY"
+import json
+from scope import in_scope
+rules=json.load(open("/out/scope.json"))
+with open("/out/urls.raw.txt") as src, open("/out/urls.txt","w") as dst:
+    for line in src:
+        target=line.strip()
+        if target and in_scope(target,rules): dst.write(target+"\n")
+PY
   fi
   if [ -s /out/urls.txt ]; then
     nuclei -silent -l /out/urls.txt -tags exposure,misconfig,cve -rl "$SCAN_RPS" -timeout 10 -o /out/nuclei.txt 2>/dev/null
@@ -122,13 +164,20 @@ HITS=$(grep -c . "$OUT/nuclei.txt" 2>/dev/null || echo 0)
 echo "$(date -u +%s | sed "s/^/$SAFE|/")" >> "$SCANNED"
 echo "subdomains: $SUBS · live hosts: $LIVE · nuclei hits: $HITS"
 echo "results: $OUT"
+TARGET=$(cat "$OUT/wildcards.txt" "$OUT/direct.txt" | sed -n '1p')
 
 # Post to the hub.
 if [ -f "$TOKEN_FILE" ]; then
   TOKEN=$(cat "$TOKEN_FILE")
-  curl -fsS -X POST "$HUB/api/admin/bounty-events" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d @- <<EOF
-{"kind":"scan","platform":"$PLATFORM","program":"$PROGRAM","target":"$(head -1 "$OUT/apex.txt") et al","title":"Low-noise recon pass (subfinder/httpx/nuclei)","status":"done","detail":"${DOMAINS} apex domains -> ${SUBS} subdomains -> ${LIVE} live hosts -> ${HITS} nuclei observations. Raw results on CT 134: ${OUT}"}
-EOF
+  PAYLOAD=$(python3 - "$PLATFORM" "$PROGRAM" "$TARGET et al" "$DOMAINS" "$DIRECT" "$SUBS" "$LIVE" "$HITS" "$OUT" <<'PY'
+import json, sys
+platform, program, target, wildcards, direct, hosts, live, hits, output = sys.argv[1:]
+detail = f"{wildcards} wildcard roots and {direct} exact targets -> {hosts} in-scope hosts -> {live} live hosts -> {hits} nuclei observations. Raw results on CT 134: {output}"
+print(json.dumps({"kind":"scan", "platform":platform, "program":program, "target":target,
+                  "title":"Low-noise recon pass (subfinder/httpx/nuclei)", "status":"done", "detail":detail}))
+PY
+  )
+  curl -fsS -X POST "$HUB/api/admin/bounty-events" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$PAYLOAD"
   echo
 else
   echo "no $TOKEN_FILE; hub event skipped"

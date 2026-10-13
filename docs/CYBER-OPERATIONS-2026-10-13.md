@@ -58,8 +58,10 @@ Existing artifacts lacking a current catalog provenance are skipped, not used to
 Runner updates now require an acknowledged idle drain before restarting. A run claimed during
 the old idle-check/setup race cannot be interrupted by the new updater. Artifact files must be
 quiet for two minutes before ingestion to avoid reviewing partially written output.
-The CT 134 `bounty-daily.timer` was disabled October 13 after its public catalog queue
-failed to establish explicit automation permission for the listed programs. Existing
-offline evidence review continues. Scanning resumes only after per-program policy, scope
-and rate controls are verified; see [Bug bounty lane](BOUNTY.md). This evidence review
-queue does not authorize additional testing.
+The CT 134 `bounty-daily.timer` was restored October 13 after deploying an explicit-policy
+blacklist, weekly policy cache, one-request-per-second pacing and strict in-scope/out-of-scope
+asset filters. Dry-run checks verified that a blacklisted program is rejected and an eligible
+program's target list is normalized without sending target requests. The daily timer is enabled;
+the next run is scheduled for October 14 at 05:17 UTC. The classifier uses local text patterns,
+not Ollama, and may miss policy language it does not recognize; see [Bug bounty lane](BOUNTY.md).
+The evidence review queue does not authorize additional testing.
