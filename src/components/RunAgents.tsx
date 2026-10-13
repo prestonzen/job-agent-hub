@@ -40,6 +40,8 @@ export default function RunAgents() {
   const [states, setStates] = useState<AgentWorkState[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
+  const [view,setView]=useState<"runs"|"schedules"|"runners">("runs");
+  const [showAll,setShowAll]=useState(false);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -78,9 +80,10 @@ export default function RunAgents() {
 
   return (
     <>
+      <nav className="admin-subnav" aria-label="Agent operations">{(['runs','schedules','runners'] as const).map(v=><button key={v} className={view===v?'on':''} onClick={()=>setView(v)}>{v==='runners'?'Runners & launch':v==='runs'?'Work results':'Sourcing & schedules'}</button>)}</nav>
       {err && <p className="notice">Error: {err}</p>}
 
-      <div className="grid two">
+      {view==="runners"&&<div className="grid two">
         <section className="card">
           <div className="card-head">
             <h2>Runners</h2>
@@ -116,11 +119,11 @@ export default function RunAgents() {
         </section>
 
         <Launcher options={agentOptions} disabled={online.length === 0} onLaunched={(id) => { setSelected(id); void load(); }} />
-      </div>
+      </div>}
 
-      <Schedules agents={agentOptions.map((o) => o.id)} />
+      {view==="schedules"&&<Schedules agents={agentOptions.map((o) => o.id)} />}
 
-      <section className="card wide runs-card">
+      {view==="runs"&&<section className="card wide runs-card">
         <div className="card-head">
           <h2>Runs</h2>
           <span className="muted small">refreshes every few seconds</span>
@@ -130,7 +133,7 @@ export default function RunAgents() {
           <p className="muted">No runs yet.</p>
         ) : (
           <ul className="runs">
-            {runs.filter((r) => showDiagnostics || r.task !== "diagnostic").map((r) => (
+            {runs.filter((r) => showDiagnostics || r.task !== "diagnostic").slice(0,showAll?60:12).map((r) => (
               <li key={r.id} className={selected === r.id ? "on" : ""}>
                 <button className="run-row" onClick={() => setSelected(selected === r.id ? null : r.id)} aria-expanded={selected === r.id}>
                   <span className="mono muted">#{r.id}</span>
@@ -153,7 +156,8 @@ export default function RunAgents() {
             ))}
           </ul>
         )}
-      </section>
+      <button className="ghost" onClick={()=>setShowAll(v=>!v)}>{showAll?"Show recent 12":"Show up to 60 runs"}</button>
+      </section>}
     </>
   );
 }

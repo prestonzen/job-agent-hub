@@ -1,3 +1,4 @@
+import { CYBER_RUBRIC, cyberLeaderboard, scoreCyber } from "../cyber-score";
 import { useEffect, useState } from "react";
 import { getBounty, type BountyEvent, type BountySummary } from "../api";
 
@@ -48,6 +49,7 @@ export default function Bounty() {
   if (err && !data) return <p className="notice">Couldn't load bounty data: {err}</p>;
   if (!data) return <p className="notice">Loading…</p>;
 
+  const activity=data.recent.filter(e=>e.platform!=="benchmark");
   const t = data.totals;
   const maxSev = Math.max(1, ...SEV_ORDER.map((s) => t.bySeverity[s] ?? 0));
   const empty = t.programs + t.scans + t.findings + t.reports + t.payouts === 0;
@@ -134,90 +136,17 @@ export default function Bounty() {
         </section>
       )}
 
-      {(() => {
-        const rows = (data.matrix ?? []).map((e) => {
-          let j: { triage?: { verdict?: string }[]; first_report?: string; reason?: string } | null = null;
-          try {
-            j = JSON.parse(e.detail ?? "");
-          } catch {}
-          const scen = e.program?.match(/-s(\d+)-/)?.[1] ?? "1";
-          const triage = Array.isArray(j?.triage) ? j!.triage! : [];
-          return {
-            e,
-            scen,
-            first: j?.first_report ?? "—",
-            reason: j?.reason ?? "",
-            reals: triage.filter((t) => String(t?.verdict ?? "").toLowerCase() === "real").length,
-            n: triage.length,
-          };
-        });
-        if (!rows.length) return null;
-        const byAgent = [...new Set(rows.map((r) => r.e.agent))].sort();
-        return (
-          <section className="card wide">
-            <div className="card-head">
-              <h2>Cyber matrix leaderboard</h2>
-              <span className="muted small">identical triage tasks fired at every agent — same input, comparable judgment</span>
-            </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Agent</th>
-                  <th className="r">Runs</th>
-                  <th className="r">Scenarios</th>
-                  <th className="r" title="Average findings marked 'real' per run — high numbers mean noise-chasing, low can mean missed leads; read with the table below">
-                    Avg “real”
-                  </th>
-                  <th>First picks</th>
-                </tr>
-              </thead>
-              <tbody>
-                {byAgent.map((a) => {
-                  const mine = rows.filter((r) => r.e.agent === a);
-                  const avg = mine.length ? (mine.reduce((s, r) => s + r.reals, 0) / mine.length).toFixed(1) : "—";
-                  return (
-                    <tr key={a}>
-                      <td>
-                        <b>{a}</b>
-                      </td>
-                      <td className="r">{mine.length}</td>
-                      <td className="r">{new Set(mine.map((r) => r.scen)).size}</td>
-                      <td className="r">{avg}</td>
-                      <td className="sub">{mine.slice(0, 4).map((r) => `s${r.scen}:${r.first}`).join(" · ")}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            <table>
-              <thead>
-                <tr>
-                  <th>When</th>
-                  <th>Agent</th>
-                  <th>Scenario</th>
-                  <th className="r">Real / total</th>
-                  <th>Report first</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.slice(0, 25).map((r) => (
-                  <tr key={r.e.id}>
-                    <td className="nowrap">{ago(r.e.at)}</td>
-                    <td>{r.e.agent}</td>
-                    <td>s{r.scen}</td>
-                    <td className="r">
-                      {r.reals}/{r.n || "—"}
-                    </td>
-                    <td title={r.reason}>{r.first}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-        );
-      })()}
+      {(data.matrix??[]).length>0 && <section className="card wide">
+        <h2>Cyber leaderboard</h2>
+        <p className="muted small">{CYBER_RUBRIC} · verdict /50, severity /20, validation /20, first pick /10. Latest attempt per scenario; equal scenario weight. Scores compare synthetic judgment, not confirmed vulnerabilities.</p>
+        <table><thead><tr><th>Agent</th><th>Score /100</th><th>Verdict</th><th>Severity</th><th>Validation</th><th>Priority</th><th>Coverage</th></tr></thead><tbody>
+          {cyberLeaderboard(data.matrix).map(r=><tr key={r.agent}><td><b>{r.agent}</b></td><td>{r.score??'Unscored'}</td><td>{r.verdict??'—'}</td><td>{r.severity??'—'}</td><td>{r.validation??'—'}</td><td>{r.priority??'—'}</td><td>{r.coverage}/3{r.coverage<3?' · provisional':''}{r.unscored?` · ${r.unscored} unscored`:''}</td></tr>)}
+        </tbody></table>
+        <details><summary>Scoring details and recent attempts</summary><p className="small">HTTP 200 alone does not prove secrets, historical snapshots do not prove current exposure, public assets and missing headers do not justify high severity. Validation and conditional severity receive credit. Repeated runs do not increase scenario weight.</p>
+        <table><thead><tr><th>When</th><th>Agent</th><th>Scenario</th><th>Score</th><th>Feedback</th></tr></thead><tbody>{data.matrix.slice(0,25).map(e=>{const r=scoreCyber(e.program,e.detail);return <tr key={e.id}><td>{ago(e.at)}</td><td>{e.agent}</td><td>{r.scenario}</td><td>{r.score??'Unscored'}</td><td>{r.notes.join(' · ')||'Rubric criteria met'}</td></tr>})}</tbody></table></details>
+      </section>}
 
-      {data.recent.length > 0 && (
+      {activity.length > 0 && (
         <section className="card wide">
           <div className="card-head">
             <h2>Recent activity</h2>
@@ -233,7 +162,7 @@ export default function Bounty() {
               </tr>
             </thead>
             <tbody>
-              {data.recent.map((e) => (
+              {activity.slice(0,12).map((e) => (
                 <tr key={e.id}>
                   <td className="nowrap">{ago(e.at)}</td>
                   <td>

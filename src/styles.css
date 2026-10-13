@@ -428,3 +428,14 @@ button.danger { color: #e5484d; border-color: color-mix(in srgb, #e5484d 40%, va
 .chip.sev-info { border-color: var(--muted); color: var(--muted); }
 .chip.kind-finding { border-color: color-mix(in srgb, #eb6834 50%, var(--line)); color: var(--ink); }
 .chip.kind-payout { border-color: color-mix(in srgb, #22c55e 50%, var(--line)); color: var(--ink); background: var(--accent-soft); }
+
+/* Admin grouping keeps navigation and operational sections compact. */
+.admin-main .hero.compact { padding-top: 20px; padding-bottom: 16px; }
+.admin-main .hero h1 { font-size: 30px; margin-bottom: 8px; }
+.admin-subnav { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
+.admin-subnav a,.admin-subnav button { padding:7px 12px; border-radius:8px; color:var(--muted); text-decoration:none; background:var(--card); }
+.admin-subnav .on { color:var(--accent); background:var(--grid); }
+.admin-main summary { cursor:pointer; font-weight:600; padding:4px 0; }
+.admin-main .feed { max-height:290px; overflow:auto; }
+.admin-main .card { min-width:0; overflow-x:auto; }
+.admin-main .compact-autopilot p { margin:8px 0; }

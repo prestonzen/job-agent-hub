@@ -50,6 +50,7 @@ export interface Job {
   role: string;
   status: string;
   applyUrl: string | null;
+  applyEmail?: string | null;
   ats: string | null;
   pay: string | null;
   travel: string | null;

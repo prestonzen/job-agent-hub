@@ -1,0 +1,22 @@
+{
+  "notice": "Optional Claude cyber profile. Not activated in production. Review Anthropic OAuth/extra-usage requirements before enabling; keep the claude hub switch off until ready.",
+  "runnerAgentPatch": {
+    "taskCommands": { "cyber": ["hermes", "chat", "-Q", "--provider", "anthropic", "-m", "claude-sonnet-5-5", "--max-turns", "40", "-q", "{PROMPT}"] },
+    "taskFormats": { "cyber": "text" },
+    "taskEnvs": { "cyber": { "HERMES_HOME": "~/.hermes-claude" } },
+    "taskTimeoutMinutes": { "cyber": 20 },
+    "taskModels": { "cyber": "claude-sonnet-5-5" },
+    "taskHarnesses": { "cyber": "Hermes" }
+  },
+  "hermesConfig": {
+    "model": { "provider": "anthropic", "default": "claude-sonnet-5-5" },
+    "agent": { "max_turns": 40 },
+    "terminal": { "backend": "local", "cwd": "." },
+    "mcp_servers": {
+      "jobhunter": {
+        "url": "https://jobhunter.prestonzen.com/mcp",
+        "headers": { "Authorization": "Bearer ${JOBHUNTER_TOKEN}" }
+      }
+    }
+  }
+}

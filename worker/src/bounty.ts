@@ -107,7 +107,7 @@ export async function addBountyEvent(env: Env, agent: string, body: BountyEventI
       kind === "payout" ? amount : null,
     )
     .run();
-  if (kind === "report") await logEvent(env, { agent, type: "cyber_report", message: s(body.title, 200) });
+  if (kind === "report" && body.platform?.toLowerCase() !== "benchmark") await logEvent(env, { agent, type: "cyber_report", message: s(body.title, 200) });
   return { id: Number(res.meta.last_row_id) };
 }
 
@@ -142,16 +142,16 @@ export async function bountyTotals(env: Env): Promise<BountySummary["totals"]> {
            SUM(CASE WHEN kind = 'finding' THEN 1 ELSE 0 END) AS findings,
            SUM(CASE WHEN kind = 'report' THEN 1 ELSE 0 END) AS reports,
            SUM(CASE WHEN kind = 'payout' THEN 1 ELSE 0 END) AS payouts
-         FROM bounty_events`,
+         FROM bounty_events WHERE COALESCE(platform,'') != 'benchmark'`,
       )
       .first<Omit<typeof empty, "bySeverity" | "payoutsUsd">>()
       .catch(() => null),
     d
-      .prepare("SELECT severity, COUNT(*) AS n FROM bounty_events WHERE kind = 'finding' AND severity IS NOT NULL GROUP BY severity")
+      .prepare("SELECT severity, COUNT(*) AS n FROM bounty_events WHERE COALESCE(platform,'') != 'benchmark' AND kind = 'finding' AND severity IS NOT NULL GROUP BY severity")
       .all<{ severity: string; n: number }>()
       .catch(() => ({ results: [] as { severity: string; n: number }[] })),
     d
-      .prepare("SELECT SUM(amount) AS usd FROM bounty_events WHERE kind = 'payout'")
+      .prepare("SELECT SUM(amount) AS usd FROM bounty_events WHERE COALESCE(platform,'') != 'benchmark' AND kind = 'payout'")
       .first<{ usd: number | null }>()
       .catch(() => null),
   ]);
@@ -181,7 +181,7 @@ export async function bountySummary(env: Env): Promise<BountySummary> {
                 SUM(CASE WHEN kind = 'report' THEN 1 ELSE 0 END) AS reports,
                 SUM(CASE WHEN kind = 'payout' THEN amount ELSE 0 END) AS payoutsUsd,
                 MAX(at) AS lastAt
-         FROM bounty_events WHERE program IS NOT NULL
+         FROM bounty_events WHERE COALESCE(platform,'') != 'benchmark' AND program IS NOT NULL
          GROUP BY program ORDER BY lastAt DESC LIMIT 50`,
       )
       .all<{ program: string; platform: string | null; scans: number; findings: number; reports: number; payoutsUsd: number | null; lastAt: number }>()

@@ -29,6 +29,7 @@ import { autopilotStatus, autopilotTick, saveAutopilot } from "./autopilot";
 import { sourceCheckStatus } from "./sourcing";
 import type { RunTask } from "./work";
 import { sendDigest } from "./digest";
+import { flushReplyNotifications, recoverReplyNotification } from "./reply-delivery";
 import { handleInbound, recentInbound, type InboundEmail } from "./inbound";
 import { DEFAULT_POLICY, getPolicy, pacingState, pacingSummary, type PacingPolicy } from "./pacing";
 import { deleteResume, listResumes, pickResume, resumeFile, updateResume, uploadResume } from "./resumes";
@@ -168,6 +169,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       ctx.waitUntil(tick(env, () => sendDigest(env, url.origin).then(() => {})).catch((e) => console.error("schedule tick:", e)));
       // Autopilot: keep every ready agent working while it is Active.
       ctx.waitUntil(autopilotTick(env).then((n) => n && console.log("autopilot:", n)).catch((e) => console.error("autopilot tick:", e)));
+      ctx.waitUntil(flushReplyNotifications(env).catch((e)=>console.error("reply delivery:",e)));
       // Replay ClickUp writes that were deferred by a rate limit or outage.
       ctx.waitUntil(
         outboxSize(env)
@@ -428,6 +430,8 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       const err = await sendDigest(env, url.origin);
       return json({ ok: !err, error: err });
     }
+    const replyNotify=path.match(/^\/api\/admin\/inbound\/([^/]+)\/notify$/);
+    if(replyNotify && method === "POST")return json(await recoverReplyNotification(env,replyNotify[1]));
     if (path === "/api/admin/inbound" && method === "GET") return json({ emails: await recentInbound(env) });
     if (path === "/api/admin/telegram/webhook-info" && method === "GET") return json(await webhookInfo(env));
 

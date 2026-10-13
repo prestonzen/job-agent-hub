@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import { getInbound, sendDigestNow, testTelegram, type InboundEmail } from "../api";
+import { getInbound, recoverReplyAlert, sendDigestNow, testTelegram, type InboundEmail } from "../api";
 
-const ICON: Record<string, string> = { rejection: "❌", interview: "🗓️", assessment: "📝", offer: "🎉", confirmation: "📨", recruiter: "👋", other: "✉️" };
+const ICON: Record<string, string> = { rejection: "❌", interview: "🗓️", assessment: "📝", offer: "🎉", confirmation: "📨", recruiter: "👋", onboarding: "📋", other: "✉️" };
 
 /** Telegram alerts and the recruiter-reply log (from the Gmail reply tracker). */
 export default function Alerts() {
   const [emails, setEmails] = useState<InboundEmail[]>([]);
+  const [showAll,setShowAll]=useState(false);
+  const [limit,setLimit]=useState(12);
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -41,13 +43,13 @@ export default function Alerts() {
       <section className="card wide">
         <div className="card-head">
           <h2>Recruiter replies</h2>
-          <span className="muted small">from the Gmail reply tracker</span>
+          <label className="small"><input type="checkbox" checked={showAll} onChange={e=>setShowAll(e.target.checked)}/> Include confirmations and other mail</label>
         </div>
         {emails.length === 0 ? (
           <p className="muted">No replies tracked yet. Install integrations/gmail-reply-tracker.gs (see the README).</p>
         ) : (
           <ul className="activity">
-            {emails.map((e) => (
+            {emails.filter(e=>showAll||!["confirmation","other","rejection"].includes(e.category)).slice(0,limit).map((e) => (
               <li key={e.message_id}>
                 <span aria-hidden="true">{ICON[e.category] ?? "✉️"}</span>
                 <span className="what">
@@ -57,12 +59,15 @@ export default function Alerts() {
                 <span className="meta">
                   <span className="chip">{e.category}</span>
                   <span>{e.task_id ? e.action : "unmatched"}</span>
+                  {e.delivery_state!=='sent'&&<button className="ghost small-btn" onClick={()=>{void recoverReplyAlert(e.message_id).then(r=>{setMsg(r.state==='sent'?`Sent · Telegram #${r.receipt}`:r.error??r.state);return getInbound();}).then(r=>setEmails(r.emails)).catch(e=>setMsg(e.message));}}>Notify on Telegram</button>}
+                  <span title={e.delivery_error ?? undefined}>Telegram: {e.delivery_state ?? "legacy · receipt unavailable"}{e.telegram_receipt ? ` #${e.telegram_receipt}` : ""}</span>
                   <span className="when">{new Date(e.at).toLocaleDateString([], { month: "short", day: "numeric" })}</span>
                 </span>
               </li>
             ))}
           </ul>
         )}
+        <button className="ghost" onClick={()=>setLimit(n=>n===12?50:12)}>{limit===12?'Show up to 50 replies':'Show recent 12'}</button>
       </section>
     </>
   );

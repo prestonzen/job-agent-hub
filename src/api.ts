@@ -67,7 +67,7 @@ export const updateResume = (id: number, patch: { name?: string; tags?: string; 
 export const deleteResume = (id: number) => request<{ ok: true }>(`/api/admin/resumes/${id}`, { method: "DELETE" });
 export const pickResume = (role: string) => request<(Resume & { matched: string[] }) | null>(`/api/admin/resume-pick?role=${encodeURIComponent(role)}`);
 
-export interface InboundEmail { message_id: string; at: number; from_addr: string; subject: string; category: string; company: string | null; task_id: string | null; action: string; summary: string }
+export interface InboundEmail { message_id: string; at: number; from_addr: string; subject: string; category: string; company: string | null; task_id: string | null; action: string; summary: string; delivery_state?: string | null; telegram_receipt?: number | null; delivery_error?: string | null; delivery_attempts?: number | null }
 export const getInbound = () => request<{ emails: InboundEmail[] }>("/api/admin/inbound");
 export const testTelegram = () => request<{ ok: boolean; error: string | null; configured: boolean }>("/api/admin/telegram/test", { method: "POST" });
 export const sendDigestNow = () => request<{ ok: boolean; error: string | null }>("/api/admin/digest", { method: "POST" });
@@ -79,7 +79,7 @@ export const saveAutopilot = (p: Partial<AutopilotSettings>) =>
   request<{ settings: AutopilotSettings; agents: AgentAutopilot[] }>("/api/admin/autopilot", { method: "PUT", body: JSON.stringify(p) });
 
 // ---------- analytics ----------
-export interface AgentStats { agent: string; claimed: number; applied: number; skipped: number; needsHuman: number; failed: number; released: number; successRate: number | null; medianMinToApply: number | null; runs: number; runsOk: number; runsFailed: number; avgRunMin: number | null; runMinutes: number; costUsd: number; tokens: number; estCostUsd: number }
+export interface AgentStats { billingMonth?:string; monthlyPlanUsd?:number|null; monthlyApplicationCostUsd?:number|null; monthlyCostPerApplicationUsd?:number|null; monthlyApplications?:number; monthlyTokens?:number; monthlyTokenCoverage?:string; costBasis?:string; agent: string; claimed: number; applied: number; skipped: number; needsHuman: number; failed: number; released: number; successRate: number | null; medianMinToApply: number | null; runs: number; runsOk: number; runsFailed: number; avgRunMin: number | null; runMinutes: number; costUsd: number; tokens: number; estCostUsd: number }
 export interface AtsStats { ats: string; applied: number; needsHuman: number; skipped: number; failed: number; successRate: number | null }
 export interface DayStats { date: string; applied: number; needsHuman: number; skipped: number; failed: number; runsOk: number; runsFailed: number }
 export interface Analytics {
@@ -114,3 +114,5 @@ export const getBounty = () => request<BountySummary>("/api/admin/bounty");
 export interface AttemptLog { agent: string; at: string; outcome: string; note: string | null; log: string | null }
 export interface AssistedJob { id: string; name: string; company: string; role: string; applyUrl: string | null; applyEmail: string | null; ats: string | null; fit: number | null; pay: string | null; clickupUrl: string; category: string; reason: string; attempts: AttemptLog[] }
 export const getAssisted = () => request<{ jobs: AssistedJob[]; notWorkable: number }>("/api/admin/assisted");
+
+export const recoverReplyAlert = (id:string) => request<{state:string;receipt:number|null;error:string|null}>(`/api/admin/inbound/${encodeURIComponent(id)}/notify`,{method:"POST",body:"{}"});

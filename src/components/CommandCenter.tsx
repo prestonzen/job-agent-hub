@@ -35,6 +35,7 @@ export default function CommandCenter() {
   const [hub, setHub] = useState<HubState | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "available" | "claimed" | "human">("all");
+  const [page, setPage] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -83,7 +84,7 @@ export default function CommandCenter() {
   if (err) return <p className="notice">Couldn't load the command center: {err}</p>;
   if (!hub) return <p className="notice">Loading…</p>;
 
-  const available = hub.queue.filter((j) => !j.claimedBy && !j.needsHuman && j.applyUrl);
+  const available = hub.queue.filter((j) => !j.claimedBy && !j.needsHuman && (j.applyUrl || j.applyEmail));
   const claimed = hub.queue.filter((j) => j.claimedBy);
   const human = hub.queue.filter((j) => j.needsHuman);
   const shown =
@@ -113,7 +114,7 @@ export default function CommandCenter() {
   return (
     <>
       {hub.demo && <p className="badge">Demo data</p>}
-      <Autopilot />
+      <Autopilot compact />
       <section className="kpis">
         <Kpi label="Ready to claim" value={available.length} onClick={() => setFilter("available")} active={filter === "available"} />
         <Kpi label="In progress" value={claimed.length} onClick={() => setFilter("claimed")} active={filter === "claimed"} />
@@ -164,7 +165,7 @@ export default function CommandCenter() {
             <p className="muted">Nothing yet. Agent claims and results show up here.</p>
           ) : (
             <ol className="feed">
-              {hub.events.slice(0, 40).map((e) => (
+              {hub.events.slice(0, 8).map((e) => (
                 <li key={e.id}>
                   <span className="when">{time(e.at)}</span>
                   <span>
@@ -179,21 +180,21 @@ export default function CommandCenter() {
         </section>
       </div>
 
-      <Pacing />
+      <details className="card"><summary>Application pacing and limits</summary><Pacing /></details>
 
       <section className="card wide">
         <div className="card-head">
           <h2>Queue ({shown.length})</h2>
           <div className="seg" role="group" aria-label="Filter queue">
             {(["all", "available", "claimed", "human"] as const).map((f) => (
-              <button key={f} className={filter === f ? "on" : ""} onClick={() => setFilter(f)}>
+              <button key={f} className={filter === f ? "on" : ""} onClick={() => {setFilter(f);setPage(0)}}>
                 {f === "human" ? "needs you" : f}
               </button>
             ))}
           </div>
         </div>
         <p className="muted small">
-          Agents claim from the top: best fit first, then ClickUp priority. Claims last {hub.leaseMinutes} min.
+          Agents prefer verified email routes, then fit. Claims last {hub.leaseMinutes} min.
         </p>
         <table>
           <thead>
@@ -206,7 +207,7 @@ export default function CommandCenter() {
             </tr>
           </thead>
           <tbody>
-            {shown.map((j) => (
+            {shown.slice(page*5,page*5+5).map((j) => (
               <tr key={j.id}>
                 <td>
                   {j.applyUrl ? (
@@ -261,6 +262,7 @@ export default function CommandCenter() {
             ))}
           </tbody>
         </table>
+        <div className="row-actions"><button disabled={page===0} onClick={()=>setPage(p=>p-1)}>Previous</button><span>Page {page+1} · {shown.length} jobs</span><button disabled={(page+1)*5>=shown.length} onClick={()=>setPage(p=>p+1)}>Next</button><a href="#pipeline">Full application pipeline →</a></div>
       </section>
     </>
   );

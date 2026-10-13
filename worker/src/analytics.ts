@@ -1,3 +1,4 @@
+import { monthlyBilling, type MonthlyBilling } from "./billing";
 import { db } from "./db";
 import { bountyTotals } from "./bounty";
 import { parkedCategory } from "./park";
@@ -12,7 +13,7 @@ import type { Env } from "./types";
  * Nothing here is public: it carries company-level detail and operational numbers.
  */
 
-export interface AgentStats {
+export interface AgentStats extends Partial<MonthlyBilling> {
   agent: string;
   claimed: number;
   applied: number;
@@ -37,21 +38,6 @@ export interface AgentStats {
   /** Estimated USD for subscription agents, from tokens × OpenRouter rates (TOKEN_RATES); 0 when actual cost is known. */
   estCostUsd: number;
 }
-
-/**
- * OpenRouter list rates ($ per 1M tokens, Oct 2026) for the models behind subscription CLIs —
- * used to put a USD figure on their token burn: codex → gpt-5-codex 1.25/10, kimi → K2.7 Code
- * 0.74/3.50 (OpenRouter). Agentic runs skew ~5:1 input:output, so cost = tokens × (5·in + out)/6.
- * Estimates only — actual subscription spend is flat; claude reports exact cost itself.
- */
-const TOKEN_RATES: Record<string, { in: number; out: number }> = {
-  codex: { in: 1.25, out: 10.0 },
-  kimi: { in: 0.74, out: 3.5 },
-};
-const estCost = (agent: string, tokens: number): number => {
-  const r = TOKEN_RATES[agent];
-  return r && tokens > 0 ? Math.round(((tokens * (5 * r.in + r.out)) / 6 / 1_000_000) * 10_000) / 10_000 : 0;
-};
 
 export interface AtsStats {
   ats: string;
@@ -238,15 +224,17 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
     a.tokens += r.tokens ?? 0;
   }
 
+  const billing=await monthlyBilling(env);
   const byAgent: AgentStats[] = [...agents.values()]
     .map(({ _toApply, ...a }) => ({
       ...a,
+      ...billing.get(a.agent),
       successRate: rate(a.applied, a.skipped + a.needsHuman + a.failed),
       medianMinToApply: round1(median(_toApply)),
       avgRunMin: a.runsOk + a.runsFailed ? round1(a.runMinutes / (a.runsOk + a.runsFailed)) : null,
       runMinutes: Math.round(a.runMinutes),
-      // Estimated spend only where the CLI doesn't report real cost (subscription agents).
-      estCostUsd: a.costUsd > 0 ? 0 : estCost(a.agent, a.tokens),
+      // Subscription allocation is reported separately; do not fabricate API-equivalent spend.
+      estCostUsd: 0,
     }))
     .filter((a) => a.agent !== "unknown" || a.claimed + a.applied > 0)
     .sort((a, b) => b.applied - a.applied || b.claimed - a.claimed || a.agent.localeCompare(b.agent));

@@ -57,6 +57,8 @@ if (tokens.ollama) {
   set("model.base_url", `${o.ollamaUrl ?? "http://127.0.0.1:11434"}/v1`);
   set("model.context_length", String(ctx));
   set("model.ollama_num_ctx", String(ctx));
+  set("compression.threshold", String(o.compressionThreshold ?? 0.8));
+  set("compression.protect_last_n", String(o.protectLastTurns ?? 8));
   set("providers.local-ollama.base_url", `${o.ollamaUrl ?? "http://127.0.0.1:11434"}/v1`);
   set("providers.local-ollama.api_key", "ollama");
   set("mcp_servers.jobhunter.url", MCP_URL);

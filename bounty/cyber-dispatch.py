@@ -66,11 +66,11 @@ SCENARIOS = [
 [+] nuclei: expired-ssl-cert-on-unused-subdomain (info): old-blog.acme-example.com cert expired 2023, subdomain serves parked page""",
 ]
 
-MATRIX_TMPL = """Cyber triage benchmark (tag: {tag}). You are one of several agents given the IDENTICAL input; your output is compared for accuracy and usefulness. Triage this real scanner output from an authorized bug bounty asset (program "acme-bugcrowd-demo", host https://demo.acme-example.com):
+MATRIX_TMPL = """Cyber triage benchmark (tag: {tag}). You are one of several agents given the IDENTICAL input; your output is compared for accuracy and usefulness. Triage this synthetic offline scanner fixture (do not contact the host) (program "acme-bugcrowd-demo", host https://demo.acme-example.com):
 
 {scenario}
 
-For EACH observation: verdict (real / false-positive / needs-manual-check), realistic severity for a bug bounty program, one-line why, and the single next validation step. Then rank the three observations most worth reporting and say which ONE you would report first and why. Reply as compact JSON: {{"triage":[...],"ranking":[...],"first_report":"<id>","reason":"..."}}. Post your answer to the hub:
+Use observation IDs obs1 through obs5 in input order. HTTP 200 alone does not prove exposed secrets; historical data is not current evidence. Do not inflate severity or claim validation you have not performed. For EACH observation: verdict (real / false-positive / needs-manual-check), realistic severity for a bug bounty program, one-line why, and the single next validation step. Then rank the three observations most worth reporting and say which ONE you would report first and why. Reply as compact JSON: {{"triage":[...],"ranking":[...],"first_report":"<id>","reason":"..."}}. Post your answer to the hub:
 
 curl -s -X POST {hub}/api/agent/bounty -H "Authorization: Bearer $JOBHUNTER_TOKEN" -H "Content-Type: application/json" -d '{{"kind":"report","platform":"benchmark","program":"cyber-matrix-{tag}","target":"demo.acme-example.com","severity":"medium","status":"matrix","title":"matrix triage {tag}","detail":"<your JSON>"}}'
 

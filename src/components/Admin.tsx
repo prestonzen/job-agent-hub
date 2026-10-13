@@ -8,6 +8,7 @@ import CommandCenter from "./CommandCenter";
 import Connect from "./Connect";
 import Alerts from "./Alerts";
 import Resumes from "./Resumes";
+import Autopilot from "./Autopilot";
 import RunAgents from "./RunAgents";
 
 const TABS = [
@@ -20,6 +21,10 @@ const TABS = [
   { id: "bounty", label: "Bug bounty" },
   { id: "pipeline", label: "Pipeline" },
   { id: "connect", label: "Connect agents" },
+] as const;
+const GROUPS=[
+ {label:"Overview",ids:["hub"]}, {label:"Applications",ids:["pipeline","assisted","resumes","analytics"]},
+ {label:"Replies",ids:["alerts"]}, {label:"Cyber",ids:["bounty"]}, {label:"Agents",ids:["run","connect"]}
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
@@ -35,7 +40,7 @@ export default function Admin() {
       .then((r) => setUser(r.user))
       .catch(() => setUser(null))
       .finally(() => setChecked(true));
-    const onHash = () => setTab(tabFromHash());
+    const onHash = () => {setTab(tabFromHash());window.scrollTo({top:0});};
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
@@ -43,8 +48,9 @@ export default function Admin() {
   if (!checked) return <p className="notice">Loading…</p>;
   if (!user) return <Login onDone={setUser} />;
 
+  const group=GROUPS.find(g=>g.ids.some(id=>id===tab))??GROUPS[0];
   return (
-    <main>
+    <main className="admin-main">
       <section className="hero compact">
         <h1>Admin</h1>
         <p>
@@ -54,17 +60,14 @@ export default function Admin() {
           </button>
         </p>
         <nav className="tabs" aria-label="Admin sections">
-          {TABS.map((t) => (
-            <a key={t.id} href={`#${t.id}`} className={tab === t.id ? "on" : ""} aria-current={tab === t.id ? "page" : undefined}>
-              {t.label}
-            </a>
-          ))}
+          {GROUPS.map(g=><a key={g.label} href={`#${g.ids[0]}`} className={g===group?'on':''} aria-current={g===group?'page':undefined}>{g.label}</a>)}
         </nav>
+        {group.ids.length>1&&<nav className="admin-subnav" aria-label={`${group.label} views`}>{TABS.filter(t=>group.ids.some(id=>id===t.id)).map(t=><a key={t.id} href={`#${t.id}`} className={tab===t.id?'on':''} aria-current={tab===t.id?'page':undefined}>{t.label}</a>)}</nav>}
       </section>
       {tab === "hub" && <CommandCenter />}
       {tab === "analytics" && <Analytics />}
       {tab === "assisted" && <Assisted />}
-      {tab === "run" && <RunAgents />}
+      {tab === "run" && <><details className="card"><summary>Task focus and autopilot settings</summary><Autopilot /></details><RunAgents /></>}
       {tab === "resumes" && <Resumes />}
       {tab === "alerts" && <Alerts />}
       {tab === "bounty" && <Bounty />}
@@ -120,6 +123,7 @@ function Pipeline() {
   const [demo, setDemo] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [q, setQ] = useState("");
+  const [page,setPage]=useState(0);
   const [open, setOpen] = useState<string | null>(null);
   const [note, setNote] = useState("");
 
@@ -162,7 +166,7 @@ function Pipeline() {
   return (
     <>
       {err && <p className="notice">Error: {err}</p>}
-      <input className="search" placeholder="Filter by company or role…" value={q} onChange={(e) => setQ(e.target.value)} />
+      <input className="search" placeholder="Filter by company or role…" value={q} onChange={(e) => {setQ(e.target.value);setPage(0)}} />
       {demo && <span className="badge"> Demo data</span>}
       <section className="card wide">
         <table>
@@ -177,7 +181,7 @@ function Pipeline() {
             </tr>
           </thead>
           <tbody>
-            {shown.map((t) => (
+            {shown.slice(page*20,page*20+20).map((t) => (
               <Fragment key={t.id}>
                 <tr>
                   <td>
@@ -217,6 +221,7 @@ function Pipeline() {
             ))}
           </tbody>
         </table>
+        <div className="row-actions"><button disabled={page===0} onClick={()=>setPage(p=>p-1)}>Previous</button><span>Page {page+1} · {shown.length} applications</span><button disabled={(page+1)*20>=shown.length} onClick={()=>setPage(p=>p+1)}>Next</button></div>
       </section>
     </>
   );

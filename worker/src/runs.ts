@@ -288,7 +288,7 @@ export async function claimRun(env: Env, runner: string, agents: string[], origi
     row.kind === "login"
       ? ""
       : row.kind === "queue"
-      ? `${agentInstructions(row.agent, origin, "mcp")}\n\nTHIS RUN: work up to ${row.count} jobs from the queue (claim them with claim_jobs), report each one, then stop and print a one-line summary per job.`
+      ? `${agentInstructions(row.agent, origin, "mcp")}\n\nTHIS RUN: work up to ${row.count} jobs from the queue (claim them with claim_jobs), report each one, then stop and print a one-line summary per job. ${row.task === "email" ? "This is EMAIL ONLY: claim only email jobs, use email_application with an appropriate resume, never open ATS forms. Work one application at a time. If no eligible email job exists, stop without browsing. Do not invent recipients or send followups." : "Prefer verified email applications when available."}`
       : row.prompt!;
   return { ...row, fullPrompt };
 }

@@ -17,7 +17,7 @@ const STATE: Record<AgentAutopilot["state"], { icon: string; text: string }> = {
 const mins = (iso: string) => Math.max(1, Math.ceil((Date.parse(iso) - Date.now()) / 60_000));
 
 /** Master switch: while Active, every logged-in agent applies on its own (no schedule needed). */
-export default function Autopilot() {
+export default function Autopilot({compact=false}:{compact?:boolean}) {
   const [s, setS] = useState<AutopilotSettings | null>(null);
   const [agents, setAgents] = useState<AgentAutopilot[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -41,6 +41,7 @@ export default function Autopilot() {
   const patch = (p: Partial<AutopilotSettings>) => saveAutopilot(p).then(apply).catch((e: Error) => setErr(e.message));
   const working = agents.filter((a) => a.state === "working").length;
 
+  if(compact)return <section className="card compact-autopilot"><div className="card-head"><h2>Autopilot {s.enabled?'active':'paused'}</h2><a href="#run">Manage agents &amp; task focus →</a></div><p>{agents.filter(a=>a.state==='working').map(a=>`${agentLabel(a.agent)}: ${a.detail}`).join(' · ')||'No task running right now'}</p><p className="small muted">Email applications preferred · sourcing twice daily with backups · {agents.filter(a=>a.state==='off').map(a=>agentLabel(a.agent)).join(', ')} switched off</p></section>;
   return (
     <section className={`card autopilot ${s.enabled ? "active" : "disabled"}`}>
       <div className="ap-head">

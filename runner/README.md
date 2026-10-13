@@ -78,3 +78,9 @@ pct exec 218 -- systemctl restart job-agent-runner
 ```
 
 Rotate the runner secret: generate a new `RUNNER_TOKEN`, put it in the Pages secret and in `/etc/job-agent-runner/config.json`, and restart the service.
+
+### Task profiles and usage
+
+An agent can optionally define `taskCommands`, `taskFormats`, `taskEnvs`, `taskModels`, `taskHarnesses`, and `taskTimeoutMinutes`, keyed by `email`, `applications`, `sourcing`, or `cyber`. Missing entries use the existing command. The hub token always stays the agent's canonical identity. Kimi usage is read from structured per-turn session events whose exact cwd matches the run; no token count is invented from prose.
+
+Ollama email runs work one job at a time. Its GPU gate remains in every local task command. The optional `hermes-cyber-profile.example.json` is a reviewable Claude profile, not automatically installed or enabled. The documented Anthropic OAuth route can require extra-usage credits; do not silently replace a subscription CLI with a differently billed provider.

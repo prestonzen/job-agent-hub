@@ -43,3 +43,7 @@ Run `npm ci`, `npm run typecheck`, `npm test`, and `npm run build`. CI runs the 
 Apply migrations `0003_work_routing.sql`, `0004_recorded_outcomes.sql`, and `0005_dispatch_keys.sql` before deploying. Existing runners remain compatible. Runner updates wait until the current work finishes; inspect `job-agent-updater` and the runner version rather than interrupting applications to deploy.
 
 If work stops: inspect the queue's available/parked counts, per-agent access and work status, task switches, latest sourcing-check detail, recorded run result, then the technical log. Do not restart a healthy Ollama service just because the queue has no available work.
+
+## October 13 email and admin update
+
+See [email and agent operations](EMAIL-OPERATIONS-2026-10-13.md) for email-first sourcing, fixed-plan cost allocation, cyber rubric, reply notification receipts and model decisions. Admin is grouped into Overview, Applications, Replies, Cyber and Agents; schedules are under Agents → Sourcing & schedules. Application failure circuits are per work type, so a failed web lane does not pause email work.

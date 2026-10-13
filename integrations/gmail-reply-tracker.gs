@@ -32,7 +32,11 @@ function syncReplies() {
 
   const label = GmailApp.getUserLabelByName(LABEL) || GmailApp.createLabel(LABEL);
   // Mail to the application inbox from others, last 3 days, not yet processed.
-  const threads = GmailApp.search(`to:${inbox} -from:${inbox} newer_than:3d -label:"${LABEL}"`, 0, MAX_PER_RUN);
+  // Labels belong to threads, so excluding processed threads hides new replies.
+  // Rotate recent pages and let the hub deduplicate individual message IDs.
+  const offset=Number(props.getProperty("REPLY_PAGE_OFFSET")||0);
+  const threads = GmailApp.search(`to:${inbox} -from:${inbox} newer_than:7d`, offset, MAX_PER_RUN);
+  props.setProperty("REPLY_PAGE_OFFSET",String(threads.length===MAX_PER_RUN?offset+MAX_PER_RUN:0));
 
   threads.forEach((thread) => {
     let ok = true;

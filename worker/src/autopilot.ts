@@ -129,9 +129,9 @@ export function applicationLane(s: AutopilotSettings, agent: string): Lane | nul
   return !tasks.applications && !tasks.email ? "none" : !tasks.applications ? "email" : !tasks.email ? "web" : s.lanes[agent] ?? null;
 }
 
-function failStreak(runs: Awaited<ReturnType<typeof listRuns>>, agent: string): number {
+function failStreak(runs: Awaited<ReturnType<typeof listRuns>>, agent: string, task: string = "applications"): number {
   let n = 0;
-  for (const r of finished(runs, agent)) {
+  for (const r of finished(runs, agent).filter(r=>r.task===task)) {
     if (r.exitCode === QUOTA_EXIT) continue; // out of quota is a rest, not a failure
     if (r.status === "failed") n++;
     else if (r.status === "succeeded") break;
@@ -168,13 +168,13 @@ export async function autopilotStatus(env: Env) {
     const tasks = taskSwitches(s, agent);
     const base = { agent, role, tags, online, signedIn, tasks };
     const active = runs.find((r) => r.agent === agent && r.kind !== "login" && (r.status === "running" || r.status === "queued"));
-    const streak = failStreak(runs, agent);
+    const streak = failStreak(runs, agent, taskSwitches(s,agent).applications?"applications":"email");
     const n = next.get(agent) ?? 0;
     if (s.agents[agent] === false) return { ...base, state: "off", nextAt: null, detail: active ? `Off; run #${active.id} is finishing` : "switched off" };
     if (!online) return { ...base, state: "offline", nextAt: null, detail: "No online runner" };
     if (!readySet.has(agent)) return { ...base, state: "not-ready", nextAt: null, detail: probes.find((a) => a.note)?.note ?? "Agent cannot execute work" };
     if (active) return { ...base, state: active.status === "running" ? "working" : "queued", nextAt: null, detail: `${active.task} · run #${active.id}` };
-    if (streak >= FAIL_STREAK_PAUSE) return { ...base, state: "paused", nextAt: null, detail: `${streak} failed runs in a row` };
+    if (streak >= FAIL_STREAK_PAUSE) return { ...base, state: "paused", nextAt: null, detail: `${streak} failed ${tasks.applications?"application":"email"} runs in a row` };
     if (n > Date.now()) return { ...base, state: "waiting", nextAt: new Date(n).toISOString(), detail: "Resting between runs or waiting for quota" };
     if (!s.enabled) return { ...base, state: "idle", nextAt: null, detail: "Autopilot disabled" };
     const eligible = jobs.filter((j) => isAvailableFor(j, agent) && inLane(j, lane));
@@ -222,14 +222,14 @@ export async function autopilotTick(env: Env): Promise<string | null> {
     if (s.backlog.includes(a) && s.backlog.includes(b)) return (rate.get(b) ?? 0.5) - (rate.get(a) ?? 0.5);
     return 0;
   });
-  const frontLineAvailable = order.some((a) => !s.backlog.includes(a) && !inFlight.some((r) => r.agent === a) && failStreak(runs,a) < FAIL_STREAK_PAUSE && (next.get(a) ?? 0) <= now && claimableFor(a) > 0);
+  const frontLineAvailable = order.some((a) => !s.backlog.includes(a) && !inFlight.some((r) => r.agent === a) && failStreak(runs,a,taskSwitches(s,a).applications?"applications":"email") < FAIL_STREAK_PAUSE && (next.get(a) ?? 0) <= now && claimableFor(a) > 0);
   for (const agent of order) {
     if (inFlight.some((r) => r.agent === agent)) continue;
     const claimable = claimableFor(agent);
     if (claimable === 0) continue;
     // Backlog agents (Kimi) only start when jobs were handed to them, or when no front-line agent can work.
     if (s.backlog.includes(agent) && !assignedTo.has(agent) && frontLineAvailable) continue;
-    const streak = failStreak(runs, agent);
+    const streak = failStreak(runs, agent, taskSwitches(s,agent).applications?"applications":"email");
     if (streak >= FAIL_STREAK_PAUSE) {
       const last = finished(runs, agent)[0]?.id ?? 0;
       const seen = await getSetting<number>(env, `autopilot_paused_${agent}`).catch(() => null);
@@ -247,7 +247,7 @@ export async function autopilotTick(env: Env): Promise<string | null> {
     const won = await d.prepare("UPDATE autopilot_state SET next_after = ?1 WHERE agent = ?2 AND (next_after <= ?3 OR ?4 = 1)").bind(Math.round(nextAfter), agent, now, urgent).run();
     if (won.meta.changes !== 1) continue;
     // A lane agent (free tier) gets a short run: its daily request budget is tiny.
-    const run = await createRun(env, { agent, kind: "queue", task: applicationLane(s,agent) === "email" ? "email" : "applications", exclusive: true, count: Math.min(applicationLane(s,agent) === "email" ? 2 : s.jobsPerRun, claimable) });
+    const run = await createRun(env, { agent, kind: "queue", task: applicationLane(s,agent) === "email" ? "email" : "applications", exclusive: true, count: Math.min(agent === "ollama" ? 1 : applicationLane(s,agent) === "email" ? 2 : s.jobsPerRun, claimable) });
     return `launched run #${run.id} for ${agent}`;
   }
   return null;

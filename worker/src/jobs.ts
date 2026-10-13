@@ -182,12 +182,9 @@ function toJob(t: Task, claim: Claim | undefined | null, assigned?: Assignment |
   };
 }
 
-const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
-
 function byBestFirst(a: Job, b: Job): number {
   return (
     (b.fit ?? 0) - (a.fit ?? 0) ||
-    (PRIORITY_RANK[a.priority ?? ""] ?? 4) - (PRIORITY_RANK[b.priority ?? ""] ?? 4) ||
     a.name.localeCompare(b.name)
   );
 }
@@ -221,7 +218,7 @@ export async function claimJobs(
   const paced = new Map<string, { ats: string; reason: string; retryAt: string | null }>();
 
   // Re-hand an agent the jobs it already holds (e.g. after a crash) before giving it new ones.
-  const mine = all.filter((j) => j.claimedBy === agent);
+  const mine = all.filter((j) => j.claimedBy === agent && inLane(j,lane) && (!ats.length || ats.some(a=>(j.ats??"").toLowerCase().includes(a))));
   const out: Job[] = mine.slice(0, count);
 
   // Jobs handed to this agent come first.
@@ -474,12 +471,14 @@ export interface NewJob {
   travel?: string;
   fit?: string;
   notes?: string;
+  applyEmail?: string;
 }
 
 /** Add a posting to the queue (status "not started"). Returns the existing task if it's already tracked. */
 export async function addJob(env: Env, agent: string, j: NewJob): Promise<{ id: string; created: boolean; status: string }> {
   const settings = await workSettings(env);
   if (settings.agents?.[agent] === false || !taskSwitches(settings,agent).sourcing) throw new HttpError(403, `Sourcing is switched off for ${agent}`);
+  if(j.applyEmail && !/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(j.applyEmail))throw new HttpError(400,"applyEmail must be a valid advertised address");
   const existing = await findExisting(env, j.company, j.role, j.url);
   if (existing) return { id: existing.id, created: false, status: existing.status };
   let id = `demo-${Date.now()}`;
@@ -492,7 +491,7 @@ export async function addJob(env: Env, agent: string, j: NewJob): Promise<{ id: 
       pay: j.pay,
       travel: j.travel,
       fit: j.fit,
-      notes: j.notes,
+      notes: [j.applyEmail && `Application email: ${j.applyEmail}`,j.notes].filter(Boolean).join("\n"),
       appliedBy: displayAgent(agent),
       status: "not started",
     });

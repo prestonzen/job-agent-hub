@@ -118,8 +118,8 @@ export default function Analytics() {
                 <th>Runs</th>
                 <th className="r">Avg run</th>
                 <th className="r">Run time</th>
-                <th className="r" title="Reported by the agent's own CLI; subscription and local models report $0">Cost</th>
-                <th className="r" title="Cost ÷ applications sent, in this window">$/app</th>
+                <th className="r" title="Fixed monthly plan for subscription agents; otherwise CLI-reported charges">Plan / charges</th>
+                <th className="r" title="Current Tokyo calendar month: application allocation ÷ distinct reported submissions">Month $/app</th>
               </tr>
             </thead>
             <tbody>
@@ -163,14 +163,12 @@ export default function Analytics() {
                     </td>
                     <td className="r">{mins(a.avgRunMin)}</td>
                     <td className="r">{a.runMinutes ? `${(a.runMinutes / 60).toFixed(1)} h` : "—"}</td>
-                    <td className="r" title={(a.tokens ?? 0) ? `${(a.tokens ?? 0).toLocaleString()} tokens${(a.estCostUsd ?? 0) ? " · estimated at OpenRouter rates" : ""}` : "only CLIs that self-report cost/tokens count here"}>
-                      {(a.costUsd ?? 0) ? `$${(a.costUsd ?? 0).toFixed(2)}` : (a.estCostUsd ?? 0) ? `~$${(a.estCostUsd ?? 0).toFixed(2)}` : "—"}
+                    <td className="r" title={(a.tokens ?? 0) ? `${(a.tokens ?? 0).toLocaleString()} tokens · tracked usage` : "Usage missing; no spend inferred"}>
+                      {a.monthlyPlanUsd!=null?`$${a.monthlyPlanUsd}/mo`:(a.costUsd??0)?`$${a.costUsd.toFixed(2)}`:'—'}
                     </td>
-                    <td className="r">
-                      {(() => {
-                        const c = (a.costUsd ?? 0) || (a.estCostUsd ?? 0);
-                        return c && a.applied ? `${(a.costUsd ?? 0) ? "" : "~"}$${(c / a.applied).toFixed(2)}` : "—";
-                      })()}
+                    <td className="r" title={`${a.billingMonth}: ${a.costBasis} Usage coverage ${a.monthlyTokenCoverage}`}>
+                      {a.monthlyCostPerApplicationUsd!=null?`~$${a.monthlyCostPerApplicationUsd.toFixed(2)}`:(a.monthlyApplications??0)===0?'No submissions':'Usage missing'}
+                      {a.monthlyPlanUsd!=null&&<div className="sub">${a.monthlyPlanUsd}/month · {a.monthlyApplications} apps<br/>{a.monthlyTokenCoverage} with usage</div>}
                     </td>
                   </tr>
                 );

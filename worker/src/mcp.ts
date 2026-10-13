@@ -127,7 +127,8 @@ const TOOLS = [
       properties: {
         company: str,
         role: str,
-        url: { type: "string", description: "Application URL" },
+        url: { type: "string", description: "Verified posting/application URL" },
+        applyEmail: {type:"string",description:"Employer-advertised application address; never guessed"},
         ats: { type: "string", description: "Greenhouse / Ashby / Lever / …" },
         pay: str,
         travel: str,

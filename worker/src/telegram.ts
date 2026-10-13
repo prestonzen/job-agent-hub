@@ -43,7 +43,7 @@ export async function send(
   env: Env,
   html: string,
   opts: { silent?: boolean; replyTo?: number } = {},
-): Promise<{ messageId: number | null; error: string | null }> {
+): Promise<{ messageId: number | null; error: string | null; uncertain?: boolean }> {
   if (!telegramConfigured(env)) return { messageId: null, error: "Telegram is not configured (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)" };
   try {
     const thread = await threadId(env);
@@ -66,7 +66,7 @@ export async function send(
     const id = (r.result as { message_id?: number } | undefined)?.message_id ?? null;
     return r.ok ? { messageId: id, error: null } : { messageId: null, error: `Telegram: ${r.description ?? "send failed"}` };
   } catch (e) {
-    return { messageId: null, error: `Telegram: ${(e as Error).message}` };
+    return { messageId: null, error: `Telegram: ${(e as Error).message}`, uncertain: true };
   }
 }
 

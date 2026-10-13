@@ -7,7 +7,8 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { hostname, homedir } from "node:os";
 import { basename, join } from "node:path";
 
-const VERSION = "0.2.0";
+import { kimiUsage } from "./usage.mjs";
+const VERSION = "0.3.0";
 const CONFIG_PATH = process.env.RUNNER_CONFIG ?? "/etc/job-agent-runner/config.json";
 let cfg = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
 /** Re-read the config file so edits (commands, models, notes, tokens) apply to the next run without a restart. */
@@ -21,7 +22,6 @@ function reloadCfg() {
 const NAME = cfg.name ?? hostname();
 // Read live from the config (reloadCfg) so capacity can be tuned without a restart.
 const maxSlots = () => Math.max(1, cfg.slots ?? 2);
-const TIMEOUT_MS = (cfg.timeoutMinutes ?? 90) * 60_000;
 const WORK = cfg.workDir ?? "/var/lib/job-agent-runner/runs";
 // Read by update.sh: it only restarts the runner when nothing is running.
 const STATE = cfg.stateFile ?? join(WORK, "..", "state.json");
@@ -165,9 +165,11 @@ const FORMATTERS = { "claude-stream": formatClaudeEvent };
 async function startRun(run) {
   reloadCfg();
   const a = cfg.agents[run.agent];
+  const taskGuard=run.task==='cyber'?'CYBER EVIDENCE RULES: Operate only within the scope explicitly authorized in the task. Prefer offline triage or drafting; never expand scope or submit bounty reports. Separate observed facts from hypotheses. HTTP 200 alone is not evidence of secrets; archived data is not proof of current exposure; metadata, public assets and absent headers do not justify high severity without impact. Propose the smallest authorized validation step and redact sensitive evidence. Never claim you performed checks you did not perform.':run.task==='email'?'EMAIL TASK: Use only the employer-advertised application email on your claimed job and the hub email_application helper. Do not browse ATS forms, guess contacts or send followups. One application at a time; record the mailer receipt and selected resume.':'';
+  run.fullPrompt+=`\n\n${taskGuard}`;
   const prompt = cfg.machineNotes ? `${run.fullPrompt}\n\nNOTES FOR THIS MACHINE:\n${cfg.machineNotes}` : run.fullPrompt;
   const LOGIN = { codex: ["codex", "login", "--device-auth"], kimi: ["kimi", "login"] };
-  const [bin, ...rest] = run.kind === "login" ? (a.loginCmd ?? LOGIN[run.agent] ?? ["false"]) : a.cmd;
+  const [bin, ...rest] = run.kind === "login" ? (a.loginCmd ?? LOGIN[run.agent] ?? ["false"]) : (a.taskCommands?.[run.task] ?? a.cmd);
   // Commands use spawn rather than a shell, so paths such as ~/.gemini/.env need expansion here.
   const args = rest.map((x) => (x === "{PROMPT}" ? prompt : expand(x)));
   const cwd = join(WORK, String(run.id));
@@ -184,7 +186,7 @@ async function startRun(run) {
     log("resume bank sync failed:", e.message);
   }
 
-  const runEnv = agentEnv(a);
+  const runEnv = {...agentEnv(a),...Object.fromEntries(Object.entries(a.taskEnvs?.[run.task]??{}).map(([key,value])=>[key,typeof value==="string"?expand(value):value]))};
   // Every task uses the canonical hub identity, including email and cyber prompts that call REST.
   if (cfg.agentTokens?.[run.agent]) runEnv.JOBHUNTER_TOKEN = cfg.agentTokens[run.agent];
   const child = spawn(bin, args, {
@@ -194,11 +196,12 @@ async function startRun(run) {
     detached: true, // own process group, so cancel kills the CLI and its browser/MCP children
   });
   const state = { child, buf: `[runner ${NAME}] run #${run.id}: ${run.agent} (${run.kind}) started\n`, cancelled: false, timedOut: false, costUsd: null, tokens: null };
+  state.buf+=`[task profile] ${run.task}: ${a.taskHarnesses?.[run.task]??a.harness??run.agent} · ${a.taskModels?.[run.task]??a.hermes?.model??"configured model"}\n`;
   active.set(run.id, state);
   saveState();
   log(`run #${run.id} ${run.agent} pid ${child.pid}`);
 
-  const fmt = FORMATTERS[a.format];
+  const fmt = FORMATTERS[a.taskFormats?.[run.task] ?? a.format];
   let partial = "";
   // Cost/token accounting, reported to the hub on finish: Claude's stream carries total_cost_usd;
   // other CLIs get a tolerant "tokens used: 12,345" scan of their raw output.
@@ -241,7 +244,8 @@ async function startRun(run) {
     setTimeout(() => { try { process.kill(-child.pid, "SIGKILL"); } catch {} }, 10_000).unref();
   };
   state.kill = kill;
-  const timer = setTimeout(() => { state.timedOut = true; kill(`timeout after ${TIMEOUT_MS / 60_000} min`); }, TIMEOUT_MS);
+  const timeoutMs=(a.taskTimeoutMinutes?.[run.task]??cfg.timeoutMinutes??90)*60_000;
+  const timer = setTimeout(() => { state.timedOut = true; kill(`timeout after ${timeoutMs / 60_000} min`); }, timeoutMs);
 
   const flusher = setInterval(() => flush(run.id), 2_000);
   child.on("error", (e) => (state.buf += `\n[runner] failed to start: ${e.message}\n`));
@@ -249,6 +253,9 @@ async function startRun(run) {
     clearTimeout(timer);
     clearInterval(flusher);
     state.buf += `\n[runner] exited ${signal ? `by ${signal}` : `with code ${code}`}\n`;
+    if(run.agent === "kimi") {
+      try { const usage=kimiUsage(homedir(),cwd); if(usage){state.tokens=usage.tokens;state.buf+=`[usage] ${usage.tokens} tokens from ${usage.records} Kimi turns\n`;} } catch(e){ log("Kimi usage unavailable:",e.message); }
+    }
     await flush(run.id);
     try {
       await hub(`/api/runner/runs/${run.id}/finish`, { exitCode: state.timedOut ? 124 : code, cancelled: state.cancelled, costUsd: state.costUsd, tokens: state.tokens });
