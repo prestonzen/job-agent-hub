@@ -67,6 +67,48 @@ function tokenMap(env: Env): Record<string, string> {
   }
 }
 
+export interface Identity {
+  id: string; user: string; model: string; approach: string;
+  billing?: { mode: "api" } | { mode: "subscription"; period: "weekly" | "monthly"; quota: number };
+}
+
+export function identityId(i: { user: string; model: string; approach: string }): string {
+  return `${i.user}/${i.model}/${i.approach}`.toLowerCase();
+}
+
+interface RawIdentity { user?: string; model?: string; approach?: string; billing?: Identity["billing"] }
+function identityMap(env: Env): Record<string, RawIdentity> {
+  if (!env.AGENT_IDENTITIES) return {};
+  try { return JSON.parse(env.AGENT_IDENTITIES) as Record<string, RawIdentity>; } catch { return {}; }
+}
+
+function bearer(request: Request): string | null {
+  const m = (request.headers.get("Authorization") ?? "").match(/^Bearer\s+(.+)$/i);
+  return m ? m[1].trim() : null;
+}
+
+/** Resolve a bearer token to a full identity: AGENT_IDENTITIES first, then AGENT_TOKENS (single-user). */
+export function resolveIdentity(request: Request, env: Env): Identity | null {
+  const tok = bearer(request);
+  if (!tok || tok.length < 24) return null;
+  let found: Identity | null = null;
+  // No early exit: compare against every token so timing doesn't reveal which matched.
+  for (const [t, raw] of Object.entries(identityMap(env))) {
+    if (t.length >= 24 && timingSafeEqual(t, tok)) {
+      const user = (raw.user ?? "").toLowerCase(), model = (raw.model ?? "").toLowerCase(), approach = (raw.approach ?? "default").toLowerCase();
+      if (user && model) found = { id: identityId({ user, model, approach }), user, model, approach, billing: raw.billing };
+    }
+  }
+  if (found) return found;
+  for (const [name, t] of Object.entries(tokenMap(env))) {
+    if (t.length >= 24 && timingSafeEqual(t, tok)) {
+      const model = name.toLowerCase();
+      found = { id: identityId({ user: model, model, approach: "default" }), user: model, model, approach: "default" };
+    }
+  }
+  return found;
+}
+
 /** Configured agent names (never the tokens). */
 export function agentNames(env: Env): string[] {
   return Object.keys(tokenMap(env)).map((n) => n.toLowerCase());
@@ -74,15 +116,7 @@ export function agentNames(env: Env): string[] {
 
 /** Agent API auth: Authorization: Bearer <token>, matched against the AGENT_TOKENS secret. */
 export function agentName(request: Request, env: Env): string | null {
-  const h = request.headers.get("Authorization") ?? "";
-  const m = h.match(/^Bearer\s+(.+)$/i);
-  if (!m) return null;
-  let found: string | null = null;
-  // Compare against every token (no early exit) so timing doesn't reveal which name matched.
-  for (const [name, tok] of Object.entries(tokenMap(env))) {
-    if (tok.length >= 24 && timingSafeEqual(tok, m[1].trim())) found = name.toLowerCase();
-  }
-  return found;
+  return resolveIdentity(request, env)?.model ?? null;
 }
 
 function timingSafeEqual(a: string, b: string): boolean {

@@ -45,6 +45,8 @@ export interface Env {
   CLICKUP_TOKEN?: string;
   /** JSON map of agent name -> bearer token, e.g. {"claude":"...","codex":"..."} */
   AGENT_TOKENS?: string;
+  /** JSON map of bearer token -> { user, model, approach, billing }. Supersedes AGENT_TOKENS per token. */
+  AGENT_IDENTITIES?: string;
   ZADARMA_KEY?: string;
   ZADARMA_SECRET?: string;
 }

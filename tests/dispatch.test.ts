@@ -10,6 +10,7 @@ import { autopilotStatus, saveAutopilot } from "../worker/src/autopilot";
 import { eligibleAgents, EMPTY_OUTCOME, outcomeSummary, taskSwitches } from "../worker/src/work";
 import { inLane } from "../worker/src/lanes";
 import type { Env, Job } from "../worker/src/types";
+import { resolveIdentity, identityId, agentName } from "../worker/src/auth";
 
 const sqlite = new DatabaseSync(":memory:");
 const D1 = {
@@ -114,3 +115,33 @@ test("stalled sourcing moves to a backup after 55 minutes",async()=>{
 test("a DB failure after accepting dispatch is recovered without a duplicate run",async()=>{
   await online();await source();const prepare=D1.prepare;let injected=false;D1.prepare=function(sql){const p=prepare.call(this,sql);if(!injected&&sql.startsWith("UPDATE source_checks SET status='running',run_id")){p.run=async()=>{injected=true;throw new Error('simulated transient DB outage');};}return p;};try{await processSourceChecks(env);}finally{D1.prepare=prepare;}assert.equal((await listRuns(env)).length,1);assert.equal(check().run_id,null);sqlite.exec('UPDATE source_checks SET next_try=0');await processSourceChecks(env);assert.equal((await listRuns(env)).length,1);assert.ok(check().run_id);assert.equal(check().attempts,1);
 });
+
+
+// --- Identity resolution (Task 1) ---
+{
+  const TOK="x".repeat(30), TOK2="y".repeat(30), LEGACY="z".repeat(30);
+  const idReq=(t?:string)=>new Request("https://h/api/agent/me", t?{headers:{Authorization:`Bearer ${t}`}}:undefined);
+  const idEnv={AGENT_IDENTITIES:JSON.stringify({
+    [TOK]:{user:"Roman",model:"Claude",approach:"Hermes",billing:{mode:"subscription",period:"weekly",quota:2000000}},
+    [TOK2]:{user:"brandon",model:"codex",approach:"default",billing:{mode:"api"}},
+  }),AGENT_TOKENS:JSON.stringify({kimi:LEGACY})} as unknown as Env;
+  test("resolveIdentity reads the registry and lowercases the id",()=>{
+    const i=resolveIdentity(idReq(TOK),idEnv)!;
+    assert.equal(i.id,"roman/claude/hermes");assert.equal(i.model,"claude");
+    assert.deepEqual(i.billing,{mode:"subscription",period:"weekly",quota:2000000});
+  });
+  test("AGENT_TOKENS entries resolve as single-user identities",()=>{
+    const i=resolveIdentity(idReq(LEGACY),idEnv)!;assert.equal(i.id,"kimi/kimi/default");assert.equal(i.model,"kimi");
+  });
+  test("agentName stays the model for back-compat",()=>{
+    assert.equal(agentName(idReq(TOK),idEnv),"claude");assert.equal(agentName(idReq(LEGACY),idEnv),"kimi");
+  });
+  test("unknown token and malformed registry are safe",()=>{
+    assert.equal(resolveIdentity(idReq("short"),idEnv),null);assert.equal(resolveIdentity(idReq(),idEnv),null);
+    const bad={AGENT_IDENTITIES:"{not json",AGENT_TOKENS:JSON.stringify({kimi:LEGACY})} as unknown as Env;
+    assert.equal(resolveIdentity(idReq(LEGACY),bad)!.model,"kimi");
+  });
+  test("identityId builds the canonical string",()=>{
+    assert.equal(identityId({user:"A",model:"B",approach:"C"}),"a/b/c");
+  });
+}
