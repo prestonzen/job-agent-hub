@@ -13,6 +13,8 @@ import type { Env, Job } from "../worker/src/types";
 import { resolveIdentity, identityId, agentName } from "../worker/src/auth";
 import { cyberDb, completeCyber } from "../worker/src/cyber";
 import { logApplication } from "../worker/src/jobs";
+import { buildAnalytics } from "../worker/src/analytics";
+import { identityLabel } from "../src/agents";
 
 const sqlite = new DatabaseSync(":memory:");
 const D1 = {
@@ -188,4 +190,23 @@ test("completeCyber stamps the reviewing identity on the pass",async()=>{
   await completeCyber(env,wid.id,"codex",{verdict:"reject",result},"roman/codex/hermes" as any);
   const pass:any=sqlite.prepare("SELECT identity FROM cyber_review_passes WHERE work_id=? AND sequence=1").get(wid.id);
   assert.equal(pass.identity,"roman/codex/hermes");
+});
+
+
+// --- analytics groups by identity (Task 6) ---
+test("analytics groups applied events by identity",async()=>{
+  const menv={...(env as any),MOCK:"true"} as unknown as Env;
+  await logEvent(menv,{agent:"claude",type:"applied",identity:"roman/claude/hermes"} as any);
+  await logEvent(menv,{agent:"claude",type:"applied",identity:"brandon/claude/default"} as any);
+  await logEvent(menv,{agent:"kimi",type:"applied"} as any); // legacy: identity null -> falls back to model
+  const a:any=await buildAnalytics(menv,30);
+  const ids=(a.byIdentity??[]).map((r:any)=>r.identity).sort();
+  assert.deepEqual(ids,["brandon/claude/default","kimi","roman/claude/hermes"]);
+});
+
+
+// --- identityLabel (Task 6) ---
+test("identityLabel renders user, model and non-default approach",()=>{
+  assert.equal(identityLabel("roman/claude/hermes"),"Roman · Claude · Hermes");
+  assert.equal(identityLabel("brandon/claude/default"),"Brandon · Claude");
 });

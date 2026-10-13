@@ -31,3 +31,10 @@ export function sortAgents(names: string[]): string[] {
   };
   return [...names].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
 }
+
+/** "Roman · Claude · Hermes" (approach dropped when it is "default"). */
+export function identityLabel(id: string): string {
+  const [user, model, approach] = (id || "").split("/");
+  const cap = (x: string) => (x ? x[0].toUpperCase() + x.slice(1) : x);
+  return approach && approach !== "default" ? `${cap(user)} · ${cap(model)} · ${cap(approach)}` : `${cap(user)} · ${cap(model)}`;
+}

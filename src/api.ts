@@ -85,7 +85,7 @@ export interface DayStats { date: string; applied: number; needsHuman: number; s
 export interface Analytics {
   generatedAt: string; days: number; demo: boolean;
   totals: { applied: number; claimed: number; skipped: number; needsHuman: number; failed: number; successRate: number | null; medianMinToApply: number | null; runs: number; runsOk: number; runMinutes: number; appsPerRunHour: number | null };
-  byAgent: AgentStats[]; byDay: DayStats[]; byHour: number[]; byAts: AtsStats[];
+  byIdentity?:{identity:string;applied:number}[]; byAgent: AgentStats[]; byDay: DayStats[]; byHour: number[]; byAts: AtsStats[];
   parked: { reason: string; count: number }[];
   queue: { ready: number; claimed: number; parked: number; total: number };
   clickup: { day: string; calls: number }[];
@@ -109,7 +109,7 @@ export interface BountySummary {
   cyber?: { enabled:boolean; counts: {evidence:number;pending:number;running:number;blocked:number;drafts:number;plausible:number;accepted:number;falsePositive:number;reviewed:number};
     byAgent:{agent:string;completed:number;reviewed:number;plausible:number;accepted:number;falsePositive:number}[];
     passByAgent:{agent:string;completed:number;reviewed:number;plausible:number;accepted:number;falsePositive:number}[];
-    items:{id:number;program:string;platform:string;target:string;source:string;status:string;agent:string|null;run_id:number|null;verdict:string|null;result:string|null;review:string|null;feedback:string|null;reviewed_by:string|null;detail:string|null;passes:{sequence:number;agent:string;verdict:string|null;result:string|null;detail:string|null;created_at:number;completed_at:number|null}[]}[] };
+    items:{id:number;program:string;platform:string;target:string;source:string;status:string;agent:string|null;identity:string|null;run_id:number|null;verdict:string|null;result:string|null;review:string|null;feedback:string|null;reviewed_by:string|null;detail:string|null;passes:{sequence:number;agent:string;identity:string|null;verdict:string|null;result:string|null;detail:string|null;created_at:number;completed_at:number|null}[]}[] };
 }
 export const getBounty = () => request<BountySummary>("/api/admin/bounty");
 export const reviewCyberEvidence=(id:number,review:string,feedback:string)=>request(`/api/admin/cyber/${id}/review`,{method:'POST',body:JSON.stringify({review,feedback})});

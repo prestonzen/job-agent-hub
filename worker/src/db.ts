@@ -157,13 +157,14 @@ export async function logEvent(
 
 export async function listEvents(env: Env, limit = 100): Promise<AgentEvent[]> {
   const { results } = await (await db(env))
-    .prepare("SELECT id, at, agent, task_id, task_name, type, message FROM events ORDER BY at DESC LIMIT ?")
+    .prepare("SELECT id, at, agent, identity, task_id, task_name, type, message FROM events ORDER BY at DESC LIMIT ?")
     .bind(Math.min(500, Math.max(1, limit)))
-    .all<{ id: number; at: number; agent: string; task_id: string | null; task_name: string | null; type: string; message: string | null }>();
+    .all<{ id: number; at: number; agent: string; identity: string | null; task_id: string | null; task_name: string | null; type: string; message: string | null }>();
   return results.map((r) => ({
     id: r.id,
     at: new Date(r.at).toISOString(),
     agent: r.agent,
+    identity: r.identity,
     taskId: r.task_id,
     taskName: r.task_name,
     type: r.type,

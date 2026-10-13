@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getHub, releaseJob, reportJob } from "../api";
 import type { HubState, Job } from "../types";
-import { agentColor } from "../agents";
+import { agentColor, identityLabel } from "../agents";
 import Autopilot from "./Autopilot";
 import Pacing from "./Pacing";
 
@@ -170,7 +170,7 @@ export default function CommandCenter() {
                   <span className="when">{time(e.at)}</span>
                   <span>
                     <AgentDot name={e.agent} />
-                    <b>{cap(e.agent)}</b> {EVENT_LABEL[e.type] ?? e.type} {e.taskName ?? ""}
+                    <b title={e.identity ? identityLabel(e.identity) : undefined}>{cap(e.agent)}</b> {EVENT_LABEL[e.type] ?? e.type} {e.taskName ?? ""}
                     {e.message && <span className="sub">{e.message}</span>}
                   </span>
                 </li>

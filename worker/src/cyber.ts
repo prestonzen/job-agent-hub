@@ -31,7 +31,7 @@ export async function cyberDb(env: Env) {
  return d;
 }
 export interface CyberWork { id:number; source_key:string; created_at:number; program:string; platform:string; target:string; source:string; evidence:string; status:string; agent:string|null; run_id:number|null; attempts:number; next_try:number; lease_until:number; verdict:string|null; result:string|null; review:string|null; feedback:string|null; reviewed_at:number|null; reviewed_by:string|null; detail:string|null; pass_agents:string }
-interface CyberPass { work_id:number; sequence:number; agent:string; run_id:number|null; status:string; verdict:string|null; result:string|null; detail:string|null; created_at:number; completed_at:number|null }
+interface CyberPass { work_id:number; sequence:number; agent:string; identity:string|null; run_id:number|null; status:string; verdict:string|null; result:string|null; detail:string|null; created_at:number; completed_at:number|null }
 const text = (v: unknown, max: number) => typeof v==='string' ? v.trim().slice(0,max) : '';
 /** Ingestion is admin-only. Existing artifacts are evidence, never instructions to execute. */
 export async function enqueueCyber(env: Env, body: Record<string,unknown>) {
@@ -97,7 +97,7 @@ export async function reviewCyber(env: Env,id:number,body:Record<string,unknown>
 export async function cyberSummary(env:Env) {
  const d=await cyberDb(env);
  const [items,counts,byAgent,passByAgent]=await Promise.all([
-  d.prepare("SELECT id,created_at,program,platform,target,source,status,agent,run_id,attempts,verdict,result,review,feedback,reviewed_by,detail FROM cyber_work ORDER BY CASE WHEN status='completed' AND verdict='draft' AND review IS NULL THEN 0 ELSE 1 END,id DESC LIMIT 60").all(),
+  d.prepare("SELECT id,created_at,program,platform,target,source,status,agent,identity,run_id,attempts,verdict,result,review,feedback,reviewed_by,detail FROM cyber_work ORDER BY CASE WHEN status='completed' AND verdict='draft' AND review IS NULL THEN 0 ELSE 1 END,id DESC LIMIT 60").all(),
   d.prepare(`SELECT COUNT(*) AS evidence, SUM(status='pending') AS pending, SUM(status='running') AS running,
    SUM(status='blocked') AS blocked, SUM(status='completed' AND verdict='draft' AND review IS NULL) AS drafts,
    SUM(review IN ('plausible','submitted','accepted')) AS plausible,
@@ -112,7 +112,7 @@ export async function cyberSummary(env:Env) {
    WHERE p.status='completed' GROUP BY p.agent`).all()
  ]);
  const ids=items.results.map((x:any)=>x.id);
- const passRows=ids.length?await d.prepare('SELECT work_id,sequence,agent,status,verdict,result,detail,created_at,completed_at FROM cyber_review_passes WHERE work_id IN (SELECT value FROM json_each(?)) ORDER BY work_id,sequence').bind(JSON.stringify(ids)).all<CyberPass>():{results:[] as CyberPass[]};
+ const passRows=ids.length?await d.prepare('SELECT work_id,sequence,agent,identity,status,verdict,result,detail,created_at,completed_at FROM cyber_review_passes WHERE work_id IN (SELECT value FROM json_each(?)) ORDER BY work_id,sequence').bind(JSON.stringify(ids)).all<CyberPass>():{results:[] as CyberPass[]};
  const passesByWork=new Map<number,CyberPass[]>();
  for(const pass of passRows.results){const list=passesByWork.get(pass.work_id)??[];list.push(pass);passesByWork.set(pass.work_id,list);}
  const zeroNulls=(row:Record<string,unknown>)=>Object.fromEntries(Object.entries(row).map(([key,value])=>[key,value??0]));

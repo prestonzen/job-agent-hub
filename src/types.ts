@@ -68,6 +68,7 @@ export interface AgentEvent {
   id: number;
   at: string;
   agent: string;
+  identity: string | null;
   taskId: string | null;
   taskName: string | null;
   type: string;

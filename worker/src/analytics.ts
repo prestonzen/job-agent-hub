@@ -78,6 +78,7 @@ export interface Analytics {
     appsPerRunHour: number | null;
   };
   byAgent: AgentStats[];
+  byIdentity: { identity: string; applied: number }[];
   byDay: DayStats[];
   /** Applied events per UTC hour of day (24 slots). */
   byHour: number[];
@@ -116,6 +117,7 @@ interface Ev {
   task_id: string | null;
   type: string;
   ats: string | null;
+  identity?: string | null;
 }
 
 export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
@@ -124,7 +126,7 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
 
   const [{ results: evs }, { results: runs }, q, runners, usage] = await Promise.all([
     d
-      .prepare("SELECT at, agent, task_id, type, ats FROM events WHERE at >= ? AND type IN ('claimed','applied','skipped','needs_human','failed','released') ORDER BY at")
+      .prepare("SELECT at, agent, task_id, type, ats, identity FROM events WHERE at >= ? AND type IN ('claimed','applied','skipped','needs_human','failed','released') ORDER BY at")
       .bind(since)
       .all<Ev>(),
     d
@@ -172,6 +174,7 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
     return x;
   };
   const byHour = new Array<number>(24).fill(0);
+  const byId = new Map<string, number>(); // identity (or model fallback) -> applied count
   const openClaim = new Map<string, number>(); // task_id -> claimed_at (by the same agent)
 
   for (const e of evs) {
@@ -185,6 +188,7 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
       case "applied": {
         a.applied++;
         day.applied++;
+        { const k=(e.identity ?? e.agent ?? "unknown").toLowerCase(); byId.set(k,(byId.get(k)??0)+1); }
         S(e.ats).applied++;
         byHour[new Date(e.at).getUTCHours()]++;
         const c = e.task_id ? openClaim.get(`${e.agent}:${e.task_id}`) : undefined;
@@ -286,6 +290,7 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
       appsPerRunHour: runMinutes > 0 ? round1((applied / runMinutes) * 60) : null,
     },
     byAgent,
+    byIdentity: [...byId.entries()].map(([identity, applied]) => ({ identity, applied })).sort((a, b) => b.applied - a.applied),
     byDay: dayList,
     byHour,
     byAts: ats,
