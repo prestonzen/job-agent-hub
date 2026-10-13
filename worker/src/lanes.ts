@@ -25,7 +25,7 @@ export async function agentLane(env: Env, agent: string): Promise<Lane | null> {
 }
 
 /** An application made by emailing the employer: the posting names an address, or the ATS is "Email". */
-export const isEmailJob = (j: Job): boolean => !!j.applyEmail || /\be-?mail\b/i.test(j.ats ?? "") || /^mailto:/i.test(j.applyUrl ?? "");
+export const isEmailJob = (j: Job): boolean => !!j.applyEmail;
 
 export const inLane = (j: Job, lane: Lane | null): boolean => lane === "none" ? false : lane === "web" ? !isEmailJob(j) : !lane || lane === "email-first" || isEmailJob(j);
 

@@ -112,7 +112,7 @@ export function parseDetails(desc: string) {
   // Only explicit phrasings, so the applicant's own address in a description is never mistaken for the employer's.
   const addr = "([A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,})";
   const applyEmail =
-    desc.match(new RegExp(`(?:apply\\s+(?:by\\s+)?e-?mail|e-?mail\\s+(?:your\\s+)?(?:resume|cv|application)\\s+to|send\\s+(?:your\\s+)?(?:resume|cv|application)\\s+to)\\s*:?\\s*(?:mailto:)?${addr}`, "i"))?.[1] ??
+    desc.match(new RegExp(`(?:application\\s+e-?mail|apply\\s+(?:by\\s+)?e-?mail|e-?mail\\s+(?:your\\s+)?(?:resume|cv|application)\\s+to|send\\s+(?:your\\s+)?(?:resume|cv|application)\\s+to)(?:\\s+to)?\\s*:?\\s*(?:mailto:)?${addr}`, "i"))?.[1] ??
     desc.match(new RegExp(`mailto:${addr}`, "i"))?.[1] ??
     null;
   const fitRaw = grab("Fit");
@@ -479,6 +479,7 @@ export async function addJob(env: Env, agent: string, j: NewJob): Promise<{ id: 
   const settings = await workSettings(env);
   if (settings.agents?.[agent] === false || !taskSwitches(settings,agent).sourcing) throw new HttpError(403, `Sourcing is switched off for ${agent}`);
   if(j.applyEmail && !/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(j.applyEmail))throw new HttpError(400,"applyEmail must be a valid advertised address");
+  if (/\be-?mail\b/i.test(j.ats ?? "") && !j.applyEmail) throw new HttpError(400, "Email application jobs require the employer-advertised applyEmail address");
   const existing = await findExisting(env, j.company, j.role, j.url);
   if (existing) return { id: existing.id, created: false, status: existing.status };
   let id = `demo-${Date.now()}`;
