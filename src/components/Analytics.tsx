@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getAnalytics, type Analytics as AnalyticsData } from "../api";
 import { agentColor, agentLabel } from "../agents";
 import { Spark, StackedColumns } from "./Charts";
-import { Card, useCountUp } from "./Panels";
+import { Card } from "./Panels";
 
 const OUTCOMES = [
   { key: "applied", label: "Applied", color: "var(--accent)" },
@@ -16,11 +16,9 @@ const mins = (v: number | null) => (v === null ? "—" : v < 90 ? `${Math.round(
 const fmtDay = (iso: string, o: Intl.DateTimeFormatOptions) => new Date(`${iso}T12:00:00Z`).toLocaleDateString([], { timeZone: "UTC", ...o });
 
 function Stat({ label, value, sub, tone }: { label: string; value: string | number; sub?: string; tone?: "warn" | "ok" }) {
-  const num = typeof value === "number" ? value : null;
-  const v = useCountUp(num ?? 0);
   return (
     <div className="kpi">
-      <div className={`kpi-v${tone === "warn" ? " warn" : ""}`}>{num !== null ? v.toLocaleString() : value}</div>
+      <div className={`kpi-v${tone === "warn" ? " warn" : ""}`}>{typeof value === "number" ? value.toLocaleString() : value}</div>
       <div className="kpi-l">{label}</div>
       {sub && <div className="kpi-s">{sub}</div>}
     </div>
@@ -86,13 +84,13 @@ export default function Analytics() {
         <Stat label="Median time to apply" value={mins(t.medianMinToApply)} sub="claim → submitted" />
         <Stat label="Agent run time" value={`${(t.runMinutes / 60).toFixed(1)} h`} sub={`${t.runsOk}/${t.runs} processes completed; diagnostics excluded`} />
         <Stat label="Applications per run-hour" value={t.appsPerRunHour === null ? "—" : t.appsPerRunHour.toFixed(1)} sub="throughput" />
-        <Stat label="Ready in the queue" value={data.queue.ready} sub={`${data.queue.claimed} in progress`} />
+        <Stat label="Open postings" value={data.queue.ready} sub={`${data.queue.claimed} in progress`} />
         <Stat label="Parked for a person" value={data.queue.parked} tone={data.queue.parked ? "warn" : undefined} sub="not claimable" />
         <Stat label="Agents ready now" value={data.fleet.agentsReady} sub={`${data.fleet.runnersOnline} runner${data.fleet.runnersOnline === 1 ? "" : "s"} online`} />
         {data.bounty && (data.bounty.programs > 0 || data.bounty.findings > 0) && (
           <>
             <Stat label="Bounty programs" value={data.bounty.programs} sub={`${data.bounty.scans} scans · ${data.bounty.hostsScanned} hosts`} />
-            <Stat label="Bounty findings" value={data.bounty.findings} sub={`${data.bounty.reports} reports submitted`} />
+            <Stat label="Bounty finding leads" value={data.bounty.findings} sub={`${data.bounty.reports} report records`} />
             <Stat label="Bounty payouts" value={`$${data.bounty.payoutsUsd.toLocaleString()}`} sub={`${data.bounty.payouts} payout${data.bounty.payouts === 1 ? "" : "s"}`} />
           </>
         )}
