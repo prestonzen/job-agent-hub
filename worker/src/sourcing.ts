@@ -28,6 +28,7 @@ export async function processSourceChecks(env: Env): Promise<number> {
   for (const c of checks) {
     const won = await d.prepare("UPDATE source_checks SET lease_until=? WHERE id=? AND lease_until<?").bind(now + 90_000, c.id, now).run();
     if (won.meta.changes !== 1) continue;
+    let partialAdded = 0;
     try {
       const [runners, runs] = await Promise.all([listRunners(env), listRuns(env, 200)]);
       const dispatchKey=`source:${c.id}:${c.attempts}`;
@@ -42,13 +43,14 @@ export async function processSourceChecks(env: Env): Promise<number> {
       }
       if (c.run_id) {
         const run = await getRun(env, c.run_id);
+        partialAdded = run.outcome?.added ?? 0;
         if (run.status === "running") {
           const owner = runners.find((r) => r.name === run.runner);
-          const expired = run.startedAt && now-Date.parse(run.startedAt)>45*60_000;
+          const expired = run.startedAt && now-Date.parse(run.startedAt)>55*60_000;
           if (owner?.online && !expired) continue;
           // The runner is lost. Cancel ownership before handing sourcing to a different agent.
           await cancelRun(env, run.id);
-          await d.prepare("UPDATE runs SET status='failed',finished_at=?,cancel=1,log=log||? WHERE id=? AND status='running'").bind(now,expired?'\n[hub] sourcing reached its 45 minute limit; trying a backup.\n':'\n[hub] sourcing runner went offline; trying a backup.\n',run.id).run();
+          await d.prepare("UPDATE runs SET status='failed',finished_at=?,cancel=1,log=log||? WHERE id=? AND status='running'").bind(now,expired?'\n[hub] sourcing reached its 55 minute recovery limit; trying a backup.\n':'\n[hub] sourcing runner went offline; trying a backup.\n',run.id).run();
         } else if (run.status === "queued") {
           const available = settings.agents?.[run.agent] !== false && taskEnabled(settings,run.agent) && runners.some((r) => r.online && r.busy < r.slots && r.agents.some((a) => a.id === run.agent && a.ready));
           if (available || now - Date.parse(run.createdAt) < 120_000) continue;
@@ -69,8 +71,9 @@ export async function processSourceChecks(env: Env): Promise<number> {
       const capacity = runs.filter((r) => r.id !== c.run_id && (r.status === "queued" || r.status === "running")).length < (settings.maxConcurrent ?? 2);
       const roster = [...new Set(runners.flatMap((r)=>r.agents.filter((a)=>a.ready).map((a)=>a.id)))].filter((a)=>settings.agents?.[a]!==false&&taskEnabled(settings,a));
       if (c.attempts >= 8 || (tried.length > 0 && roster.length > 0 && roster.every((a)=>tried.includes(a)))) {
-        await d.prepare("UPDATE source_checks SET status='exhausted',detail='All attempted sourcing agents returned no new roles or failed' WHERE id=?").bind(c.id).run();
-        await notify(env, `⚠️ Sourcing check #${c.id}: no new roles recorded after ${tried.length} agent attempts. Backups exhausted; review the sourcing result in the admin Run agents tab.`);
+        const detail = `Backups exhausted after ${tried.length} agent attempts; ${partialAdded} partial role${partialAdded===1?'':'s'} recorded before the last failure`;
+        await d.prepare("UPDATE source_checks SET status='exhausted',detail=? WHERE id=?").bind(detail,c.id).run();
+        await notify(env, `⚠️ Sourcing check #${c.id}: ${detail}. Review the sourcing result in the admin Run agents tab.`);
       } else if (!candidates.length || !capacity) {
         await d.prepare("UPDATE source_checks SET next_try=?,detail=? WHERE id=?").bind(now + 60_000, !capacity ? "Waiting for a free task slot" : "Waiting for an enabled online agent with sourcing enabled", c.id).run();
       } else {

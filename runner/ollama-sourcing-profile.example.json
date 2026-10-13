@@ -1,0 +1,7 @@
+{
+  "taskEnvs": {"sourcing": {"HERMES_HOME": "/home/agent/.hermes-sourcing"}},
+  "taskModels": {"sourcing": "qwen3-coder-next:latest"},
+  "taskHarnesses": {"sourcing": "Hermes"},
+  "taskTimeoutMinutes": {"sourcing": 50},
+  "notes": "Clone the existing Hermes MCP setup into an isolated sourcing profile, select the installed local Qwen model at 65536 context, use 60 turns, and retain the ComfyUI GPU gate. The 55-minute hub recovery limit follows the runner's 50-minute timeout. The task itself stops searching after 45 minutes."
+}
