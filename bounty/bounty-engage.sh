@@ -11,7 +11,7 @@
 set -u
 PROGRAM="${1:?program}"; PLATFORM="${2:?platform}"; HOST="${3:?host}"; TITLE="${4:?finding}"
 HUB=https://jobhunter.prestonzen.com
-TOKEN=$(cat /etc/hub-agent-token)
+TOKEN=$(cat /etc/hub-admin-token)
 SAFE=$(echo "$PROGRAM" | tr -cs 'A-Za-z0-9' '-' | sed 's/^-//;s/-$//')
 OUT=/root/bbscans/$SAFE
 LOG="$OUT/engage-$(date +%Y%m%d-%H%M%S).log"
@@ -34,7 +34,7 @@ else
   KIND=finding
 fi
 
-curl -s -X POST "$HUB/api/agent/bounty" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d @- <<EOF
+curl -fsS -X POST "$HUB/api/admin/bounty-events" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d @- <<EOF
 {"kind":"$KIND","platform":"$PLATFORM","program":"$PROGRAM","target":"$HOST","severity":"medium","status":"$STATUS","title":"Dark-Moon validation: $TITLE","detail":"Autonomous validation of a scanner-flagged observation. rc=$RC, confirmed_findings=$CONFIRMED, campaign_finalized=$FINALIZED. Full log on CT 134: $LOG"}
 EOF
 echo

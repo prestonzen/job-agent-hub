@@ -335,6 +335,25 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
 
     // Bug bounty lane: programs, scans, findings, reports, payouts.
     if (path === "/api/admin/bounty" && method === "GET") return json({...await bountySummary(env),cyber:await cyberSummary(env)});
+    // CT 134 uses its admin credential to report scanner/Dark Moon output. Keep
+    // service events separate from agent activity so an off agent is not shown
+    // as active merely because the scanner posted through its old token.
+    if (path === "/api/admin/bounty-events" && method === "POST") {
+      const b = await readJson<BountyEventInput>(request);
+      const kind = b.kind?.toLowerCase();
+      if (kind !== "scan" && kind !== "finding") return json({ error: "Only scan and finding events are accepted" }, 400);
+      const created = await addBountyEvent(env, "bounty-pipeline", b);
+      if (kind === "finding" && b.status?.toLowerCase() === "confirmed") {
+        const lines = [
+          `🐞 Confirmed finding${b.severity ? ` (${b.severity})` : ""}`,
+          `${b.program ?? "unknown program"}${b.target ? ` · ${b.target}` : ""}`,
+        ];
+        if (b.title) lines.push(b.title);
+        lines.push(`${url.origin}/admin#bounty`);
+        ctx.waitUntil(notify(env, lines.join("\n")).then((e) => e && console.error("bounty notify:", e)));
+      }
+      return json({ ok: true, agent: "bounty-pipeline", ...created }, 201);
+    }
     if(path==='/api/admin/cyber' && method==='POST')return json(await enqueueCyber(env,await readJson(request)),201);
     const cyberReview=path.match(/^\/api\/admin\/cyber\/(\d+)\/review$/);
     if(cyberReview && method==='POST')return json(await reviewCyber(env,Number(cyberReview[1]),await readJson(request)));

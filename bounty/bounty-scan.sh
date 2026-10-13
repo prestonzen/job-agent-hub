@@ -14,7 +14,7 @@
 
 set -u
 QUEUE=/opt/bounty/queue.json
-TOKEN_FILE=/etc/hub-agent-token
+TOKEN_FILE=/etc/hub-admin-token
 HUB=https://jobhunter.prestonzen.com
 IMAGE=chvancooten/bugbountyscanner:latest
 
@@ -110,7 +110,7 @@ echo "results: $OUT"
 # Post to the hub.
 if [ -f "$TOKEN_FILE" ]; then
   TOKEN=$(cat "$TOKEN_FILE")
-  curl -s -X POST "$HUB/api/agent/bounty" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d @- <<EOF
+  curl -fsS -X POST "$HUB/api/admin/bounty-events" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d @- <<EOF
 {"kind":"scan","platform":"$PLATFORM","program":"$PROGRAM","target":"$(head -1 "$OUT/apex.txt") et al","title":"Low-noise recon pass (subfinder/httpx/nuclei)","status":"done","detail":"${DOMAINS} apex domains -> ${SUBS} subdomains -> ${LIVE} live hosts -> ${HITS} nuclei observations. Raw results on CT 134: ${OUT}"}
 EOF
   echo

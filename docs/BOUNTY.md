@@ -50,7 +50,9 @@ ssh root@kloud "pct exec 134 -- sh /opt/darkmoon-smoke-test.sh"
 2. **Daily scans** — `bounty-daily.timer` (05:17 UTC) runs `bounty/bounty-daily.sh`: refreshes the
    queue, scans the top 6 not-recently-scanned programs, 3 in parallel (`PARALLEL`/`TOP` tunable).
    Each scan (`bounty/bounty-scan.sh`): subfinder → httpx → nuclei (non-intrusive, rate-limited),
-   posts a summary event to the hub (`POST /api/agent/bounty`) → admin **Bug bounty** tab.
+   posts a summary event to the hub (`POST /api/admin/bounty-events`) → admin
+   **Bug bounty** tab. CT 134 authenticates as a service; these events are attributed to
+   `bounty-pipeline`, not an AI agent.
    Programs re-scan at most every 7 days.
 3. **Validation + report** — anything above info level goes to Dark-Moon for exploitation-proof
    and report drafting. One master report template internally (severity, summary, repro steps,
