@@ -39,6 +39,22 @@ if (tokens.claude) {
   }
 }
 
+// A second Claude account for parallel capacity: the same Claude Code CLI with its own
+// CLAUDE_CONFIG_DIR and its own login, so two accounts apply at once without clobbering each other.
+if (tokens.claude2) {
+  const dir = join(H, ".claude-2");
+  mkdirSync(dir, { recursive: true });
+  for (const [name, def] of [
+    ["jobhunter", { type: "http", url: MCP_URL, headers: { Authorization: bearer("claude2") } }],
+    ["playwright", { type: "stdio", ...BROWSER }],
+  ]) {
+    const env = { ...process.env, CLAUDE_CONFIG_DIR: dir };
+    spawnSync("claude", ["mcp", "remove", "-s", "user", name], { stdio: "ignore", env });
+    const r = spawnSync("claude", ["mcp", "add-json", "-s", "user", name, JSON.stringify(def)], { encoding: "utf8", env });
+    console.log(`claude2 mcp ${name}:`, r.status === 0 ? "ok" : (r.stderr || r.stdout).trim());
+  }
+}
+
 // Ollama (local GPU): driven by Hermes Agent (Nous Research), which keeps its own memory and writes reusable skills
 // from the tasks it completes. Config goes in ~/.hermes via `hermes config set`; the hub token lives in ~/.hermes/.env.
 if (tokens.ollama) {
