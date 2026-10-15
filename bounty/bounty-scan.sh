@@ -109,8 +109,8 @@ if [ "$DRY_RUN" = "1" ]; then
   exit 0
 fi
 
-# Recon inside the scanner image.
-docker run --rm -e SCAN_RPS="$SCAN_RPS" -v "$OUT":/out -v /opt/bounty/scope.py:/scope.py:ro "$IMAGE" /bin/bash -c '
+# Recon inside the scanner image (60-min hard cap: a hung tool must not stall the daily batch).
+timeout 3600 docker run --rm -e SCAN_RPS="$SCAN_RPS" -v "$OUT":/out -v /opt/bounty/scope.py:/scope.py:ro "$IMAGE" /bin/bash -c '
   set -u
   nuclei -update-templates > /dev/null 2>&1 || true   # fresh CVE templates every run
   : > /out/urls.txt

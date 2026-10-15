@@ -1,5 +1,23 @@
 # Bug bounty lane
 
+Status 2026-10-15 (ops update): the 2026-10-14 05:17 UTC run hung ~14 h inside the KAYAK
+scan (nuclei, no file output since 19:49 UTC) and blocked the 10-15 trigger. Fixed: hung
+container killed; `bounty-scan.sh` docker run wrapped in `timeout 3600` (60 min/program cap);
+unit got `TimeoutStartSec=12h`; daily batch raised TOP 6 → 8; a second timer
+`bounty-daily-evening.timer` (17:23 UTC) doubles throughput; queue refresh widened
+`--top 60` → `--top 120`; a curated `/opt/bounty/priority.txt` (committed copy in
+`bounty/priority.txt`) is always scanned first — currently the 12 largest unscanned
+programs by asset footprint (MercadoLibre, Dyson, Twilio, Logitech, Bumble, Reddit,
+PlayStation, Valve, Netflix, Bykea, GitLab, KOHO). New: `exploit-watch.py` +
+`exploit-feed.timer` (hourly) match fresh Exploit-DB RSS items and newly added CISA KEV
+entries against scanned programs' httpx tech-detect; matches enqueue intel-only items to the
+hub cyber review queue (sourceKey `intel:*`). Historical KEV (1745 items) seeded as seen on
+first run. On-CT218 tooling note: `form-assist.mjs` now supports reCAPTCHA Enterprise
+(`enterprise=1`, auto-detect of Ashby key `6LezdY0t…`, proper `proxytype`); the Ashby key
+still returns ERROR_CAPTCHA_UNSOLVABLE from 2captcha (verified 2026-10-15). `socks5relay.py`
+on CT218 (127.0.0.1:11080) relays to the CT125 proxy but does NOT change egress — CT218 and
+CT125 share the same T-Mobile IP (172.56.242.28).
+
 Status 2026-10-13: Dark-Moon passed a local OWASP Juice Shop lab smoke test. The CT 134
 `bounty-daily.timer` is enabled after deployment and dry-run verification of the explicit-policy
 blacklist and strict asset-scope filter. Its next run is scheduled for 2026-10-14 05:17 UTC.

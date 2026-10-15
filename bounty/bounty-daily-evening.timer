@@ -1,0 +1,11 @@
+[Unit]
+Description=Evening bug bounty scan run (catch-up slot)
+
+[Timer]
+OnCalendar=*-*-* 17:23:00
+RandomizedDelaySec=900
+Persistent=true
+Unit=bounty-daily.service
+
+[Install]
+WantedBy=timers.target
