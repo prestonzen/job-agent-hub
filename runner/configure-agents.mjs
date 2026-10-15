@@ -160,6 +160,18 @@ if (tokens.kimi) {
   write(p, JSON.stringify(s, null, 2) + "\n");
 }
 
+// Kimi Code second account: its own HOME (~/.kimi2-home) so it keeps a separate login and config.
+if (tokens.kimi2) {
+  const p = join(H, ".kimi2-home", ".kimi-code", "mcp.json");
+  const s = readJson(p);
+  s.mcpServers = {
+    ...(s.mcpServers ?? {}),
+    jobhunter: { transport: "http", url: MCP_URL, bearerTokenEnvVar: "JOBHUNTER_TOKEN", startupTimeoutMs: 60000, toolTimeoutMs: 120000 },
+    playwright: { transport: "stdio", command: BROWSER.command, args: BROWSER.args },
+  };
+  write(p, JSON.stringify(s, null, 2) + "\n");
+}
+
 // Mistral Vibe: [[mcp_servers]] blocks in ~/.vibe/config.toml (our block is replaced on re-run).
 if (tokens.mistral) {
   const p = join(H, ".vibe", "config.toml");
