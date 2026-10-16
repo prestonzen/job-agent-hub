@@ -109,8 +109,10 @@ if [ "$DRY_RUN" = "1" ]; then
   exit 0
 fi
 
-# Recon inside the scanner image (60-min hard cap: a hung tool must not stall the daily batch).
-timeout 3600 docker run --rm -e SCAN_RPS="$SCAN_RPS" -v "$OUT":/out -v /opt/bounty/scope.py:/scope.py:ro "$IMAGE" /bin/bash -c '
+# Recon inside the scanner image.
+CNAME="bbs-$(echo "$PROGRAM" | tr -c "A-Za-z0-9" "-")-$$"
+docker rm -f "$CNAME" >/dev/null 2>&1 || true
+timeout -k 60 3600 docker run --name "$CNAME" -e SCAN_RPS="$SCAN_RPS" -v "$OUT":/out -v /opt/bounty/scope.py:/scope.py:ro "$IMAGE" /bin/bash -c '
   set -u
   nuclei -update-templates > /dev/null 2>&1 || true   # fresh CVE templates every run
   : > /out/urls.txt
@@ -158,6 +160,7 @@ PY
   fi
   true
 '
+docker rm -f "$CNAME" >/dev/null 2>&1 || true   # hard-kill if timeout fired (PID-1 ignores TERM)
 SUBS=$(grep -c . "$OUT/subs.txt" 2>/dev/null || echo 0)
 LIVE=$(grep -c . "$OUT/live-hosts.txt" 2>/dev/null || echo 0)
 HITS=$(grep -c . "$OUT/nuclei.txt" 2>/dev/null || echo 0)
