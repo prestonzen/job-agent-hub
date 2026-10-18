@@ -60,10 +60,16 @@ N=$(grep -c . /tmp/bounty-batch.txt || true)
 echo "[2/2] scanning $N programs sequentially" | tee -a "$LOG"
 cat /tmp/bounty-batch.txt | tee -a "$LOG" | sed 's/^/  /'
 
+DONE_LIST=""
 while IFS= read -r PROGRAM; do
   [ -n "$PROGRAM" ] || continue
   bash /opt/bounty/bounty-scan.sh "$PROGRAM" >> "$LOG" 2>&1
+  DONE_LIST="$DONE_LIST $PROGRAM"
 done < /tmp/bounty-batch.txt
+
+# Rotate: move scanned programs to the end of priority.txt so the next batch
+# picks the unscanned tail instead of re-scanning the same front of the list.
+[ -n "$DONE_LIST" ] && python3 /opt/bounty/bounty-rotate.py $DONE_LIST >> "$LOG" 2>&1 || true
 
 echo "=== done $(date -u) ===" >> "$LOG"
 tail -5 "$LOG"
