@@ -58,6 +58,11 @@ export async function listAttempts(env: Env, taskId: string, limit = 3): Promise
 }
 
 export async function countFailures(env: Env, taskId: string): Promise<number> {
-  const r = await (await adb(env)).prepare("SELECT COUNT(*) AS n FROM attempts WHERE task_id = ? AND outcome = 'failed'").bind(taskId).first<{ n: number }>();
+  // Only failures that left a note or a log count toward parking: a bare "failed" with nothing recorded is an
+  // agent that died or gave up (a local model hitting its turn cap), not evidence the job can't be done.
+  const r = await (await adb(env))
+    .prepare("SELECT COUNT(*) AS n FROM attempts WHERE task_id = ? AND outcome = 'failed' AND (length(trim(coalesce(note, ''))) > 0 OR length(trim(coalesce(log, ''))) > 0)")
+    .bind(taskId)
+    .first<{ n: number }>();
   return r?.n ?? 0;
 }
