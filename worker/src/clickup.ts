@@ -166,6 +166,28 @@ export async function clearField(env: Env, taskId: string, fieldId: string): Pro
   await cu(env, `/task/${encodeURIComponent(taskId)}/field/${fieldId}`, { method: "DELETE" });
 }
 
+// ---------- Requeue: fully un-park a task so agents can claim it again ----------
+
+/** Trailing "(NEEDS HUMAN: …)" / "(BLOCKED …)" / "(PARKED)" marker on a task name. */
+const PARK_SUFFIX = /\s*\((?:NEEDS HUMAN|BLOCKED|PARKED)\b[^)]*\)\s*$/i;
+
+/**
+ * Un-park a task. The hub reads a task as parked from its Next Action note, a park marker in its name,
+ * or an Applied By stamp ("already worked"), so all three are cleared, then the status goes back to
+ * not started. Clearing an already-empty field is not an error.
+ */
+export async function requeueTask(env: Env, taskId: string): Promise<{ name: string }> {
+  const t = await getTask(env, taskId);
+  const name = t.name.replace(PARK_SUFFIX, "").trim();
+  await Promise.all([
+    name !== t.name ? cu(env, `/task/${encodeURIComponent(taskId)}`, { method: "PUT", body: JSON.stringify({ name }) }) : Promise.resolve(),
+    clearField(env, taskId, env.FIELD_NEXT_ACTION).catch(() => {}),
+    clearField(env, taskId, env.FIELD_APPLIED_BY).catch(() => {}),
+  ]);
+  await setStatus(env, taskId, "not started");
+  return { name };
+}
+
 // ---------- Dropdown options (read live, so new options like "Mistral" work without a deploy) ----------
 
 let fieldCache: { at: number; fields: CuField[] } | null = null;

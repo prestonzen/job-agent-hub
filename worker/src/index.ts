@@ -2,7 +2,7 @@ import { assistedQueue } from "./assisted";
 import { buildAnalytics } from "./analytics";
 import { sendApplicationEmail, sendTestEmail } from "./emailer";
 import { adminUser, agentName, agentNames, clearedCookie, isAdminToken, resolveIdentity, sessionCookie } from "./auth";
-import { HttpError, addComment, appendDocPage, getDocPage, getPlaybook, patchDocPage, replayWrite, setStatus } from "./clickup";
+import { HttpError, addComment, appendDocPage, getDocPage, getPlaybook, patchDocPage, replayWrite, requeueTask, setStatus } from "./clickup";
 import { flushOutbox, mirrorAge, mirrorTasks, outboxSize, usageToday } from "./mirror";
 import { isApplication } from "./classify";
 import { activeClaims, db as dbHandle, heartbeat, lastEventAt, listEvents, listHeartbeats, loadSnapshot, saveSnapshot, setSetting } from "./db";
@@ -511,6 +511,12 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       return json(await reportResult(env, adminName(env), id, await readJson<Report>(request), true));
     }
 
+    // Requeue: fully un-park a task (note, name marker, Applied By stamp) so it is claimable again.
+    const requeue = path.match(/^\/api\/admin\/tasks\/([^/]+)\/requeue$/);
+    if (requeue && method === "POST") {
+      if (env.MOCK === "true") return json({ ok: true, demo: true });
+      return json({ ok: true, ...(await requeueTask(env, requeue[1])) });
+    }
     const status = path.match(/^\/api\/admin\/tasks\/([^/]+)\/status$/);
     if (status && method === "PUT") {
       const { status: next } = await readJson<{ status?: string }>(request);

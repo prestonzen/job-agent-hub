@@ -4,6 +4,7 @@ import { DEFAULT_LANES, inLane, type Lane } from "./lanes";
 import { taskSwitches, type TaskSwitches } from "./work";
 import { checkJob, getPolicy, pacingState } from "./pacing";
 import { createRun, listRunners, listRuns } from "./runs";
+import { BROAD_SOURCE_PROMPT } from "./sourcing";
 import { esc, notify } from "./telegram";
 import type { Env } from "./types";
 
@@ -206,6 +207,18 @@ export async function autopilotTick(env: Env): Promise<string | null> {
 
   const d = await adb(env);
   const readyAgents = [...new Set(online.flatMap((r) => r.agents.filter((a) => a.ready).map((a) => a.id)))].filter((a) => s.agents[a] !== false);
+
+  // Demand-driven sourcing: when nothing in the queue is claimable, source fresh roles instead of idling,
+  // rather than waiting for the daily source schedule. One sourcing run at a time; apply work always wins
+  // because this only fires when there are zero ready jobs.
+  const readyJobs = jobs.filter((j) => !j.claimedBy && !j.needsHuman && (j.applyUrl || j.applyEmail));
+  if (readyJobs.length === 0 && !inFlight.some((r) => r.task === "sourcing")) {
+    const sourcer = readyAgents.find((a) => taskSwitches(s, a).sourcing && !s.backlog.includes(a) && !inFlight.some((r) => r.agent === a));
+    if (sourcer) {
+      const run = await createRun(env, { agent: sourcer, kind: "prompt", task: "sourcing", prompt: BROAD_SOURCE_PROMPT });
+      return `queue empty: launched sourcing run #${run.id} for ${sourcer}`;
+    }
+  }
   const { results } = await d.prepare("SELECT agent, next_after FROM autopilot_state").all<{ agent: string; next_after: number }>();
   const next = new Map(results.map((r) => [r.agent, r.next_after]));
   const order = readyAgents.sort((a, b) => (next.get(a) ?? 0) - (next.get(b) ?? 0));
