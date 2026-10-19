@@ -208,15 +208,34 @@ export async function autopilotTick(env: Env): Promise<string | null> {
   const d = await adb(env);
   const readyAgents = [...new Set(online.flatMap((r) => r.agents.filter((a) => a.ready).map((a) => a.id)))].filter((a) => s.agents[a] !== false);
 
-  // Demand-driven sourcing: when nothing in the queue is claimable, source fresh roles instead of idling,
-  // rather than waiting for the daily source schedule. One sourcing run at a time; apply work always wins
-  // because this only fires when there are zero ready jobs.
+  // Demand-driven sourcing: when the fleet is truly idle (no ready jobs AND no application run in flight),
+  // source fresh roles instead of waiting for the daily schedule. Guarded so it can never spin: one run at a
+  // time, gated by a cooldown that backs off as sourcing runs fail (45 min → 2 h → 6 h → 24 h), and only on
+  // agents that can actually browse and source (never the free email-only tier, never Ollama). The gate is
+  // written before the run is created, so a run that dies in seconds cannot re-trigger on the next tick.
   const readyJobs = jobs.filter((j) => !j.claimedBy && !j.needsHuman && (j.applyUrl || j.applyEmail));
-  if (readyJobs.length === 0 && !inFlight.some((r) => r.task === "sourcing")) {
-    const sourcer = readyAgents.find((a) => taskSwitches(s, a).sourcing && !s.backlog.includes(a) && !inFlight.some((r) => r.agent === a));
-    if (sourcer) {
-      const run = await createRun(env, { agent: sourcer, kind: "prompt", task: "sourcing", prompt: BROAD_SOURCE_PROMPT });
-      return `queue empty: launched sourcing run #${run.id} for ${sourcer}`;
+  const applying = inFlight.some((r) => r.task !== "sourcing");
+  if (readyJobs.length === 0 && !applying && !inFlight.some((r) => r.task === "sourcing")) {
+    const tNow = Date.now();
+    const gate = (await d.prepare("SELECT next_after FROM autopilot_state WHERE agent = '__sourcing__'").first<{ next_after: number }>())?.next_after ?? 0;
+    if (gate <= tNow) {
+      let streak = 0;
+      for (const r of runs) {
+        if (r.task !== "sourcing" || (r.status !== "failed" && r.status !== "succeeded")) continue;
+        if (r.status === "failed") streak++; else break;
+      }
+      const backoff = streak >= 3 ? 24 * 3_600_000 : streak === 2 ? 6 * 3_600_000 : streak === 1 ? 2 * 3_600_000 : 45 * 60_000;
+      const SOURCERS = ["claude", "codex", "kimi", "claude2", "kimi2"];
+      const canSource = (a: string) => readyAgents.includes(a) && taskSwitches(s, a).sourcing && !inFlight.some((r) => r.agent === a) && failStreak(runs, a, "applications") < FAIL_STREAK_PAUSE;
+      // Prefer an agent whose last sourcing run did not fail, so a dead key or empty credit rotates to the next one.
+      const sourcer = SOURCERS.find((a) => canSource(a) && runs.find((r) => r.agent === a && r.task === "sourcing")?.status !== "failed") ?? SOURCERS.find(canSource);
+      if (sourcer) {
+        await d.prepare("INSERT OR IGNORE INTO autopilot_state (agent, next_after) VALUES ('__sourcing__', 0)").run();
+        await d.prepare("UPDATE autopilot_state SET next_after = ?1 WHERE agent = '__sourcing__'").bind(tNow + backoff).run();
+        if (streak === 2) await notify(env, `⚠️ <b>Sourcing backing off</b>: the last two sourcing runs failed (quota, credit or login — see the run logs). Retrying every 6 h, then every 24 h after a third failure.`);
+        const run = await createRun(env, { agent: sourcer, kind: "prompt", task: "sourcing", prompt: BROAD_SOURCE_PROMPT });
+        return `queue empty: launched sourcing run #${run.id} for ${sourcer} (next allowed in ${Math.round(backoff / 60_000)} min)`;
+      }
     }
   }
   const { results } = await d.prepare("SELECT agent, next_after FROM autopilot_state").all<{ agent: string; next_after: number }>();
