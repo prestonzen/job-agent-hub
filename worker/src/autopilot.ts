@@ -25,6 +25,12 @@ export interface AutopilotSettings {
   /** Per-agent switch; missing = on. */
   agents: Record<string, boolean>;
   /**
+   * Per-agent auto-resume after a credit/quota rest; missing = on. On: the agent rests until the next reset
+   * (next day for quota, next month for credit) and comes back by itself. Off: it is switched off instead and
+   * stays off until someone turns it on.
+   */
+  autoResume?: Record<string, boolean>;
+  /**
    * Backlog agents don't take fresh jobs while a front-line agent is available: they run only when jobs
    * were handed to them (failures, essays), or when no front-line agent can work. Default: Kimi.
    */
@@ -55,7 +61,7 @@ export const QUOTA_EXIT = 429;
 
 export async function getAutopilot(env: Env): Promise<AutopilotSettings> {
   const saved = await getSetting<Partial<AutopilotSettings>>(env, "autopilot").catch(() => null);
-  return { ...DEFAULTS, ...(saved ?? {}), tasks: { ...(saved?.tasks ?? {}) }, agents: { ...(saved?.agents ?? {}) }, backlog: saved?.backlog ?? DEFAULTS.backlog, lanes: { ...DEFAULT_LANES, ...(saved?.lanes ?? {}) }, tags: { ...DEFAULT_TAGS, ...(saved?.tags ?? {}) } };
+  return { ...DEFAULTS, ...(saved ?? {}), tasks: { ...(saved?.tasks ?? {}) }, agents: { ...(saved?.agents ?? {}) }, autoResume: { ...(saved?.autoResume ?? {}) }, backlog: saved?.backlog ?? DEFAULTS.backlog, lanes: { ...DEFAULT_LANES, ...(saved?.lanes ?? {}) }, tags: { ...DEFAULT_TAGS, ...(saved?.tags ?? {}) } };
 }
 
 export async function saveAutopilot(env: Env, patch: Partial<AutopilotSettings>): Promise<AutopilotSettings> {
@@ -73,6 +79,7 @@ export async function saveAutopilot(env: Env, patch: Partial<AutopilotSettings>)
     jobsPerRun: num(patch.jobsPerRun, 1, 10, cur.jobsPerRun),
     minGapMin: num(patch.minGapMin, 5, 720, cur.minGapMin),
     agents: { ...cur.agents, ...(patch.agents ?? {}) },
+    autoResume: { ...(cur.autoResume ?? {}), ...(patch.autoResume ?? {}) },
     backlog: Array.isArray(patch.backlog) ? patch.backlog.map((a) => String(a).toLowerCase()).slice(0, 10) : cur.backlog,
     lanes: { ...cur.lanes, ...(patch.lanes ?? {}) },
     tags: patch.tags ? { ...cur.tags, ...tags(patch.tags) } : cur.tags,
@@ -102,6 +109,7 @@ async function adb(env: Env) {
   const d = await db(env);
   if (!ready) {
     await d.prepare(SCHEMA).run();
+    await d.prepare("ALTER TABLE autopilot_state ADD COLUMN reason TEXT").run().catch(() => {}); // why an agent is resting
     ready = true;
   }
   return d;
@@ -155,7 +163,7 @@ function successRate(runs: Awaited<ReturnType<typeof listRuns>>, agent: string):
 export async function autopilotStatus(env: Env) {
   const [s, runners, runs, d, jobs, policy] = await Promise.all([getAutopilot(env), listRunners(env), listRuns(env, 80), adb(env), queue(env), getPolicy(env)]);
   const pace = await pacingState(env, jobs, policy);
-  const { results } = await d.prepare("SELECT agent, next_after FROM autopilot_state").all<{ agent: string; next_after: number }>();
+  const { results } = await d.prepare("SELECT agent, next_after, reason FROM autopilot_state").all<{ agent: string; next_after: number; reason: string | null }>();
   const next = new Map(results.map((r) => [r.agent, r.next_after]));
   const readySet = new Set(runners.filter((r) => r.online).flatMap((r) => r.agents.filter((a) => a.ready).map((a) => a.id)));
   const known = new Set([...readySet, ...runners.flatMap((r) => r.agents.map((a) => a.id))]);
@@ -176,7 +184,11 @@ export async function autopilotStatus(env: Env) {
     if (!readySet.has(agent)) return { ...base, state: "not-ready", nextAt: null, detail: probes.find((a) => a.note)?.note ?? "Agent cannot execute work" };
     if (active) return { ...base, state: active.status === "running" ? "working" : "queued", nextAt: null, detail: `${active.task} · run #${active.id}` };
     if (streak >= FAIL_STREAK_PAUSE) return { ...base, state: "paused", nextAt: null, detail: `${streak} failed ${tasks.applications?"application":"email"} runs in a row` };
-    if (n > Date.now()) return { ...base, state: "waiting", nextAt: new Date(n).toISOString(), detail: "Resting between runs or waiting for quota" };
+    if (n > Date.now()) {
+      const why = results.find((r) => r.agent === agent)?.reason;
+      const resumeAt = new Date(n).toISOString().slice(0, 16).replace("T", " ") + " UTC";
+      return { ...base, state: "waiting", nextAt: new Date(n).toISOString(), detail: why ? `Paused: ${why}. Resumes ${resumeAt}${s.autoResume?.[agent] === false ? "" : " automatically"}` : "Resting between runs or waiting for quota" };
+    }
     if (!s.enabled) return { ...base, state: "idle", nextAt: null, detail: "Autopilot disabled" };
     const eligible = jobs.filter((j) => isAvailableFor(j, agent) && inLane(j, lane));
     const claimable = eligible.filter((j) => checkJob(j, pace, policy).ok);
@@ -238,7 +250,7 @@ export async function autopilotTick(env: Env): Promise<string | null> {
       }
     }
   }
-  const { results } = await d.prepare("SELECT agent, next_after FROM autopilot_state").all<{ agent: string; next_after: number }>();
+  const { results } = await d.prepare("SELECT agent, next_after, reason FROM autopilot_state").all<{ agent: string; next_after: number; reason: string | null }>();
   const next = new Map(results.map((r) => [r.agent, r.next_after]));
   const order = readyAgents.sort((a, b) => (next.get(a) ?? 0) - (next.get(b) ?? 0));
 
@@ -276,7 +288,7 @@ export async function autopilotTick(env: Env): Promise<string | null> {
     const nextAfter = now + s.minGapMin * 60_000 * (1 + 0.6 * Math.random());
     // A handed-off job (e.g. an essay another agent couldn't write) starts its assignee right away.
     const urgent = assignedTo.has(agent) ? 1 : 0;
-    const won = await d.prepare("UPDATE autopilot_state SET next_after = ?1 WHERE agent = ?2 AND (next_after <= ?3 OR ?4 = 1)").bind(Math.round(nextAfter), agent, now, urgent).run();
+    const won = await d.prepare("UPDATE autopilot_state SET next_after = ?1, reason = NULL WHERE agent = ?2 AND (next_after <= ?3 OR ?4 = 1)").bind(Math.round(nextAfter), agent, now, urgent).run();
     if (won.meta.changes !== 1) continue;
     // A lane agent (free tier) gets a short run: its daily request budget is tiny.
     const run = await createRun(env, { agent, kind: "queue", task: applicationLane(s,agent) === "email" ? "email" : "applications", exclusive: true, count: Math.min(agent === "ollama" ? 1 : applicationLane(s,agent) === "email" ? 2 : s.jobsPerRun, claimable) });

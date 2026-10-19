@@ -15,6 +15,7 @@ const TABS = [
   { id: "hub", label: "Command center" },
   { id: "analytics", label: "Analytics" },
   { id: "assisted", label: "Assisted" },
+  { id: "agents", label: "Agent manager" },
   { id: "run", label: "Run agents" },
   { id: "resumes", label: "Resumes" },
   { id: "alerts", label: "Replies & alerts" },
@@ -24,7 +25,7 @@ const TABS = [
 ] as const;
 const GROUPS=[
  {label:"Overview",ids:["hub"]}, {label:"Applications",ids:["pipeline","assisted","resumes","analytics"]},
- {label:"Replies",ids:["alerts"]}, {label:"Cyber",ids:["bounty"]}, {label:"Agents",ids:["run","connect"]}
+ {label:"Replies",ids:["alerts"]}, {label:"Cyber",ids:["bounty"]}, {label:"Agents",ids:["agents","run","connect"]}
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
@@ -67,7 +68,8 @@ export default function Admin() {
       {tab === "hub" && <CommandCenter />}
       {tab === "analytics" && <Analytics />}
       {tab === "assisted" && <Assisted />}
-      {tab === "run" && <><details className="card"><summary>Task focus and autopilot settings</summary><Autopilot /></details><RunAgents /></>}
+      {tab === "agents" && <Autopilot />}
+      {tab === "run" && <RunAgents />}
       {tab === "resumes" && <Resumes />}
       {tab === "alerts" && <Alerts />}
       {tab === "bounty" && <Bounty />}

@@ -72,7 +72,7 @@ export const getInbound = () => request<{ emails: InboundEmail[] }>("/api/admin/
 export const testTelegram = () => request<{ ok: boolean; error: string | null; configured: boolean }>("/api/admin/telegram/test", { method: "POST" });
 export const sendDigestNow = () => request<{ ok: boolean; error: string | null }>("/api/admin/digest", { method: "POST" });
 
-export interface AutopilotSettings { enabled: boolean; maxConcurrent: number; jobsPerRun: number; minGapMin: number; agents: Record<string, boolean>; tasks?: Record<string, Partial<TaskSwitches>>; backlog?: string[]; tags?: Record<string, string[]> }
+export interface AutopilotSettings { enabled: boolean; maxConcurrent: number; jobsPerRun: number; minGapMin: number; agents: Record<string, boolean>; autoResume?: Record<string, boolean>; tasks?: Record<string, Partial<TaskSwitches>>; backlog?: string[]; tags?: Record<string, string[]> }
 export type AgentAutopilot = AgentWorkState;
 export const getAutopilot = () => request<{ settings: AutopilotSettings; agents: AgentAutopilot[] }>("/api/admin/autopilot");
 export const saveAutopilot = (p: Partial<AutopilotSettings>) =>

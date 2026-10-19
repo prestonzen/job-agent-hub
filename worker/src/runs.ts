@@ -2,7 +2,7 @@ import { HttpError } from "./clickup";
 import { agentInstructions } from "./instructions";
 import { esc, notify } from "./telegram";
 import type { Env } from "./types";
-import { db as eventDb } from "./db";
+import { db as eventDb, getSetting, setSetting } from "./db";
 import { EMPTY_OUTCOME, TASKS, inferRunTask, outcomeSummary, taskSwitches, workSettings, type RunOutcome, type RunTask } from "./work";
 
 /**
@@ -320,19 +320,37 @@ export async function finishRun(env: Env, id: number, runner: string, f: { exitC
     )
     .bind(status, f.exitCode, Date.now(), id, runner, cost, tokens)
     .first<{ agent: string; kind: string; count: number | null; started_at: number; finished_at: number; tail: string }>();
-  // Out of quota (a free API tier's daily limit, a rate limit): not a bug, so rest that agent until it resets
-  // and keep the run out of the failure streak that pauses autopilot.
+  // A stop that isn't the job's fault (credit empty, quota used, keys resting, login expired): rest the agent
+  // until the right reset boundary and keep the run out of the failure streak that pauses autopilot.
   const quota = r && status === "failed" ? quotaStop(r.tail) : null;
   if (r && quota) {
     const d = await db(env);
     await d.prepare("UPDATE runs SET exit_code = 429 WHERE id = ?").bind(id).run();
     await d.prepare("CREATE TABLE IF NOT EXISTS autopilot_state (agent TEXT PRIMARY KEY, next_after INTEGER NOT NULL DEFAULT 0)").run();
-    await d
-      .prepare("INSERT INTO autopilot_state (agent, next_after) VALUES (?1, ?2) ON CONFLICT (agent) DO UPDATE SET next_after = MAX(next_after, ?2)")
-      .bind(r.agent, Date.now() + quota.restMs)
-      .run();
-    const result = await getRun(env,id);
-    if (result.task !== "cyber") await notify(env, `⏳ <b>${esc(r.agent)}</b> ran out of quota (run #${id}); resting until ${new Date(Date.now() + quota.restMs).toISOString()}.\n${esc(result.summary ?? "No work result recorded")}`, { silent: true });
+    await d.prepare("ALTER TABLE autopilot_state ADD COLUMN reason TEXT").run().catch(() => {});
+    const until = new Date(Date.now() + quota.restMs);
+    const when = until.toISOString().slice(0, 16).replace("T", " ") + " UTC";
+    // Per-agent auto-resume (default on): a timed rest that ends at the next reset. Off = switch the agent off
+    // instead, so it stays paused until someone turns it on. An expired login can't fix itself either.
+    const ap = (await getSetting<{ agents?: Record<string, boolean>; autoResume?: Record<string, boolean> }>(env, "autopilot").catch(() => null)) ?? {};
+    const resumes = ap.autoResume?.[r.agent] !== false && quota.kind !== "auth";
+    if (resumes) {
+      await d
+        .prepare("INSERT INTO autopilot_state (agent, next_after, reason) VALUES (?1, ?2, ?3) ON CONFLICT (agent) DO UPDATE SET next_after = MAX(next_after, ?2), reason = ?3")
+        .bind(r.agent, until.getTime(), quota.label)
+        .run();
+    } else {
+      await setSetting(env, "autopilot", { ...ap, agents: { ...(ap.agents ?? {}), [r.agent]: false } });
+    }
+    const result = await getRun(env, id);
+    if (result.task !== "cyber")
+      await notify(
+        env,
+        resumes
+          ? `⏳ <b>${esc(r.agent)}</b> paused: ${esc(quota.label)} (run #${id}). Resumes automatically ${esc(when)}.`
+          : `⏸️ <b>${esc(r.agent)}</b> switched off: ${esc(quota.label)} (run #${id}). ${quota.kind === "auth" ? "Sign in on the runner, then turn it on" : "Auto-resume is off for this agent; turn it on"} in the agent manager.`,
+        { silent: resumes && quota.kind !== "auth" },
+      );
   }
   if (r && !quota) {
     const mins = Math.max(1, Math.round((r.finished_at - r.started_at) / 60_000));
@@ -340,29 +358,75 @@ export async function finishRun(env: Env, id: number, runner: string, f: { exitC
     if (result.task === "cyber" || (result.task === "diagnostic" && status === "succeeded")) return;
     const o=result.outcome!;
     const icon=status==='cancelled'?'⏹️':status==='failed'||o.blocked+o.failed+o.unfinished>0?'⚠️':o.applied+o.emailed+o.added+o.cyber+o.triaged>0?'✅':'ℹ️';
+    const why = status === "failed" ? failureReason(r.tail) : null;
     await notify(
       env,
-      `${icon} Run #${id} <b>${esc(r.agent)}</b> (${esc(result.task)}) on ${esc(runner)} after ${mins} min\n${esc(result.summary ?? status)}`,
+      `${icon} Run #${id} <b>${esc(r.agent)}</b> (${esc(result.task)}) on ${esc(runner)} after ${mins} min\n${esc(result.summary ?? status)}${why ? `\n❌ ${esc(why)}` : ""}`,
       { silent: status === "succeeded" },
     );
   }
 }
 
-/** "You exceeded your current quota … Please retry in 24m28.02s" and the like. Returns how long to rest the agent. */
-export function quotaStop(tail: string): { restMs: number } | null {
-  if (!/exceeded your (current )?quota|quota exceeded|RESOURCE_EXHAUSTED|TerminalQuotaError|insufficient_quota|rate.?limit(ed)? (reached|exceeded)|usage limit|hit your .*limit|insufficient balance/i.test(tail)) return null;
-  const m = tail.match(/retry in (?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:([\d.]+)s)?/i);
+export type RestKind = "credit" | "keys" | "quota" | "auth";
+/** Next calendar boundary in UTC: the start of tomorrow, or the 1st of next month. */
+const nextBoundary = (unit: "day" | "month", now = Date.now()) => {
+  const d = new Date(now);
+  return unit === "day" ? Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1) : Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1);
+};
+const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+
+/**
+ * Why an agent must stop, and until when. An empty paid-API balance resumes at the next month; free-tier
+ * quota and resting keys at the next day unless the message names a shorter wait ("retry in 24m28s",
+ * "resets Oct 21, 3pm (UTC)"); an expired login can't fix itself, so it rests a day and asks for a sign-in.
+ * null means a real failure.
+ */
+export function quotaStop(tail: string, now = Date.now()): { restMs: number; kind: RestKind; label: string } | null {
+  const t = stripAnsi(tail);
+  if (/credit balance is too low|insufficient (?:credit|balance)|out of credits|billing hard limit/i.test(t))
+    return { restMs: nextBoundary("month", now) - now, kind: "credit", label: "API credit balance is empty" };
+  if (/OAuth session expired|could not be refreshed|Failed to authenticate|not logged in/i.test(t))
+    return { restMs: 24 * 3_600_000, kind: "auth", label: "login expired, needs a fresh sign-in" };
+  if (/all \d+ key\(s\) are resting|keys? (?:are|is) resting; nothing to run/i.test(t))
+    return { restMs: nextBoundary("day", now) - now, kind: "keys", label: "all API keys are resting (daily quota used)" };
+  if (!/exceeded your (current )?quota|quota exceeded|RESOURCE_EXHAUSTED|TerminalQuotaError|insufficient_quota|rate.?limit(ed)? (reached|exceeded)|usage limit|hit your .*limit/i.test(t)) return null;
+  const m = t.match(/retry in (?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:([\d.]+)s)?/i);
   const ms = m ? ((Number(m[1] ?? 0) * 60 + Number(m[2] ?? 0)) * 60 + Number(m[3] ?? 0)) * 1000 : 0;
-  const reset = tail.match(/resets\s+([A-Za-z]{3})\s+(\d{1,2}),?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(UTC\)/i);
+  const reset = t.match(/resets\s+([A-Za-z]{3})\s+(\d{1,2}),?\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(UTC\)/i);
   if (reset) {
     const month = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"].indexOf(reset[1].toLowerCase());
     if (month >= 0) {
       const hour = Number(reset[3]) % 12 + (reset[5].toLowerCase() === "pm" ? 12 : 0);
-      const now = Date.now(); let at = Date.UTC(new Date(now).getUTCFullYear(),month,Number(reset[2]),hour,Number(reset[4] ?? 0));
-      if (at < now) at = Date.UTC(new Date(now).getUTCFullYear()+1,month,Number(reset[2]),hour,Number(reset[4] ?? 0));
-      return {restMs:Math.min(7*86_400_000,Math.max(3_600_000,at-now+120_000))};
+      let at = Date.UTC(new Date(now).getUTCFullYear(), month, Number(reset[2]), hour, Number(reset[4] ?? 0));
+      if (at < now) at = Date.UTC(new Date(now).getUTCFullYear() + 1, month, Number(reset[2]), hour, Number(reset[4] ?? 0));
+      return { restMs: Math.min(7 * 86_400_000, Math.max(3_600_000, at - now + 120_000)), kind: "quota", label: "usage limit reached" };
     }
   }
-  // Daily free-tier limits often report only the short wait; rest at least three hours, at most a day.
-  return { restMs: Math.min(24 * 3_600_000, Math.max(/weekly limit/i.test(tail) ? 24*3_600_000 : 3 * 3_600_000, ms + 120_000)) };
+  const weekly = /weekly limit/i.test(t);
+  // A named short wait wins; otherwise rest to the next day (a weekly limit: at least a full day).
+  const restMs = ms > 0 ? Math.max(3_600_000, ms + 120_000) : weekly ? Math.max(24 * 3_600_000, nextBoundary("day", now) - now) : nextBoundary("day", now) - now;
+  return { restMs: Math.min(7 * 86_400_000, restMs), kind: "quota", label: weekly ? "weekly usage limit reached" : "API quota exhausted" };
+}
+
+/** A one-line human reason for a failed run from its log tail: a known signature, else the last meaningful line. */
+export function failureReason(tail: string): string | null {
+  const t = stripAnsi(tail);
+  const known: [RegExp, string][] = [
+    [/credit balance is too low|insufficient (?:credit|balance)|out of credits/i, "API credit balance is empty"],
+    [/all \d+ key\(s\) are resting|keys? (?:are|is) resting/i, "all API keys are resting (daily quota used)"],
+    [/exceeded your (?:current )?quota|quota exceeded|RESOURCE_EXHAUSTED|insufficient_quota|usage limit|hit your .*limit/i, "API quota exhausted"],
+    [/rate.?limit/i, "rate limited by the API"],
+    [/OAuth session expired|could not be refreshed|Failed to authenticate|not logged in|invalid (?:api|x-api)[ -]key|authentication_error/i, "login or API key rejected, needs a fresh sign-in"],
+    [/managed verification|turnstile|cloudflare|403 forbidden|captcha/i, "blocked by Cloudflare / a bot check"],
+    [/possible spam|flagged as spam|possible fraud/i, "the ATS flagged the submission as spam"],
+    [/ECONNREFUSED|ENOTFOUND|fetch failed|ETIMEDOUT|connect timeout|socket hang up/i, "network error reaching a service"],
+    [/iteration limit|max.?turns|tool-calling iteration/i, "ran out of turns before finishing"],
+    [/command not found|No such file|ENOENT/i, "the agent command or a file it needs is missing on the runner"],
+  ];
+  for (const [re, label] of known) if (re.test(t)) return label;
+  const lines = t
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l && !/^\[runner|^={3}|^session_id|^\[task profile\]|^\[session |^To resume|^\s*[{}\]]\s*$/.test(l));
+  return lines.length ? lines[lines.length - 1].slice(0, 140) : null;
 }

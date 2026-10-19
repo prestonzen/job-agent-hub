@@ -91,6 +91,10 @@ export default function Autopilot({compact=false}:{compact?:boolean}) {
               {([['applications','Applications'],['email','Email'],['sourcing','Sourcing'],['cyber','Cyber']] as const).map(([key,label]) => (
                 <label key={key}><input type="checkbox" aria-label={`${agentLabel(a.agent)} ${label}`} checked={a.tasks?.[key] ?? false} onChange={(e) => void patch({tasks:{[a.agent]:{[key]:e.target.checked}}})} />{label}</label>
               ))}
+              <label title="On: after running out of credit or quota the agent rests until the next reset (next day for quota, next month for API credit) and comes back by itself. Off: it is switched off instead and stays off until you turn it on.">
+                <input type="checkbox" aria-label={`${agentLabel(a.agent)} auto-resume`} checked={s.autoResume?.[a.agent] !== false} onChange={(e) => void patch({ autoResume: { [a.agent]: e.target.checked } })} />
+                Auto-resume
+              </label>
             </fieldset>
             {a.state !== "not-ready" && (
               <button
