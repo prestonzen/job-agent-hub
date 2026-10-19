@@ -114,9 +114,14 @@ export function parseDetails(desc: string) {
   const applyUrl = desc.match(/Apply:\s*\[?(https?:\/\/[^\s\]\)]+)/i)?.[1] ?? desc.match(/https?:\/\/[^\s\]\)]+/)?.[0] ?? null;
   // Only explicit phrasings, so the applicant's own address in a description is never mistaken for the employer's.
   const addr = "([A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,})";
+  // Sourcing notes often write "careers [at] cora.ai" or "jobs (at) x (dot) com": normalise before matching.
+  const deob = desc.replace(/\s*[\[(]\s*at\s*[\])]\s*/gi, "@").replace(/\s*[\[(]\s*dot\s*[\])]\s*/gi, ".");
   const applyEmail =
-    desc.match(new RegExp(`(?:application\\s+e-?mail|apply\\s+(?:by\\s+)?e-?mail|e-?mail\\s+(?:your\\s+)?(?:resume|cv|application)\\s+to|send\\s+(?:your\\s+)?(?:resume|cv|application)\\s+to)(?:\\s+to)?\\s*:?\\s*(?:mailto:)?${addr}`, "i"))?.[1] ??
-    desc.match(new RegExp(`mailto:${addr}`, "i"))?.[1] ??
+    // Explicit phrasings, including "apply by emailing X", "interest email to X", and the address quoted inside an "Email instructions:" block.
+    deob.match(new RegExp(`(?:application\\s+e-?mail|apply\\s+(?:by\\s+)?e-?mail(?:ing)?|e-?mail\\s+(?:your\\s+)?(?:resume|cv|application)\\s+to|send\\s+(?:your\\s+)?(?:resume|cv|application)\\s+to|interest\\s+e-?mail\\s+to|e-?mail\\s+instructions?\\s*:[^@\\n]{0,160}?)(?:\\s+to)?\\s*:?\\s*(?:mailto:)?${addr}`, "i"))?.[1] ??
+    // "Contact: X" / "Apply: X" where X is an address (a URL after "Apply:" does not match).
+    deob.match(new RegExp(`(?:^|\\|)\\s*(?:apply|contact)\\s*:\\s*(?:mailto:)?${addr}`, "im"))?.[1] ??
+    deob.match(new RegExp(`mailto:${addr}`, "i"))?.[1] ??
     null;
   const fitRaw = grab("Fit");
   const fitNum = fitRaw?.match(/(\d+(?:\.\d+)?)\s*\/\s*5/);
