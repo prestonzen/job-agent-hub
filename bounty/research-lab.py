@@ -34,6 +34,8 @@ HEADERS = {"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json
 
 RESEARCH_GAP = 7 * 86400          # one research pass per technology per week
 MAX_RESEARCHED = 40               # rotation window
+# Protocols/headers, not products: high coverage but no exploit surface to hypothesize about.
+SKIP_TECH = {"hsts", "http/3", "http/2", "tls", "ssl", "ipv6", "dns", "spf", "dmarc"}
 
 
 def api(method: str, path: str, body: dict | None = None):
@@ -81,7 +83,7 @@ def tech_coverage(matrix: dict) -> dict[str, dict]:
         for h in p.get("hosts", []):
             for t in h.get("techs", []):
                 key = re.sub(r"\s+\d[\w.]*$", "", t).strip()  # fold versions into the product name
-                if len(key) < 3:
+                if len(key) < 3 or key.lower() in SKIP_TECH:
                     continue
                 entry = cov.setdefault(key, {"programs": set(), "samples": []})
                 entry["programs"].add(p["program"])

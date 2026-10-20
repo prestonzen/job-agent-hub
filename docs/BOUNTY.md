@@ -102,6 +102,29 @@ ssh root@kloud "pct exec 134 -- sh /opt/darkmoon-smoke-test.sh"
    an Ava review alert; routine evidence saves, scanner finding labels and completed cyber runs
    are silent. Preston reviews the entire draft before any external submission.
 
+## Technology matrix & research lab
+
+- **Matrix build** — `bounty/tech-matrix.py` (CT 134, cron every 6 h) parses every scanned
+  program's httpx tech-detect output into `/opt/bounty/tech-matrix.json` (local source of truth)
+  and pushes it to the hub (`POST /api/admin/bounty-tech` → D1 `bounty_hosts`, one row per
+  program+host, rescan replaces the program's rows). The Bug bounty tab renders it: top
+  technologies by program coverage and host count, plus a Stack column per program. First
+  ingest (2026-10-20): 27 programs, 430 hosts, 123 distinct technologies — AWS, Cloudflare
+  and Nginx dominate the surface.
+- **Exploit matching** — `bounty/exploit-watch.py` matches fresh Exploit-DB RSS + CISA KEV
+  entries against the parsed matrix (per-host tech strings, not raw scan text), so new public
+  exploits land in the cyber review queue tagged with the exact in-scope hosts running that
+  stack. A local Exploit-DB copy (`searchsploit`) on CT 134 adds full-history lookups.
+- **Research lab** — `bounty/research-lab.py` (CT 134, cron every 6 h) is the Ollama timesink:
+  when no research run is in flight it dispatches one free local Ollama run on the
+  highest-coverage default-allow technology not researched in the last 7 days (attack-surface
+  map, 5–10 vulnerability hypotheses, UNTESTED exploit sketches, evidence bars, ranking —
+  protocol/header entries like HSTS are skipped as having no exploit surface). When the run
+  finishes, its output is fed into the multi-model cyber review queue
+  (`sourceKey research:<tech>:<week>`, platform `research`) where codex/claude/kimi critique
+  it; only concrete, validated hypotheses can become report drafts. Nothing contacts a target:
+  validation stays behind the scope-gated bounty-engage/Dark-Moon pipeline and human review.
+
 On 2026-10-13 the existing queue contained 60 programs with automation marked `unspecified`,
 and the timer had already recorded low-noise scans of real company assets. That did not establish
 policy compliance. The timer was stopped immediately. Synthetic matrix events, a `Pipeline Test`
@@ -128,6 +151,9 @@ calibration data and limits of the current results.
 - [ ] Per-platform report renderers for Bugcrowd / Intigriti / YesWeHack (Dark-Moon emits H1
       markdown today; one master template internally, render at submission time).
 - [ ] Prioritize queue by historical payout speed (H1 dumps carry avg time-to-bounty stats).
+- [x] Technology matrix + research lab (2026-10-20): see "Technology matrix & research lab".
+- [ ] Version-precise matching: httpx tech-detect versions are partial; consider wappalyzer
+      CLI or favicon hashes for tighter exploit-to-version matching.
 
 ## Platforms (accounts live on the runner, all with TOTP via `oathtool`)
 
