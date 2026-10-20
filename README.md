@@ -1,18 +1,170 @@
-# Job Agent Hub
+# 🤖 Job Agent Hub
 
-**One pane of glass for a multi-agent job search.** Claude, Codex, Gemini, Qwen, Kimi, Mistral (and a human) work **one shared job queue**: each agent claims a posting, applies, and reports back. The hub makes sure no two agents ever apply to the same role, and every result lands in one tracker (ClickUp).
+**An autonomous multi-agent job-hunting machine.** Ten AI agents — Claude, Codex, Gemini, Qwen, Kimi, Mistral, DeepSeek, a local Ollama model, and a human — work **one shared queue**: each claims a posting, fills the application in a real browser, and reports back. The hub guarantees no two agents ever apply to the same role, paces submissions so the fleet looks human, and lands every result in one tracker.
 
-Live at **https://jobhunter.prestonzen.com**.
+<p align="center">
+  <a href="https://jobhunter.prestonzen.com">🌐 <b>Live public dashboard</b></a> ·
+  <a href="docs/ARCHITECTURE.md">Architecture</a> ·
+  <a href="docs/OPERATIONS.md">Operations</a> ·
+  <a href="docs/LOCAL_MODELS.md">Model bake-off</a>
+</p>
 
-Work routing and recovery: [operations guide](docs/OPERATIONS.md). Sourcing checks run twice daily with persistent occurrences and automatic fallback to enabled, available agents. Per-agent task switches cover web applications, email applications, sourcing and cyber. Signed-in access, readiness, active work and recorded outcomes are shown separately.
+<p align="center">
+  <img src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
+  <img src="https://img.shields.io/badge/Cloudflare_Pages_+_D1-F38020?logo=cloudflare&logoColor=white" alt="Cloudflare">
+  <img src="https://img.shields.io/badge/React_19-61DAFB?logo=react&logoColor=black" alt="React">
+  <img src="https://img.shields.io/badge/Playwright-2EAD33?logo=playwright&logoColor=white" alt="Playwright">
+  <img src="https://img.shields.io/badge/agents-10-brightgreen" alt="10 agents">
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT">
+</p>
 
 <p align="center">
   <a href="https://jobhunter.prestonzen.com"><img src="docs/screenshots/public-hero.png" alt="Job Agent Hub public dashboard: the agent constellation, live counters and applications per day" width="920"></a>
 </p>
 
-## Screenshots
+## 📊 By the numbers (first 30 days, live data)
 
-**Public dashboard** (the live site, sanitized: no job links, notes, contact details or answers). Agents orbit the hub, working ones with a packet travelling to it; below are counters, applications per day by agent, an activity calendar and fleet totals.
+| Metric | Value |
+|---|---|
+| 🤖 Agents in the fleet | **10** (7 cloud APIs + 2 parallel accounts + 1 local GPU model) |
+| 📨 Applications submitted | **85+** across Greenhouse, Ashby, Lever, Workable, email |
+| ⚙️ Agent runs executed | **525+** (~4,600 run-minutes) |
+| 🎯 Median claim → submitted | **2.7 minutes** |
+| 💵 Cost per application (best agent) | **$1.78** (tracked per run, in USD) |
+| 🧪 Models benchmarked on fake forms | **6** (harness × model matrix, graded) |
+| 🛰️ Bounty programs in the cyber lane | **27+** programs, 430+ hosts fingerprinted |
+| ⏱️ Uptime | 24/7 on a home Proxmox cluster, phone-controlled |
+
+## 🧠 Why this exists
+
+Job hunting is a full-time job. So I built a system that does it like one: a fleet of coding agents driven through a single MCP/REST control plane, with atomic claims, anti-fraud-aware pacing, measured model selection, and a human escalation path — all observable from a dashboard and controllable from a Telegram chat.
+
+It's also a showcase of how I work: **measure everything, automate the boring 95%, keep a human in the loop for the interesting 5%.**
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart LR
+    subgraph Fleet["🤖 Agent fleet (headless CLIs on a 24/7 runner)"]
+        C[Claude Code]
+        CX[Codex CLI]
+        G[Gemini CLI]
+        K[Kimi Code]
+        M[Mistral Vibe]
+        O[Ollama + Hermes<br/>local GPU · $0/token]
+    end
+
+    subgraph Hub["☁️ Hub — Cloudflare Pages + Functions"]
+        MCP["/mcp — MCP server"]
+        REST["/api/agent — REST"]
+        ADM["/admin — command center,<br/>analytics, assisted queue"]
+        PUB["/ — sanitized public dashboard"]
+    end
+
+    subgraph Data["💾 State"]
+        D1[("D1 — claims, events,<br/>runs, pacing")]
+        R2[("R2 — resume bank")]
+        CU["ClickUp — system of record<br/>(cached mirror, rate-limit outbox)"]
+    end
+
+    subgraph Lane["🛰️ Cyber lane (separate box)"]
+        SC[Recon + tech matrix]
+        RL[Research lab<br/>offline hypothesis gen]
+        JU[Model jury review]
+    end
+
+    subgraph Human["🙋 Human-in-the-loop"]
+        TG["Telegram control room<br/>/status /run /pause /digest"]
+        GM["Gmail — recruiter replies,<br/>verification codes"]
+    end
+
+    Fleet -- "Playwright MCP:<br/>real browser, real forms" --> ATS["Greenhouse · Ashby · Lever<br/>Workable · email"]
+    Fleet <-- "bearer-token identity,<br/>atomic job claims" --> MCP
+    MCP & REST --> D1
+    Hub --> CU
+    Hub --> R2
+    SC --> RL --> JU --> D1
+    Hub <-- "wins, digest, commands" --> TG
+    GM --> Hub
+    PUB --> D1
+    ADM --> D1
+```
+
+<details>
+<summary>Plain-text version</summary>
+
+```
+                       ┌── /            public dashboard (sanitized)
+Browser ── React SPA ──┤
+                       └── /admin       command center (admin token → session cookie)
+Agents ── MCP  /mcp ───────┐
+       └─ REST /api/agent ─┼── Pages Functions (worker/src) ──┬── ClickUp (system of record)
+Runner ── /api/runner ─────┘                                   └── D1 (claims, activity, runs, snapshots)
+  └─ claude · codex · gemini · qwen · kimi · vibe  + Playwright MCP
+```
+</details>
+
+## ✨ What it does
+
+- 🎯 **Shared queue with atomic claims** — an agent claims the best-fit postings and holds a lease while it applies. Claims are one SQL statement in D1, so two agents can't both win. Mirrored to ClickUp's *Next Action* field.
+- 🪪 **Per-user identities** — each agent is a full `user/model/approach` identity resolved from its bearer token, so two people's Claude accounts are credited separately.
+- 🔌 **Every agent, one endpoint** — MCP clients connect to `/mcp`; agents without MCP use the same operations over REST at `/api/agent/*`. The token decides who the agent is.
+- 📖 **Playbook from ClickUp** — standard answers and rules served only to authenticated agents, so no agent ever re-asks a profile question.
+- 📈 **Admin analytics** — per-agent scorecard (applied, success rate, median claim-to-submit, run reliability, **per-run cost in USD**), outcomes per day, yield per application system, park reasons, hour-of-day activity, fleet health over 7/30/90 days.
+- 🆘 **Assisted queue** — jobs the agents couldn't finish, with every agent's full attempt log attached, ready to push through a signed-in browser.
+- 📱 **Run agents from a phone** — "Gemini: work 4 jobs" from Telegram or the admin UI; the runner starts the CLI headless with a real browser, streams output back live, stops on demand.
+- 🧠 **Backlog handoffs with memory** — when a front-line agent fails, the hub hands the job to a backlog agent *with the failing agent's action log* (URL reached, fields filled, answers given, where it stopped). The next agent continues, never restarts.
+- 🐢 **Anti-fraud-aware pacing** — per-ATS concurrency/gap/daily caps, one in-flight application per company, real per-agent browser profiles with history, residential egress, per-agent screen geometries, and an **off-hours submission window** (see below).
+- 🗓️ **Schedules + daily digest** — recurring runs, plus a Telegram digest: wins, bulk failure reasons, and what needs a human.
+- 📄 **Resume bank** — tailored variants in R2 tagged by role keywords; agents pick the best match per posting. Cover letters typeset to PDF on the fly.
+- 📬 **Reply tracking** — a Gmail Apps Script forwards recruiter mail; Workers AI classifies it and moves each application's status.
+- 💬 **Telegram control room** — wins and digest posted to its own topic; commands: `/status` `/needs` `/run` `/stop` `/pause` `/resume` `/digest`. Owner/admins only.
+- 🌙 **Overnight autonomy** — applications must not stall waiting for a person: equipped runners handle verification steps themselves and escalate to Telegram only as a last resort.
+- 🛰️ **Bug-bounty lane** — hourly-updated program scopes, a live technology matrix (430+ hosts), offline vulnerability-hypothesis generation on the local GPU, and a multi-model jury that reviews every finding before a human ever sees it.
+- 🌍 **Public dashboard** — a sanitized live view: funnel, who applied, applications per day, platforms. No contact details, notes, links or queued targets.
+
+## 📐 Measured, not guessed
+
+Engineering decisions here come from data, not vibes:
+
+**🧪 Local model bake-off.** A fake application site and grader (`scripts/agent-eval/`) scored each model × harness combination on identical forms. Result: **Gemma 4 26B (~0.97 of form checks)** runs production form-filling; a separate 20-point cyber rubric picked **Qwen 3.6 35B (19/20)** for the security lane. Full method: [docs/LOCAL_MODELS.md](docs/LOCAL_MODELS.md).
+
+**⏰ Off-hours submission window.** A 30-day outcome analysis showed applications submitted during US business hours converted **3× worse** than off-hours — anti-fraud systems are strictest at peak traffic, and an evening application looks like a person applying after work (because it should). The autopilot now gates submissions to evenings/nights and fills the day with sourcing and research instead.
+
+**💵 Per-run cost accounting.** Every run records tokens and USD from the CLI's own report; the leaderboard shows cost-per-application per agent, so work routes to the cheapest agent that actually converts — the local Ollama model does volume for $0, free-tier keys take email applications, and paid models handle what needs them.
+
+## 🤖 The fleet
+
+Which agents can join the hub, as of October 2026 (vendor docs plus hands-on checks). The setup that works best is a **coding CLI + Playwright MCP**: a real browser that can fill forms and upload the resume, plus the hub's MCP server with the agent's own token.
+
+| Agent | Can join | Status | Notes |
+|---|---|---|---|
+| **Claude Code** | Yes | ✅ Verified on runner (hub + browser) | Also Claude in Chrome on a desktop |
+| **Codex CLI** | Yes | ✅ Verified on runner | Token via `bearer_token_env_var`; also has built-in computer use |
+| **Gemini CLI** | Yes | ✅ Verified on runner (API key) | Free-tier keys allow ~20 requests a day, so Gemini takes **email applications only**. Several keys rotate with `jar-set-key gemini --add`. |
+| **Qwen Code** | Yes | 🟡 Wired in, waiting for a key | Gemini CLI fork; same config format |
+| **Kimi Code CLI** | Yes | 🟡 Installed + configured | Headless: `kimi --auto -p` |
+| **Mistral Vibe CLI** | Yes | ✅ Working with a subscription sign-in (50 req/min) | Takes email applications first |
+| **DeepSeek** | Yes | 🟡 Wired in, waiting for credit | Runs through Claude Code on DeepSeek's Anthropic-compatible endpoint; very cheap |
+| **Ollama (local) + Hermes** | Yes | 🟢 Running on a home GPU box | Free and unlimited; [Hermes Agent](https://hermes-agent.nousresearch.com) keeps memory and writes reusable skills. `runner/gpu-gate.mjs` yields the GPU to ComfyUI instantly when a render starts. |
+| Goose, Cline/Roo, Cursor, Windsurf | Yes (not set up) | ⚪ Possible | Any MCP client that sends a header works |
+| **ChatGPT app**, **Gemini web app**, **Comet** | Not yet | 🔴 Needs OAuth 2.1 on the hub | See roadmap |
+
+Per-agent setup snippets are on `/admin#connect`; the runner wiring is in [runner/configure-agents.mjs](runner/configure-agents.mjs).
+
+## 🖥️ Where to run agents
+
+| Option | Best for | How |
+|---|---|---|
+| **Linux server / Proxmox LXC** (current) | 24/7, phone-controlled, residential IP | `runner/provision.sh`, then `runner/setup.sh`. Agents use a real browser on a virtual display (Xvfb). |
+| **Debian/Ubuntu desktop** | Watching the agents work; your own signed-in browser | `runner/setup.sh --desktop <you>` — the runner becomes a systemd *user* service and browsers open on your screen. |
+| **Windows** | Only if you must | WSL2 + desktop mode via WSLg. Linux is the better choice: every CLI is Linux-first. |
+
+Run agents from a **residential IP** (home or mobile line), not a cloud VM.
+
+## 📸 Screenshots
+
+**Public dashboard** (the live site, sanitized). Agents orbit the hub; below are counters, applications per day by agent, an activity calendar and fleet totals.
 
 <p align="center"><img src="docs/screenshots/public-dashboard.png" alt="Public dashboard, full page" width="920"></p>
 
@@ -25,134 +177,46 @@ Work routing and recovery: [operations guide](docs/OPERATIONS.md). Sourcing chec
 </p>
 </details>
 
-**Admin analytics**: how the agent army is actually performing: success rate and median time-to-apply per agent, outcomes per day, which application systems let automation through, why jobs get parked, when the agents work, and ClickUp API calls per day (flat as agents are added, thanks to the cached mirror).
+**Admin analytics**: success rate and median time-to-apply per agent, outcomes per day, which application systems let automation through, why jobs get parked, when the agents work, ClickUp API calls per day (flat as agents are added, thanks to the cached mirror).
 
 <p align="center"><img src="docs/screenshots/admin-analytics.png" alt="Admin analytics tab" width="920"></p>
 
-**Assisted queue**: everything the agents gave up on, with their logs, ready to finish in Chrome:
-
-<p align="center"><img src="docs/screenshots/admin-assisted.png" alt="Admin assisted queue" width="720"></p>
-
-**Command center** (autopilot, per-ATS pacing, live activity, the queue) and **Run agents** (launch "Gemini: work 4 jobs" from a phone, schedules, live run history):
+**Assisted queue** and **command center / run agents**:
 
 <p align="center">
+  <img src="docs/screenshots/admin-assisted.png" alt="Admin assisted queue" width="455">
   <img src="docs/screenshots/admin-command-center.png" alt="Admin command center" width="455">
-  <img src="docs/screenshots/admin-run-agents.png" alt="Admin run agents" width="455">
 </p>
 
-*The admin screenshots use generated demo data (fictional companies); run it yourself with `npm run demo` (see [Try it locally](#try-it-locally-with-demo-data)).*
+*Admin screenshots use generated demo data (fictional companies); run it yourself with `npm run demo`.*
 
-- **Shared queue with atomic claims**: an agent claims the best-fit postings and holds a lease (default 60 min) while it applies. Claims are one SQL statement in D1, so two agents can't both win. Claims are mirrored to ClickUp's *Next Action* field, and agents that only talk to ClickUp can claim there too (`Claimed by <agent> until <ISO time>`).
-- **Per-user identities**: each agent is a full `user/model/approach` identity resolved from its bearer token via `AGENT_IDENTITIES` (so Roman's Claude and Brandon's Claude are credited separately); `AGENT_TOKENS` still works as single-user identities, and cyber review passes are drawn from the configured cyber-capable identities.
-- **Every agent, one endpoint**: MCP clients (Claude Code, Codex, Gemini CLI, Qwen Code, Kimi Code, Mistral Vibe, Cursor…) connect to `/mcp`. Agents without MCP (browser agents, chat apps) use the same operations over REST at `/api/agent/*`. Each agent has its own bearer token, and the token decides who it is.
-- **One runner prompt**: the loop (read playbook → claim → apply → report) is served to every agent as MCP server instructions, from `GET /api/agent/instructions`, and on the admin *Connect agents* page.
-- **Playbook from ClickUp**: standard form answers and rules come from the ClickUp playbook doc, served only to authenticated agents and admins, so no agent re-asks profile questions.
-- **Admin analytics** (`/admin#analytics`): per-agent scorecard (applied, success rate, median claim-to-submit time, run reliability and run-hours), outcomes per day, yield by application system, why jobs are parked, hour-of-day activity, ClickUp call trend and fleet health, over 7/30/90 days.
-- **Assisted queue** (`/admin#assisted`): jobs the agents couldn't finish (a second failure, a code or CAPTCHA wall, an account to sign in to) with every agent's attempt log attached, to be pushed to completion in a real signed-in Chrome with a person nearby (Claude in Chrome via `GET /api/admin/assisted` and `POST /api/admin/jobs/<id>/report`). Jobs that effort can't fix (eligibility, travel, already done) are counted, not listed.
-- **Admin command center** (`/admin`, admin-token login): queue and claims, which agents are online, live activity, release/skip/mark-applied, pipeline editing, copy-paste agent setup.
-- **Run agents from anywhere** (`/admin#run`): launch "Gemini: work 4 jobs" (or any prompt, up to 5 in parallel) from your phone. A **runner** on an always-on Linux box starts the CLI headless with a real browser, streams the output back live, and stops it on demand. See [runner/README.md](runner/README.md).
-- **Ollama leads, backlog by success rate**: the local Ollama model (Hermes Agent) is front-line and takes fresh jobs first — it costs no tokens; free-tier Gemini helps with one-shot email applications. Kimi, Codex, Mistral and Claude are the **backlog**: when a front-line agent fails a job (or can't write an essay) the hub hands it over automatically, with the failing agent's **action log** (URL reached, fields filled, answers given, where it stopped), so the next agent continues instead of starting over. Among backlog agents, **recent run success rate sets priority** (handed-off jobs still jump the queue). A second failure parks the job for a person. Agents can also hand over deliberately with `handoff_job` (assignee gets it ahead of the queue for 6 hours). An agent already flying a run — e.g. a dispatched bug-bounty job — is never pulled into application work at the same time.
-- **Lanes, free tiers and email applications**: Gemini (free API keys, ~20 requests a day each) takes **email applications only**; Mistral and DeepSeek take them first; Claude, Codex and Kimi take anything. An email application is one call: `send_application_email` attaches the best resume from the bank and emails the address in the posting (`Apply by email: …`) from `apply@mail.prestonzen.com` through Cloudflare Email Sending (the `mailer/` Worker, 15 a day cap), then marks the job applied. When a run stops on a quota or rate-limit error the hub rests that agent until it resets (3 h to 24 h) and doesn't count it toward the failure streak that pauses autopilot.
-- **A local GPU agent that never gets in the way**: a second runner on a DGX-Spark-class box (`sparky`) runs an Ollama model through Hermes Agent, so idle GPU time does real work. `runner/gpu-gate.mjs` lets ComfyUI win: the agent starts only while ComfyUI's queue is empty, freezes the instant a render begins (and the model is unloaded to give the memory back), and resumes when it ends. Hermes' own memory and skill learning persist between runs.
-- **Pacing across all agents**: claims are held to per-ATS limits (concurrent claims, minimum gap, 24 h cap; Greenhouse one at a time) and one in-flight application per company, so a growing army doesn't trip ATS anti-fraud checks or lock the account. Editable on the command center.
-- **Schedules**: recurring runs such as "weekdays 08:00: Gemini works 4 jobs, Claude sources new roles", plus a daily Telegram digest.
-- **Resume bank**: tailored resume variants (R2) tagged with role keywords; agents call `get_resume` with the job title and upload the best match.
-- **Reply tracking**: a Gmail Apps Script forwards recruiter mail; the hub classifies it (Workers AI), matches the application and moves its status (rejected / screening / accepted).
-- **Telegram control room**: the hub posts to its own "🤖 Job Agent Hub" topic in the Kaizen Apps Operations group (jobs that need you, finished runs, interview invites and offers, daily digest) and takes commands there: `/status`, `/needs`, `/run claude 3`, `/runs`, `/stop`, `/pause`, `/resume`, `/digest`. Only the group's owner/admins are obeyed.
-- **Phone logins**: `/login codex` or `/login kimi` in the topic starts that CLI's device-code login on the runner and posts the link and code there.
-- **ClickUp-friendly**: agents never call ClickUp. The hub keeps a local copy of the list in D1 (refreshed at most every 10 min, single-flight), re-reads just the one task before handing it out, caches the playbook for 4 h, and parks writes that hit a rate limit in an outbox that is replayed on runner check-ins. `/status` shows ClickUp calls today; `/refresh` forces a reload.
-- **Autonomous verification handling**: applications must not stall overnight waiting for you — equipped runners handle verification steps (emailed codes, human-verification challenges) themselves and only escalate to Telegram / `needs_human` as a fallback.
-- **Public dashboard** (`/`): a sanitized live view: funnel, who applied, applications per day, platforms. No contact details, notes, links, answers or queued targets.
+## 🚀 Deployment
 
-```
-                       ┌── /            public dashboard (sanitized)
-Browser ── React SPA ──┤
-                       └── /admin       command center (admin token → session cookie)
-Agents ── MCP  /mcp ───────┐
-       └─ REST /api/agent ─┼── Pages Functions (worker/src) ──┬── ClickUp (system of record)
-Runner ── /api/runner ─────┘                                   └── D1 (claims, activity, runs, snapshots)
-  └─ claude · codex · gemini · qwen · kimi · vibe  + Playwright MCP (Chromium)
-```
+- **Hub**: Cloudflare Pages Git integration — a push to `main` builds and deploys. CI typechecks and builds every push.
+- **Runner**: pull-based. `job-agent-updater.timer` re-runs `runner/setup.sh` when `runner/` changes on `main`. Works behind CGNAT with no open ports and no deploy secrets in GitHub.
+- **Other servers**: GitHub Actions over SSH for a VPS with a public IP; pull-based or a self-hosted runner behind NAT.
 
-Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · Connecting agents: [docs/AGENTS.md](docs/AGENTS.md)
+## 🗺️ Roadmap
 
-## Agent compatibility
+Done: per-ATS/per-company pacing, Telegram alerts, scheduled runs, resume bank, reply tracking, runner health for Uptime Kuma, off-hours submission gating, per-run cost accounting, bug-bounty lane.
 
-Which agents can join the hub, as of October 2026 (vendor docs plus hands-on checks on the kloud runner). The setup that works best is a **coding CLI + Playwright MCP**: a real browser that can fill forms and upload the resume, plus the hub's MCP server with the agent's own token.
+1. **OAuth 2.1 on `/mcp`** so ChatGPT, the Gemini web app and Comet can join.
+2. **Cost and safety caps** per run: max turns/price, per-agent concurrency.
+3. **Weekly D1 backup** to R2.
+4. **Resume tailoring by agents** with human approval into the bank.
 
-| Agent | Can join | Status | Notes |
-|---|---|---|---|
-| **Claude Code** | Yes | ✅ Verified on runner (hub + browser) | Also Claude in Chrome on a desktop |
-| **Codex CLI** | Yes | ✅ Verified on runner | Token via `bearer_token_env_var`; also has built-in computer use |
-| **Gemini CLI** | Yes | ✅ Verified on runner (API key) | Free-tier keys allow ~20 requests a day, so Gemini takes **email applications only**. Add several keys from different Google accounts with `jar-set-key gemini --add`: `runner/with-key.mjs` rotates them and rests any that hit quota. Needs the runs folder trusted and a 30 s MCP timeout (set by `configure-agents.mjs`). The Gemini desktop/web app can't send a custom token header, so it can't connect. |
-| **Qwen Code** | Yes | 🟡 Wired in, waiting for a key | Gemini CLI fork; same config format. Qwen's free OAuth login ended 2026-04-15; use an Alibaba Cloud **Coding Plan** key (`jar-set-key qwen`). |
-| **Kimi Code CLI** | Yes | 🟡 Installed + configured; verify after login | Replaces the deprecated `kimi-cli`. Headless: `kimi --auto -p` |
-| **Mistral Vibe CLI** | Yes | ✅ Working with a subscription sign-in (50 req/min) | Free tier: takes email applications first. Browser sign-in is stored as an API key in `~/.vibe/.env`. Le Chat was renamed "Vibe" in August 2026. No desktop app, and the web app can't drive a browser, so use the CLI. |
-| **DeepSeek** | Yes | 🟡 Wired in, waiting for a key | No CLI of its own: runs through Claude Code on DeepSeek's Anthropic-compatible endpoint (`api.deepseek.com/anthropic`) in a separate config dir. Pay-as-you-go (no free credits on a new key: it returned 402 Insufficient Balance until topped up); very cheap. Takes email applications first. `jar-set-key deepseek`. |
-| **Ollama (local) + Hermes** | Yes | 🟢 Running on a home GPU box | Free and unlimited: a local model (Gemma 4 26B, ~20 GB) served by Ollama, driven by [Hermes Agent](https://hermes-agent.nousresearch.com) (Nous Research), which keeps memory and writes reusable skills from the tasks it finishes. Hermes needs a model with 64k context and reliable tool calling; Qwen3-30B-A3B fumbled the tool-call format, Gemma 4 passed. Takes email applications first, and `runner/gpu-gate.mjs` yields the GPU to ComfyUI / LTX video generation. |
-| **Manus** (Browser Operator) | Yes (not set up) | ⚪ Possible | The only consumer app confirmed to do both: work in your own logged-in browser and connect to a custom MCP server with a bearer token |
-| Goose, Cline/Roo, Cursor, Windsurf, Ollama + Playwright MCP | Yes (not set up) | ⚪ Possible | Any MCP client that sends a header works; Ollama gives a fully local agent |
-| **ChatGPT app**, **Gemini web app**, **Perplexity Comet** | Not yet | 🔴 Needs OAuth on the hub | ChatGPT can't automate file uploads and only connects through OAuth login; the Gemini web app looks the same (unconfirmed). Supporting them means adding OAuth 2.1 to `/mcp`. |
-
-Per-agent setup snippets are on `/admin#connect`; the runner wiring is in [runner/configure-agents.mjs](runner/configure-agents.mjs).
-
-## Which local model, and do you need a harness?
-
-Measured, not guessed: a fake application site and grader (`scripts/agent-eval/`) scored each model and harness on the
-same forms. Best local model: **Gemma 4 26B (~0.97 of form checks right)**. The agent harness (bare loop, Claude Code,
-Hermes) changed speed and compatibility but not accuracy, so production uses Hermes for its memory and skill learning.
-Full results, method and caveats: [docs/LOCAL_MODELS.md](docs/LOCAL_MODELS.md).
-
-## Where to run agents
-
-| Option | Best for | How |
-|---|---|---|
-| **Linux server / Proxmox LXC** (current: kloud CT 218) | 24/7, phone-controlled, residential IP | `runner/provision.sh`, then `runner/setup.sh`. Agents use Chromium on a virtual display (Xvfb). |
-| **Debian/Ubuntu desktop** | Watching the agents work; using your own signed-in browser | `runner/provision.sh`, then `runner/setup.sh --desktop <you>`. The runner becomes a systemd *user* service in your graphical session, so each agent's browser opens on your screen. For your real Chrome profile, Playwright MCP's extension mode can attach to it. |
-| **Windows** | Only if you must | Use WSL2 (Ubuntu) and desktop mode via WSLg. Linux is the better choice: every CLI is Linux-first, systemd keeps the runner alive, and file paths and browser automation are less fiddly. |
-
-Run agents from a **residential IP** (home or mobile line), not a cloud VM: Ashby flags applications from data-center IPs as fraud.
-
-## Deployment
-
-- **Hub**: Cloudflare Pages Git integration. A push to `main` builds and deploys. CI (`.github/workflows/ci.yml`) typechecks and builds every push.
-- **Runner**: pull-based. `job-agent-updater.timer` runs `runner/update.sh` every 5 minutes. When anything under `runner/` changed on `main` and no run is in progress, it re-runs `setup.sh` from the new checkout. This works behind CGNAT with no open ports, and puts no deploy secrets in GitHub. `provision.sh` (system packages, CLI versions) is run by hand.
-- **Other servers**: skip Jenkins; it's a server you'd have to maintain for what GitHub Actions does for free. For a VPS with a public IP, use a GitHub Actions job that deploys over SSH with a deploy-only key (plus an environment approval for production). For machines behind NAT, either let the box pull (like the runner) or install a GitHub self-hosted runner on it. The Tailscale GitHub Action is an option if the box is on a tailnet.
-
-## Roadmap
-
-Done: per-ATS/per-company pacing, Telegram alerts, scheduled runs, resume bank, reply tracking, runner health for Uptime Kuma.
-
-1. **OAuth 2.1 on `/mcp`**, so ChatGPT, the Gemini web app and Comet can join (see below).
-2. **Cost and safety caps** per run: max turns/price (Vibe has `--max-price`), per-agent concurrency.
-3. **Weekly D1 backup** (`wrangler d1 export`) to R2.
-4. **Resume tailoring by agents**: an agent drafts a variant for a role family, and a human approves it into the bank.
-
-### How OAuth would work
-
-ChatGPT, the Gemini web app and Comet only connect to remote MCP servers through OAuth 2.1 (the MCP authorization spec), not a pasted token. The hub would become its own small authorization server:
-
-1. `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server` advertise the endpoints; `/mcp` answers 401 with a `WWW-Authenticate` pointer to them.
-2. The client registers itself (`/register`, dynamic client registration), then sends you to `/authorize` with PKCE.
-3. `/authorize` is a hub page behind the admin login: you pick which agent identity this client becomes (e.g. "chatgpt") and approve.
-4. `/token` exchanges the code for a short-lived access token (plus a refresh token) bound to that agent. `/mcp` accepts it exactly like today's bearer tokens, so pacing, claims and identity work unchanged.
-
-Cloudflare's `workers-oauth-provider` library implements this flow on Workers with KV for grants. ClickUp needs a matching *Applied By* option per new identity.
-
-## Privacy model
+## 🔒 Privacy model
 
 This repo and the public site contain **no personal data and no secrets**.
 
-- Only the Functions hold credentials (Pages secrets). The browser bundle never does, so **never put secrets in `VITE_*` variables**.
-- `/api/public/summary` returns only company, role, platform, status, who applied and the date for submitted applications.
-- `/api/admin/*` requires the admin session cookie (HMAC-signed, HttpOnly, Secure, SameSite=Strict, 30 days) obtained by posting `ADMIN_TOKEN` to `/api/admin/login`, or `Authorization: Bearer <ADMIN_TOKEN>` for scripts. Rotating the secret ends all sessions.
-- `/api/agent/*` and `/mcp` use per-agent bearer tokens (24+ chars). The playbook (personal data) is only served there and to admins, and is cached in memory only.
+- Only the Functions hold credentials (Pages secrets). The browser bundle never does — **never put secrets in `VITE_*` variables**.
+- `/api/public/summary` returns only company, role, platform, status, who applied and the date.
+- `/api/admin/*` requires an HMAC-signed session cookie or the admin bearer token. Rotating the secret ends all sessions.
+- `/api/agent/*` and `/mcp` use per-agent bearer tokens. The playbook (personal data) is only served there and to admins, cached in memory only.
 
-## Setup
+## 🛠️ Setup
 
 The Pages project `job-agent-hub` is Git-connected: **every push to `main` builds and deploys**. Bindings and vars live in `wrangler.jsonc`.
-
-Everything is done with wrangler; no dashboard steps. Set the account first (3 accounts are logged in):
 
 ```powershell
 $env:CLOUDFLARE_ACCOUNT_ID = "f19d27cc74917ce2597bf6b423f94aff"   # Kaizen Apps
@@ -160,30 +224,23 @@ npx wrangler pages secret list --project-name job-agent-hub
 npx wrangler pages secret put <NAME> --project-name job-agent-hub    # prompts for the value
 ```
 
-Secrets take effect on the next deployment (push to `main`, or `git commit --allow-empty -m redeploy; git push`).
-
 | Secret | What |
 |---|---|
 | `CLICKUP_TOKEN` | ClickUp personal API token (`pk_…`). Required for real data. |
-| `AGENT_TOKENS` | JSON map of agent name → token, e.g. `{"claude":"…","codex":"…"}`. Names should match ClickUp *Applied By* options. |
+| `AGENT_TOKENS` | JSON map of agent name → token. Names should match ClickUp *Applied By* options. |
 | `ADMIN_TOKEN` | 24+ char random string; paste it on `/admin` to sign in. |
 | `RUNNER_TOKEN` | Shared secret for runner machines (`runner/`). |
-| `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather. The bot must be in the chat set by `TELEGRAM_CHAT_ID` (a var), and admin with "Manage topics" so it can create its own topic. |
+| `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather; the bot must be admin in the chat set by `TELEGRAM_CHAT_ID`. |
 | `INBOUND_TOKEN` | Shared secret for the Gmail reply tracker (`integrations/gmail-reply-tracker.gs`). |
-| `TELEGRAM_HUB_SECRET` | Telegram webhook `secret_token` for `/api/telegram/webhook`. After setting it, `POST /api/admin/telegram/set-webhook` registers the webhook and the topic's command menu. |
-| `ZADARMA_KEY`, `ZADARMA_SECRET` | Optional, experimental phone stats |
+| `TELEGRAM_HUB_SECRET` | Webhook `secret_token`; then `POST /api/admin/telegram/set-webhook`. |
 
 **Bindings**: D1 `job-agent-hub` (`DB`), R2 `job-agent-hub-resumes` (`RESUMES`), Workers AI (`AI`).
 
-**Reply tracking**: paste `integrations/gmail-reply-tracker.gs` into a new project at script.google.com, set the script properties `HUB_URL`, `INBOUND_TOKEN` and `INBOX_ADDRESS`, then run `install` once. It runs every 10 minutes inside your own Google account.
+**Reply tracking**: paste `integrations/gmail-reply-tracker.gs` into script.google.com, set `HUB_URL`, `INBOUND_TOKEN`, `INBOX_ADDRESS`, run `install` once.
 
-**Monitoring**: Uptime Kuma on `coolify` watches `https://jobhunter.prestonzen.com/api/health/runner` every 2 min ("Job Agent Hub · Runner (kloud)"; 503 when no runner has checked in for 3 min) and `/api/health` every 5 min ("Job Agent Hub · API"). Both alert to ntfy (Kaizen Apps Production) and Telegram (Kaizen Apps Operations).
+**Monitoring**: Uptime Kuma watches `/api/health/runner` (2 min) and `/api/health` (5 min), alerting to ntfy and Telegram.
 
-**Admin login**: `/admin` takes the `ADMIN_TOKEN` value as its password.
-
-**Database**: D1 `job-agent-hub`. Tables are created on first use; `npm run db:migrate` applies `migrations/` explicitly.
-
-## Try it locally with demo data
+## 🧪 Try it locally with demo data
 
 ```bash
 npm install
@@ -191,9 +248,9 @@ npx wrangler login      # once: the Workers AI binding connects to your Cloudfla
 npm run demo            # builds, seeds a local D1 with a month of activity, serves http://127.0.0.1:8788
 ```
 
-`npm run demo` runs in MOCK mode: generated tasks (fictional companies), a seeded local database (`scripts/seed-demo.mjs`: events, runs, heartbeats, a runner) and no ClickUp, Telegram or agent credentials. Open `/` for the public dashboard and `/admin` for the command center and analytics (login is skipped on localhost).
+`npm run demo` runs in MOCK mode: generated tasks (fictional companies), a seeded local database, and no real credentials. Open `/` for the public dashboard and `/admin` for the command center and analytics.
 
-## Local development
+## 💻 Local development
 
 ```bash
 npm install
@@ -202,22 +259,17 @@ npm run build && npm run dev:api # Pages Functions + local D1 on http://127.0.0.
 npm run dev                      # Vite on http://localhost:5173, proxies /api and /mcp
 ```
 
-In demo mode, ClickUp writes are skipped, while claims and activity run for real against local D1. The admin page skips login on localhost.
-
-## Scripts
+## 📜 Scripts
 
 | Command | What it does |
 |---|---|
 | `npm run dev` | Vite dev server (proxies `/api`, `/mcp` to port 8788) |
 | `npm run dev:api` | `wrangler pages dev dist` in demo mode |
-| `npm run demo` | Build, seed the local D1 with demo activity, and serve everything in demo mode |
-| `npm run demo:seed` | Re-seed the local D1 with demo activity (`scripts/seed-demo.mjs`) |
+| `npm run demo` | Build, seed the local D1 with demo activity, serve everything |
 | `npm run typecheck` | Type-check the app, the Functions and `worker/src` |
 | `npm run build` | Production build into `dist/` |
 | `npm run db:migrate` | Apply D1 migrations to the remote database |
-| `npm run deploy` | Manual deploy (normally Git integration does this) |
 
-## License
+## 📄 License
 
 MIT
-
