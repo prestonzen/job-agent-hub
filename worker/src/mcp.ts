@@ -3,6 +3,7 @@ import { HttpError } from "./clickup";
 import { agentInstructions } from "./instructions";
 import { OUTCOMES, addJob, claimJobs, getJob, logApplication, playbook, queue, isAvailable, releaseJob, renewLease, reportResult, type Outcome } from "./jobs";
 import { pickResume } from "./resumes";
+import { makeCoverLetter } from "./coverletters";
 import { getJob as jobById } from "./jobs";
 import { requestCode, waitForCode } from "./codes";
 import { handoffJob } from "./jobs";
@@ -51,6 +52,12 @@ const TOOLS = [
     name: "get_resume",
     description: "Pick the best tailored resume for a job from the resume bank (by role title plus the posting text). Always pass the job description so a generic title still gets the right variant. On a runner the file is already in ./resumes/<filename>; elsewhere download it from downloadUrl with your bearer token.",
     inputSchema: { type: "object", properties: { role: { type: "string", description: "The job title, e.g. 'Senior Forward Deployed Engineer'" }, description: { type: "string", description: "The posting text (responsibilities, requirements, company blurb) — the first few thousand characters are enough" } }, required: ["role"] },
+  },
+  {
+    name: "make_cover_letter",
+    description:
+      "Typeset a cover letter you wrote (per the playbook's cover-letter rule) as a one-page PDF for a claimed job, so you can upload it where a form offers a cover-letter file. Returns downloadUrl: fetch it with your bearer token (curl -H 'Authorization: Bearer <token>' -o <filename> <downloadUrl>) and upload that file. For a cover-letter TEXT field, paste the text directly instead.",
+    inputSchema: { type: "object", properties: { id: str, text: { type: "string", description: "The full letter, 3-4 short paragraphs, plain text with blank lines between paragraphs; no LinkedIn URL" } }, required: ["id", "text"] },
   },
   {
     name: "handoff_job",
@@ -176,6 +183,8 @@ async function callTool(env: Env, agent: string, name: string, args: Args, origi
       if (!pick) return { error: "resume bank is empty; use the resume named in the playbook" };
       return { ...pick, runnerPath: `./resumes/${pick.filename}`, downloadUrl: `${origin}/api/agent/resumes/${pick.id}/file` };
     }
+    case "make_cover_letter":
+      return await makeCoverLetter(env, agent, origin, { id: s(args.id), text: s(args.text) });
     case "handoff_job":
       return await handoffJob(env, agent, String(args.id), String(args.reason ?? ""), s(args.to) ?? undefined, false, s(args.log), identity);
     case "send_application_email":

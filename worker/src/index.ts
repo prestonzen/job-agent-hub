@@ -34,6 +34,7 @@ import { flushReplyNotifications, recoverReplyNotification } from "./reply-deliv
 import { handleInbound, recentInbound, type InboundEmail } from "./inbound";
 import { DEFAULT_POLICY, getPolicy, pacingState, pacingSummary, type PacingPolicy } from "./pacing";
 import { deleteResume, listResumes, pickResume, resumeFile, updateResume, uploadResume } from "./resumes";
+import { coverLetterFile, makeCoverLetter } from "./coverletters";
 import { createSchedule, deleteSchedule, listSchedules, tick, updateSchedule, type ScheduleKind } from "./schedules";
 import { notify, setHubWebhook, telegramConfigured, webhookInfo } from "./telegram";
 import { handleTelegramUpdate } from "./telegram-bot";
@@ -230,6 +231,11 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     }
     const cw = sub.match(/^\/codes\/([A-Za-z0-9]{3})(\/wait)?$/);
     if (cw && method === "GET") return json(cw[2] ? await waitForCode(env, cw[1], agent) : await getCodeRequest(env, cw[1]));
+
+    // Cover letters: the agent writes, the hub typesets a PDF and serves it back for the form upload.
+    if (sub === "/cover-letter" && method === "POST") return json(await makeCoverLetter(env, agent, url.origin, await readJson(request)), 201);
+    const clf = sub.match(/^\/cover-letters\/([A-Za-z0-9._-]+)$/);
+    if (clf && method === "GET") return coverLetterFile(env, clf[1]);
 
     if (sub === "/queue" && method === "GET") {
       const q = await queue(env);

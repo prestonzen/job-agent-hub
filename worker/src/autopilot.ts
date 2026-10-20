@@ -5,6 +5,7 @@ import { taskSwitches, type TaskSwitches } from "./work";
 import { checkJob, getPolicy, pacingState } from "./pacing";
 import { createRun, listRunners, listRuns } from "./runs";
 import { BROAD_SOURCE_PROMPT } from "./sourcing";
+import { processFollowUps } from "./followups";
 import { esc, notify } from "./telegram";
 import type { Env } from "./types";
 
@@ -208,6 +209,8 @@ export async function autopilotTick(env: Env): Promise<string | null> {
   const [runners, runs, jobs, policy] = await Promise.all([listRunners(env), listRuns(env, 80), queue(env), getPolicy(env)]);
   const online = runners.filter((r) => r.online);
   if (!online.length) return null;
+  // Quiet email applications get one follow-up (self-gated to a few times a day; never blocks the tick).
+  await processFollowUps(env).catch(() => null);
   const freeSlots = online.reduce((n, r) => n + Math.max(0, r.slots - r.busy), 0);
   const inFlight = runs.filter((r) => r.kind !== "login" && (r.status === "running" || r.status === "queued"));
   if (inFlight.length >= s.maxConcurrent || freeSlots <= inFlight.filter((r) => r.status === "queued").length) return null;

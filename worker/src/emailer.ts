@@ -12,7 +12,8 @@ import { taskSwitches, workSettings } from "./work";
  * the address on the claimed job, only for a job the agent holds, and no more than DAILY_CAP a day.
  */
 
-const SIGNATURE = "\n\nPreston Zen\ncontact@prestonzen.com\nhttps://linkedtfin.com/in/prestonzen";
+// No LinkedIn here: the profile is suspended, and the lookalike domain never belongs in front of an employer.
+export const SIGNATURE = "\n\nPreston Zen\ncontact@prestonzen.com\nhttps://portfolio.prestonzen.com";
 export const DAILY_CAP = 15;
 
 export function emailEnabled(env: Env): boolean {
@@ -27,7 +28,7 @@ function toBase64(buf: ArrayBuffer): string {
 }
 
 /** Hand one message to the mailer Worker; returns the message id. */
-async function mail(env: Env, m: { to: string; subject: string; text: string; attachment?: { filename: string; type: string; bytes: ArrayBuffer } }): Promise<string> {
+export async function mail(env: Env, m: { to: string; subject: string; text: string; attachment?: { filename: string; type: string; bytes: ArrayBuffer } }): Promise<string> {
   const res = await fetch(env.MAILER_URL!, {
     method: "POST",
     headers: { Authorization: `Bearer ${env.MAILER_TOKEN}`, "Content-Type": "application/json" },
@@ -45,7 +46,7 @@ async function mail(env: Env, m: { to: string; subject: string; text: string; at
 
 async function sentToday(env: Env): Promise<number> {
   const r = await (await db(env))
-    .prepare("SELECT COUNT(*) AS n FROM events WHERE type = 'emailed' AND at > ?")
+    .prepare("SELECT COUNT(*) AS n FROM events WHERE type IN ('emailed', 'followup') AND at > ?")
     .bind(Date.now() - 86_400_000)
     .first<{ n: number }>();
   return r?.n ?? 0;
