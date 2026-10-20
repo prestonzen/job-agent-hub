@@ -345,6 +345,26 @@ export async function getPlaybook(env: Env, force = false): Promise<string> {
   }
 }
 
+/** List playbook pages with IDs (for targeted patch/append via /api/admin/playbook/patch). */
+export async function listDocPages(env: Env): Promise<{ id: string; name: string }[]> {
+  const data = (await cu(
+    env,
+    `/workspaces/${env.CLICKUP_WORKSPACE_ID}/docs/${encodeURIComponent(env.PLAYBOOK_DOC_ID)}/pages?max_page_depth=-1&content_format=text%2Fmd`,
+    {},
+    API_V3,
+  )) as DocPage[] | { pages?: DocPage[] };
+  const pages = Array.isArray(data) ? data : (data.pages ?? []);
+  const out: { id: string; name: string }[] = [];
+  const walk = (ps: DocPage[]) => {
+    for (const p of ps) {
+      out.push({ id: p.id, name: p.name ?? "" });
+      if (p.pages?.length) walk(p.pages);
+    }
+  };
+  walk(pages);
+  return out;
+}
+
 async function fetchPlaybook(env: Env): Promise<string> {
   const data = (await cu(
     env,

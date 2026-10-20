@@ -2,7 +2,7 @@ import { assistedQueue } from "./assisted";
 import { buildAnalytics } from "./analytics";
 import { sendApplicationEmail, sendTestEmail } from "./emailer";
 import { adminUser, agentName, agentNames, clearedCookie, isAdminToken, resolveIdentity, sessionCookie } from "./auth";
-import { HttpError, addComment, appendDocPage, getDocPage, getPlaybook, patchDocPage, replayWrite, requeueTask, setStatus } from "./clickup";
+import { HttpError, addComment, appendDocPage, getDocPage, getPlaybook, listDocPages, patchDocPage, replayWrite, requeueTask, setStatus } from "./clickup";
 import { flushOutbox, mirrorAge, mirrorTasks, outboxSize, usageToday } from "./mirror";
 import { isApplication } from "./classify";
 import { activeClaims, db as dbHandle, heartbeat, lastEventAt, listEvents, listHeartbeats, loadSnapshot, saveSnapshot, setSetting } from "./db";
@@ -398,6 +398,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     }
 
     if (path === "/api/admin/playbook" && method === "GET") return text(await playbook(env));
+    if (path === "/api/admin/playbook/pages" && method === "GET") return json(await listDocPages(env));
     // Exact in-place edits of a playbook page (each `find` must match exactly once, or nothing is written).
     if (path === "/api/admin/playbook/page" && method === "GET") return text((await getDocPage(env, url.searchParams.get("id") ?? "")).content);
     if (path === "/api/admin/playbook/patch" && method === "POST") {
