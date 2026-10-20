@@ -139,7 +139,7 @@ export async function createRun(env: Env, r: { agent: string; kind: RunKind; tas
   const count = r.kind === "queue" ? Math.min(10, Math.max(1, Math.floor(r.count ?? 4))) : null;
   const settings = await workSettings(env);
   const task = r.kind === "login" ? "login" : r.task ?? (r.kind === "queue" && !taskSwitches(settings,agent).applications ? "email" : inferRunTask(r.kind, r.prompt ?? null));
-  if (![...TASKS, "custom", "diagnostic", "login"].includes(task)) throw new HttpError(400, "unknown task");
+  if (![...TASKS, "custom", "diagnostic", "login", "prep"].includes(task)) throw new HttpError(400, "unknown task");
   if (r.kind === "queue" && task !== "applications" && task !== "email") throw new HttpError(400,"Queue runs must be application or email tasks");
   if (r.kind !== "login") {
     if (settings.agents?.[agent] === false) throw new HttpError(409, `${agent} is switched off`);
