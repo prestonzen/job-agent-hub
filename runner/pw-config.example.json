@@ -2,7 +2,7 @@
   "browser": {
     "launchOptions": {
       "args": ["--disable-blink-features=AutomationControlled"],
-      "proxy": { "server": "http://PROXY_HOST:3128", "username": "PROXY_USER", "password": "PROXY_PASS" }
+      "proxy": { "server": "socks5://127.0.0.1:11080" }
     },
     "contextOptions": {
       "locale": "en-US",
