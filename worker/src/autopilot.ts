@@ -60,6 +60,18 @@ const FAIL_STREAK_PAUSE = 3;
 /** Exit code recorded on a run that stopped because the agent's quota or rate limit ran out (see runs.ts). */
 export const QUOTA_EXIT = 429;
 
+/**
+ * 30-day outcome analysis (2026-10-21, n=171 Ashby+Greenhouse attempts): submissions during US
+ * business hours convert at 9.8% vs 30.4% off-hours — ATS anti-fraud is strictest when real
+ * candidate traffic peaks, and an evening application also just looks like a person applying
+ * after work. So application/email runs only launch outside 9:00–17:00 America/Los_Angeles.
+ * Sourcing, cyber and follow-ups are unaffected (they touch no ATS forms).
+ */
+export function businessHoursPT(now = Date.now()): boolean {
+  const h = Number(new Date(now).toLocaleString("en-US", { timeZone: "America/Los_Angeles", hour: "numeric", hour12: false }));
+  return h >= 9 && h < 17;
+}
+
 export async function getAutopilot(env: Env): Promise<AutopilotSettings> {
   const saved = await getSetting<Partial<AutopilotSettings>>(env, "autopilot").catch(() => null);
   return { ...DEFAULTS, ...(saved ?? {}), tasks: { ...(saved?.tasks ?? {}) }, agents: { ...(saved?.agents ?? {}) }, autoResume: { ...(saved?.autoResume ?? {}) }, backlog: saved?.backlog ?? DEFAULTS.backlog, lanes: { ...DEFAULT_LANES, ...(saved?.lanes ?? {}) }, tags: { ...DEFAULT_TAGS, ...(saved?.tags ?? {}) } };
@@ -196,6 +208,7 @@ export async function autopilotStatus(env: Env) {
     if (!eligible.length) return { ...base, state: "idle", nextAt: null, detail: tasks.applications || tasks.email ? `No eligible ${lane==="email"?"email":"application"} work${tasks.sourcing ? "; sourcing fallback enabled" : ""}` : "No task queued for enabled work types" };
     if (!claimable.length) return { ...base, state: "waiting", nextAt: null, detail: "Application pacing limit" };
     if (!runners.some((r) => r.online && r.busy < r.slots && r.agents.some((a) => a.id === agent && a.ready))) return { ...base, state: "waiting", nextAt: null, detail: "Runner capacity is full" };
+    if (businessHoursPT()) return { ...base, state: "waiting", nextAt: null, detail: "Off-hours window: submissions resume at 17:00 PT (business-hour applications convert ~3× worse)" };
     return { ...base, state: "ready", nextAt: null, detail: `${claimable.length} eligible jobs for enabled tasks` };
   });
   return { settings: s, agents };
@@ -258,6 +271,8 @@ export async function autopilotTick(env: Env): Promise<string | null> {
   const order = readyAgents.sort((a, b) => (next.get(a) ?? 0) - (next.get(b) ?? 0));
 
   const now = Date.now();
+  // Off-hours gate: no submission runs 9:00–17:00 PT (see businessHoursPT). Sourcing above already ran.
+  if (businessHoursPT(now)) return null;
   const assignedTo = new Set(jobs.filter((j) => j.assignedTo && isAvailableFor(j, j.assignedTo)).map((j) => j.assignedTo as string));
   // Handed-off jobs go first. Among backlog agents, recent success rate sets priority (unproven
   // agents rank neutral). An agent already flying a run — e.g. a dispatched bug-bounty job — is
