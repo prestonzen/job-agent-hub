@@ -18,7 +18,7 @@ import { agentLane, inLane, laneOrder } from "./lanes";
 import { parkedCategory } from "./park";
 import { agentNames } from "./auth";
 import { atsKey, checkJob, companyKey, getPolicy, noteClaim as notePacedClaim, pacingState } from "./pacing";
-import { activeClaims, deleteClaim, getClaim, logEvent, tryClaim, type Claim } from "./db";
+import { activeClaims, db, deleteClaim, getClaim, logEvent, tryClaim, type Claim } from "./db";
 import { mockPlaybook, mockTasks } from "./mock";
 import { esc, notify } from "./telegram";
 import { isFresh, mirrorAge, mirrorTasks, patchMirror, replaceMirror, upsertMirror } from "./mirror";
@@ -45,6 +45,28 @@ export type Outcome = (typeof OUTCOMES)[number];
 /** "kimi" -> "Kimi" for comments and ClickUp dropdowns. */
 /** Who the admin's own actions are recorded as: ADMIN_NAME, or "human". */
 export const adminName = (env: Env) => (env.ADMIN_NAME ?? "").trim().toLowerCase() || "human";
+
+/**
+ * Hard waste ceiling (Preston, 2026-10-21): a job with 4+ recorded machine attempts since the last
+ * ADMIN release stops being auto-claimable. Before this, ~a third of all agent time went to
+ * re-hitting the same wall (code walls ×4–7, attestations ×3, spam flags ×5). Agent releases do NOT
+ * reset the count — only a human reviving it from the assisted queue does.
+ */
+const ATTEMPT_CEILING = 4;
+async function attemptCeilingReached(env: Env, taskId: string): Promise<boolean> {
+  const d = await db(env);
+  const rel = await d
+    .prepare("SELECT MAX(at) AS at FROM events WHERE task_id = ? AND type = 'released' AND agent = ?")
+    .bind(taskId, adminName(env))
+    .first<{ at: number | null }>()
+    .catch(() => null);
+  const row = await d
+    .prepare("SELECT COUNT(*) AS n FROM attempts WHERE task_id = ? AND at > ?")
+    .bind(taskId, rel?.at ?? 0)
+    .first<{ n: number }>()
+    .catch(() => null);
+  return (row?.n ?? 0) >= ATTEMPT_CEILING;
+}
 
 export const displayAgent = (a: string) => (a.length ? a[0].toUpperCase() + a.slice(1) : a);
 
@@ -236,6 +258,7 @@ export async function claimJobs(
     if (out.length >= count) break;
     if (!isAvailableFor(job, agent) || !inLane(job, lane)) continue;
     if (ats.length && !ats.some((a) => (job.ats ?? "").toLowerCase().includes(a))) continue;
+    if (await attemptCeilingReached(env, job.id)) continue; // 4+ tries since admin release: human-only now
     const verdict = checkJob(job, pace, policy, Date.now(), job.assignedTo === agent);
     if (!verdict.ok) {
       const k = atsKey(job.ats);

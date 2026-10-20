@@ -80,6 +80,7 @@ export default function Analytics() {
 
       <section className="kpis an-kpis">
         <Stat label="Applications sent" value={t.applied} sub={`${t.claimed} jobs claimed`} />
+        <Stat label="Confirmed received" value={t.confirmed} tone={t.applied > 0 && t.confirmed === 0 ? "warn" : undefined} sub="receipt emails — the landing rate that matters" />
         <Stat label="Success rate" value={pct(t.successRate)} sub="applied ÷ finished attempts" />
         <Stat label="Median time to apply" value={mins(t.medianMinToApply)} sub="claim → submitted" />
         <Stat label="Agent run time" value={`${(t.runMinutes / 60).toFixed(1)} h`} sub={`${t.runsOk}/${t.runs} processes completed; diagnostics excluded`} />
@@ -140,7 +141,7 @@ export default function Analytics() {
                     })}
                   </span>
                   <span className="num">{total}</span>
-                  <span className="pct">{pct(a.successRate)}</span>
+                  <span className="pct" title={`${a.confirmed} confirmation receipt${a.confirmed === 1 ? "" : "s"} — submissions that actually landed`}>{pct(a.successRate)} · ✉{a.confirmed}</span>
                 </li>
               );
             })}

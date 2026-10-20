@@ -47,6 +47,8 @@ export interface AtsStats {
   skipped: number;
   failed: number;
   successRate: number | null;
+  /** Applications with a "we received your application" receipt — the KPI that proves a submission landed. */
+  confirmed: number;
 }
 
 export interface DayStats {
@@ -70,6 +72,8 @@ export interface Analytics {
     needsHuman: number;
     failed: number;
     successRate: number | null;
+    /** Submissions with a confirmation receipt — "confirmed received", the real landing rate. */
+    confirmed: number;
     medianMinToApply: number | null;
     runs: number;
     runsOk: number;
@@ -126,7 +130,7 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
 
   const [{ results: evs }, { results: runs }, q, runners, usage] = await Promise.all([
     d
-      .prepare("SELECT at, agent, task_id, type, ats, identity FROM events WHERE at >= ? AND type IN ('claimed','applied','skipped','needs_human','failed','released') ORDER BY at")
+      .prepare("SELECT at, agent, task_id, type, ats, identity FROM events WHERE at >= ? AND type IN ('claimed','applied','skipped','needs_human','failed','released','reply:confirmation') ORDER BY at")
       .bind(since)
       .all<Ev>(),
     d
@@ -168,7 +172,7 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
     const k = ats || "unknown";
     let x = byAts.get(k);
     if (!x) {
-      x = { ats: k, applied: 0, needsHuman: 0, skipped: 0, failed: 0, successRate: null };
+      x = { ats: k, applied: 0, needsHuman: 0, skipped: 0, failed: 0, successRate: null, confirmed: 0 };
       byAts.set(k, x);
     }
     return x;
@@ -176,6 +180,8 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
   const byHour = new Array<number>(24).fill(0);
   const byId = new Map<string, number>(); // identity (or model fallback) -> applied count
   const openClaim = new Map<string, number>(); // task_id -> claimed_at (by the same agent)
+  const appliedAts = new Map<string, string | null>(); // task_id -> channel, for receipt attribution
+  let confirmed = 0; // submissions that produced a "we received your application" receipt
 
   for (const e of evs) {
     const a = A(e.agent);
@@ -190,9 +196,19 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
         day.applied++;
         { const k=(e.identity ?? e.agent ?? "unknown").toLowerCase(); byId.set(k,(byId.get(k)??0)+1); }
         S(e.ats).applied++;
+        if (e.task_id) appliedAts.set(e.task_id, e.ats);
         byHour[new Date(e.at).getUTCHours()]++;
         const c = e.task_id ? openClaim.get(`${e.agent}:${e.task_id}`) : undefined;
         if (c !== undefined && e.at - c < 6 * 3_600_000) a._toApply.push((e.at - c) / 60_000);
+        break;
+      }
+      case "reply:confirmation": {
+        // "Applied" means an agent saw a thank-you page; a receipt means the company's inbox
+        // actually took it. Events are time-ordered, so the applied event ran first.
+        if (e.task_id && appliedAts.has(e.task_id)) {
+          confirmed++;
+          S(appliedAts.get(e.task_id) ?? null).confirmed++;
+        }
         break;
       }
       case "skipped":
@@ -283,6 +299,7 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
       needsHuman,
       failed,
       successRate: rate(applied, skipped + needsHuman + failed),
+      confirmed,
       medianMinToApply: round1(median(allToApply)),
       runs: sum((a) => a.runs),
       runsOk: sum((a) => a.runsOk),

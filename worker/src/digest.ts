@@ -24,10 +24,11 @@ function reasonBucket(msg: string): string {
 export async function sendDigest(env: Env, origin = "https://jobhunter.prestonzen.com"): Promise<string | null> {
   const since = Date.now() - 86_400_000;
   const d = await db(env);
-  const [{ results: applied }, { results: replies }, { results: cyberWins }, { results: stalled }, { results: quiet }, q, runners] = await Promise.all([
+  const [{ results: applied }, { results: replies }, { results: cyberWins }, { results: confirmedRows }, { results: stalled }, { results: quiet }, q, runners] = await Promise.all([
     d.prepare("SELECT agent, COUNT(*) AS n FROM events WHERE type IN ('applied','emailed') AND at > ? GROUP BY agent ORDER BY n DESC").bind(since).all<{ agent: string; n: number }>(),
     d.prepare("SELECT category, COUNT(*) AS n FROM inbound WHERE at > ? GROUP BY category").bind(since).all<{ category: string; n: number }>().catch(() => ({ results: [] as { category: string; n: number }[] })),
     d.prepare("SELECT kind, COUNT(*) AS n FROM bounty_events WHERE at > ? AND (kind = 'finding' OR (kind = 'scan' AND status = 'done')) GROUP BY kind").bind(since).all<{ kind: string; n: number }>().catch(() => ({ results: [] as { kind: string; n: number }[] })),
+    d.prepare("SELECT COUNT(*) AS n FROM events WHERE type = 'reply:confirmation' AND at > ?").bind(since).all<{ n: number }>().catch(() => ({ results: [{ n: 0 }] })),
     // Everything that did NOT win and did NOT ping you: parked and failed outcomes, in bulk.
     d.prepare("SELECT type, message FROM events WHERE type IN ('needs_human','failed') AND at > ? ORDER BY at DESC LIMIT 800").bind(since).all<{ type: string; message: string | null }>(),
     // Runs that finished with no recorded work at all (the old "no work result recorded" pings).
@@ -52,6 +53,7 @@ export async function sendDigest(env: Env, origin = "https://jobhunter.prestonze
   const lines = [
     `📊 <b>Job Agent Hub — last 24 h</b>`,
     `Applied: <b>${total}</b>${applied.length ? " (" + applied.map((r) => `${esc(r.agent)} ${r.n}`).join(", ") + ")" : ""}`,
+    `📨 Confirmed received: <b>${confirmedRows[0]?.n ?? 0}</b> (receipt emails — the landing rate)`,
     `Cyber: ${findings} finding${findings === 1 ? "" : "s"} · ${scans} scan${scans === 1 ? "" : "s"} completed`,
     replies.length ? `Replies: ${replies.map((r) => `${esc(r.category)} ${r.n}`).join(", ")}` : "Replies: none",
     `Queue: ${q.filter(isAvailable).length} ready · ${q.filter((j) => j.claimedBy).length} in progress`,

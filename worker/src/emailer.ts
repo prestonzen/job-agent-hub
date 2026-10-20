@@ -14,7 +14,7 @@ import { taskSwitches, workSettings } from "./work";
 
 // No LinkedIn here: the profile is suspended, and the lookalike domain never belongs in front of an employer.
 export const SIGNATURE = "\n\nPreston Zen\ncontact@prestonzen.com\nhttps://portfolio.prestonzen.com";
-export const DAILY_CAP = 15;
+export const DAILY_CAP = 20;
 
 export function emailEnabled(env: Env): boolean {
   return !!(env.MAILER_URL && env.MAILER_TOKEN);

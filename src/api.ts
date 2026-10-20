@@ -80,11 +80,11 @@ export const saveAutopilot = (p: Partial<AutopilotSettings>) =>
 
 // ---------- analytics ----------
 export interface AgentStats { billingMonth?:string; monthlyPlanUsd?:number|null; monthlyApplicationCostUsd?:number|null; monthlyCostPerApplicationUsd?:number|null; monthlyApplications?:number; monthlyTokens?:number; monthlyTokenCoverage?:string; costBasis?:string; agent: string; claimed: number; applied: number; skipped: number; needsHuman: number; failed: number; released: number; successRate: number | null; medianMinToApply: number | null; runs: number; runsOk: number; runsFailed: number; avgRunMin: number | null; runMinutes: number; costUsd: number; tokens: number; estCostUsd: number }
-export interface AtsStats { ats: string; applied: number; needsHuman: number; skipped: number; failed: number; successRate: number | null }
+export interface AtsStats { ats: string; applied: number; needsHuman: number; skipped: number; failed: number; successRate: number | null; confirmed: number }
 export interface DayStats { date: string; applied: number; needsHuman: number; skipped: number; failed: number; runsOk: number; runsFailed: number }
 export interface Analytics {
   generatedAt: string; days: number; demo: boolean;
-  totals: { applied: number; claimed: number; skipped: number; needsHuman: number; failed: number; successRate: number | null; medianMinToApply: number | null; runs: number; runsOk: number; runMinutes: number; appsPerRunHour: number | null };
+  totals: { applied: number; claimed: number; skipped: number; needsHuman: number; failed: number; successRate: number | null; confirmed: number; medianMinToApply: number | null; runs: number; runsOk: number; runMinutes: number; appsPerRunHour: number | null };
   byIdentity?:{identity:string;applied:number}[]; byAgent: AgentStats[]; byDay: DayStats[]; byHour: number[]; byAts: AtsStats[];
   parked: { reason: string; count: number }[];
   queue: { ready: number; claimed: number; parked: number; total: number };
