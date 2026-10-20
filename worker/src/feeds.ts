@@ -20,8 +20,13 @@ const UA = "JobAgentHub/1.0 (+https://jobhunter.prestonzen.com)";
 interface Lead { company: string; role: string; url: string; location: string; text: string; pay?: string; source: string }
 
 const TITLE_OK = /\b(ai|a\.i\.|ml|machine learning|llm|genai|generative|agents?|agentic|full[- ]?stack|software engineer|backend|back-end|platform engineer|founding engineer|security engineer|ai security|applied scientist|forward deployed)\b/i;
-const TITLE_NO = /\b(intern|internship|junior|jr\.?|director|vp|vice president|head of|chief|principal|manager|recruiter|sales|marketing|designer|data entry|support engineer|account executive|contractor-?only)\b/i;
+const TITLE_NO = /\b(intern|internship|junior|jr\.?|director|vp|vice president|head of|chief|principal|manager|recruiter|sales|marketing|designer|data entry|support engineer|account executive|contractor-?only|solutions? architect|web3|solidity|blockchain|crypto|defi|card authorization|payments? engineer|embedded|firmware|mobile|ios|android|game)\b/i;
 const STAFF = /\bstaff\b/i;
+/** A generic engineering title only passes when the posting itself is about AI/LLM/agents. */
+const AI_TERMS = /\b(ai|a\.i\.|ml|machine learning|llm|genai|generative|agents?|agentic|rag|embeddings?|openai|anthropic|claude|gpt)\b/i;
+const GENERIC = /\b(full[- ]?stack|software engineer|backend|back-end|platform engineer|founding engineer)\b/i;
+/** Household names and >1,000-person companies: they don't convert and aren't the target (Preston, 2026-10-20). */
+const BIG_CO = /^(nvidia|google|alphabet|meta|facebook|amazon|aws|microsoft|apple|netflix|openai|anthropic|cohere|elevenlabs|eleven labs|stripe|coinbase|gitlab|github|datadog|cloudflare|salesforce|oracle|ibm|intel|adobe|uber|lyft|airbnb|doordash|shopify|atlassian|twilio|snowflake|databricks|palantir|betterhelp|toast|reddit|zscaler|samsara|servicenow|workday|vmware|cisco|dell|hp|sap|paypal|block|square|robinhood|instacart|pinterest|snap|tiktok|bytedance|linkedin|x|twitter|tesla|spacex|grafana labs|mongodb|elastic|hashicorp|okta|crowdstrike|zoominfo|typeform|launchdarkly|hubspot|zendesk|intercom|notion|figma|canva|dropbox|box|slack|zoom|docusign|affirm|chime|sofi|nerdwallet|upstart|brex|ramp|rippling|gusto|deel|remote|mercury|plaid|checkr|verkada|anduril|scale ai|turing|wellfound)\b/i;
 const LOC_OK = /\b(united states|usa|u\.s\.|us only|us-only|north america|americas|worldwide|anywhere|global|remote)\b/i;
 const LOC_NO = /\b(europe|emea|eu only|uk only|united kingdom|germany|france|netherlands|spain|poland|india|latam|apac|australia|canada only|brazil|ukraine|portugal)\b/i;
 const URL_NO = /ashbyhq\.com|workatastartup\.com|wellfound\.com|angel\.co|linkedin\.com/i;
@@ -30,6 +35,9 @@ function keep(l: Lead): boolean {
   if (!l.company || !l.role || !/^https?:\/\//.test(l.url)) return false;
   if (!TITLE_OK.test(l.role) || TITLE_NO.test(l.role)) return false;
   if (STAFF.test(l.role) && !/security/i.test(l.role)) return false;
+  if (BIG_CO.test(l.company.trim())) return false;
+  // "Software Engineer" at a company that never mentions AI is not what we're sourcing.
+  if (GENERIC.test(l.role) && !AI_TERMS.test(l.role) && !AI_TERMS.test(l.text.slice(0, 2500))) return false;
   if (URL_NO.test(l.url)) return false;
   const loc = `${l.location} ${l.text.slice(0, 1500)}`;
   if (LOC_NO.test(l.location) && !LOC_OK.test(l.location)) return false;

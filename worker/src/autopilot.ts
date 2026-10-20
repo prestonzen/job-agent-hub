@@ -230,6 +230,14 @@ export async function autopilotTick(env: Env): Promise<string | null> {
   await runFeeds(env).catch(() => null);
   const freeSlots = online.reduce((n, r) => n + Math.max(0, r.slots - r.busy), 0);
   const inFlight = runs.filter((r) => r.kind !== "login" && (r.status === "running" || r.status === "queued"));
+  const readyAgents = [...new Set(online.flatMap((r) => r.agents.filter((a) => a.ready).map((a) => a.id)))].filter((a) => s.agents[a] !== false);
+
+  // Parked jobs without a copy/paste kit get one prepared (read-only run, never submits): one at a time, every
+  // 20 min. Checked before the concurrency gate so background cyber runs can't starve it; it still needs a free slot.
+  if (freeSlots > inFlight.filter((r) => r.status === "queued").length && !inFlight.some((r) => r.task === "prep")) {
+    const prepped = await maybeLaunchPrep(env, { settings: s, readyAgents, busyAgents: new Set(inFlight.map((r) => r.agent)), prepInFlight: false }).catch(() => null);
+    if (prepped) return prepped;
+  }
   if (inFlight.length >= s.maxConcurrent || freeSlots <= inFlight.filter((r) => r.status === "queued").length) return null;
 
   // What could this agent claim right now (not parked, not paced, under the daily cap, not handed to someone else)?
@@ -238,11 +246,6 @@ export async function autopilotTick(env: Env): Promise<string | null> {
     jobs.filter((j) => isAvailableFor(j, agent) && inLane(j, applicationLane(s, agent)) && checkJob(j, pace, policy, Date.now(), j.assignedTo === agent).ok).length;
 
   const d = await adb(env);
-  const readyAgents = [...new Set(online.flatMap((r) => r.agents.filter((a) => a.ready).map((a) => a.id)))].filter((a) => s.agents[a] !== false);
-
-  // Parked jobs without a copy/paste kit get one prepared (read-only run, never submits): one at a time, every 20 min.
-  const prepped = await maybeLaunchPrep(env, { settings: s, readyAgents, busyAgents: new Set(inFlight.map((r) => r.agent)), prepInFlight: inFlight.some((r) => r.task === "prep") }).catch(() => null);
-  if (prepped) return prepped;
 
   // Demand-driven sourcing: when the fleet is truly idle (no ready jobs AND no application run in flight),
   // source fresh roles instead of waiting for the daily schedule. Guarded so it can never spin: one run at a
