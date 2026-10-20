@@ -19,7 +19,7 @@ const PROFILE_ROOT = "/var/lib/job-agent-runner/profiles";
 const PW_CONFIG = "/opt/job-agent-runner/pw-config.json";
 const browserFor = (agent) => ({
   command: "playwright-mcp",
-  args: ["--user-data-dir", `${PROFILE_ROOT}/${agent}`, "--config", PW_CONFIG, "--browser", "chromium", "--image-responses", "omit", "--output-dir", ".playwright"],
+  args: ["--user-data-dir", `${PROFILE_ROOT}/${agent}`, "--config", PW_CONFIG, "--browser", "chrome", "--image-responses", "omit", "--output-dir", ".playwright"],
 });
 const H = homedir();
 

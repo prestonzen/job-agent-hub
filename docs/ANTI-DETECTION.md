@@ -20,6 +20,8 @@ Why applications get flagged as spam/duplicate by an ATS or employer, and what t
 - **Real browser**: Playwright with a virtual display, not raw HTTP posting.
 - **Persistent per-agent browser profiles** (Oct 20): every agent's playwright-mcp launches with `--user-data-dir /var/lib/job-agent-runner/profiles/<agent>` instead of `--isolated`. Cookies/localStorage survive between runs — a returning user looks legitimate, a fresh blank profile every run looks like a bot farm. Profiles are per agent (not shared) so concurrent runs never collide on the profile lock. Managed by `runner/configure-agents.mjs` (`browserFor(agent)`); never hand-add `--isolated` back.
 - **Browser hardening config** (`/opt/job-agent-runner/pw-config.json`, template `runner/pw-config.example.json`): strips the `AutomationControlled` blink feature (kills the `navigator.webdriver` tell), pins `en-US` locale + `America/Los_Angeles` timezone so the browser matches the residential IP's geography, and routes through the residential socks proxy with auth.
+- **Real Chrome channel** (Oct 20): `google-chrome` (155.x) installed on CT 218; `browserFor()` in `runner/configure-agents.mjs` launches playwright-mcp with `--browser chrome` instead of bundled Chromium, which carries its own binary-level tells beyond `navigator.webdriver`. Baseline probe after the switch passes the full sannysoft suite; only remaining tell is the SwiftShader WebGL renderer (no GPU in the container — accepted).
+- **Profile warmup** (Oct 20): all 10 agent profiles were walked through 8 mainstream sites (Google, Wikipedia, GitHub, Stack Overflow, YouTube, Reddit, NYT, LinkedIn) so each carries real history + cookies before touching an ATS. Warmup script lives at `/home/agent/warmup.py` on CT 218 — rerun it after any profile wipe.
 
 ## Rules for agents (also in runner machineNotes)
 
@@ -30,7 +32,7 @@ Why applications get flagged as spam/duplicate by an ATS or employer, and what t
 
 ## Next upgrades (in priority order)
 
-1. **Real Chrome channel**: install `google-chrome` on CT 218 and switch playwright-mcp to `--browser chrome` — bundled Chromium has its own tells beyond `navigator.webdriver`.
-2. **Submission-time spread**: jitter run starts (autopilot already randomizes rest gaps); avoid identical minute-of-hour submission stamps across ATS accounts.
-3. **Resume PDF metadata**: strip/rotate author-producer fields on upload copies; keep the human-readable file identical.
-4. **Email aliasing** (if flags persist): per-platform aliases (`contact+<platform>@prestonzen.com`) to break cross-site correlation — tradeoff: harder inbox tracking, so only if needed.
+1. **Submission-time spread**: jitter run starts (autopilot already randomizes rest gaps); avoid identical minute-of-hour submission stamps across ATS accounts.
+2. **Resume PDF metadata**: strip/rotate author-producer fields on upload copies; keep the human-readable file identical.
+3. **Email aliasing** (if flags persist): per-platform aliases (`contact+<platform>@prestonzen.com`) to break cross-site correlation — tradeoff: harder inbox tracking, so only if needed.
+4. **WebGL renderer**: SwiftShader is the last probe-visible tell; would need a GPU (or a renderer-spoofing build) in CT 218 to fix. Only pursue if flags persist after the Chrome switch proves out.
