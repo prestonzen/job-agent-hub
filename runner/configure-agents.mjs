@@ -12,7 +12,15 @@ const cfg = JSON.parse(readFileSync(process.argv[2] ?? "/etc/job-agent-runner/co
 const MCP_URL = `${cfg.hub}/mcp`;
 const tokens = cfg.agentTokens ?? {};
 // --image-responses omit: the accessibility snapshot is enough for forms, and screenshots cost many tokens per step.
-const BROWSER = { command: "playwright-mcp", args: ["--isolated", "--browser", "chromium", "--image-responses", "omit", "--output-dir", ".playwright"] };
+// Persistent per-agent browser profile (never --isolated): a fresh blank profile every run looks like a bot
+// farm to Cloudflare/Greenhouse. Cookies and session continuity accumulate per agent instead. Proxy,
+// timezone, and AutomationControlled hardening live in pw-config.json on the runner (see docs/ANTI-DETECTION.md).
+const PROFILE_ROOT = "/var/lib/job-agent-runner/profiles";
+const PW_CONFIG = "/opt/job-agent-runner/pw-config.json";
+const browserFor = (agent) => ({
+  command: "playwright-mcp",
+  args: ["--user-data-dir", `${PROFILE_ROOT}/${agent}`, "--config", PW_CONFIG, "--browser", "chromium", "--image-responses", "omit", "--output-dir", ".playwright"],
+});
 const H = homedir();
 
 const write = (p, s) => {
@@ -31,7 +39,7 @@ const toml = (s) => JSON.stringify(s); // TOML basic strings accept JSON string 
 if (tokens.claude) {
   for (const [name, def] of [
     ["jobhunter", { type: "http", url: MCP_URL, headers: { Authorization: bearer("claude") } }],
-    ["playwright", { type: "stdio", ...BROWSER }],
+    ["playwright", { type: "stdio", ...browserFor("claude") }],
   ]) {
     spawnSync("claude", ["mcp", "remove", "-s", "user", name], { stdio: "ignore" });
     const r = spawnSync("claude", ["mcp", "add-json", "-s", "user", name, JSON.stringify(def)], { encoding: "utf8" });
@@ -46,7 +54,7 @@ if (tokens.claude2) {
   mkdirSync(dir, { recursive: true });
   for (const [name, def] of [
     ["jobhunter", { type: "http", url: MCP_URL, headers: { Authorization: bearer("claude2") } }],
-    ["playwright", { type: "stdio", ...BROWSER }],
+    ["playwright", { type: "stdio", ...browserFor("claude2") }],
   ]) {
     const env = { ...process.env, CLAUDE_CONFIG_DIR: dir };
     spawnSync("claude", ["mcp", "remove", "-s", "user", name], { stdio: "ignore", env });
@@ -81,8 +89,8 @@ if (tokens.ollama) {
   set("mcp_servers.jobhunter.headers.Authorization", "Bearer ${JOBHUNTER_TOKEN}");
   set("mcp_servers.jobhunter.connect_timeout", "60");
   set("mcp_servers.jobhunter.timeout", "120");
-  set("mcp_servers.playwright.command", BROWSER.command);
-  set("mcp_servers.playwright.args", BROWSER.args);
+  set("mcp_servers.playwright.command", browserFor("ollama").command);
+  set("mcp_servers.playwright.args", browserFor("ollama").args);
   set("mcp_servers.playwright.env.PLAYWRIGHT_BROWSERS_PATH", "/opt/ms-playwright");
   set("mcp_servers.playwright.env.DISPLAY", process.env.DISPLAY || ":99");
   const envPath = join(H, ".hermes", ".env");
@@ -97,7 +105,7 @@ if (tokens.deepseek) {
   mkdirSync(dir, { recursive: true });
   for (const [name, def] of [
     ["jobhunter", { type: "http", url: MCP_URL, headers: { Authorization: bearer("deepseek") } }],
-    ["playwright", { type: "stdio", ...BROWSER }],
+    ["playwright", { type: "stdio", ...browserFor("deepseek") }],
   ]) {
     const env = { ...process.env, CLAUDE_CONFIG_DIR: dir };
     spawnSync("claude", ["mcp", "remove", "-s", "user", name], { stdio: "ignore", env });
@@ -117,8 +125,8 @@ if (tokens.codex) {
       'bearer_token_env_var = "JOBHUNTER_TOKEN"',
       "",
       "[mcp_servers.playwright]",
-      `command = ${toml(BROWSER.command)}`,
-      `args = [${BROWSER.args.map(toml).join(", ")}]`,
+      `command = ${toml(browserFor("codex").command)}`,
+      `args = [${browserFor("codex").args.map(toml).join(", ")}]`,
       "",
     ].join("\n"),
   );
@@ -133,7 +141,7 @@ for (const [agent, dir] of [["gemini", ".gemini"], ["qwen", ".qwen"]]) {
     ...(s.mcpServers ?? {}),
     // Default connect timeout is too short over a high-latency home/mobile uplink.
     jobhunter: { httpUrl: MCP_URL, headers: { Authorization: bearer(agent) }, timeout: 30000 },
-    playwright: { command: BROWSER.command, args: BROWSER.args },
+    playwright: browserFor(agent),
   };
   // With GEMINI_API_KEY in ~/.gemini/.env (Gemini only), run headless on the API key instead of Google login.
   if (agent === "gemini" && existsSync(join(H, ".gemini", ".env")) && /GEMINI_API_KEY=\S+/.test(readFileSync(join(H, ".gemini", ".env"), "utf8"))) {
@@ -155,7 +163,7 @@ if (tokens.kimi) {
     ...(s.mcpServers ?? {}),
     // Generous startup/tool timeouts: the hub connection fails ("fetch failed") with the defaults over this uplink.
     jobhunter: { transport: "http", url: MCP_URL, bearerTokenEnvVar: "JOBHUNTER_TOKEN", startupTimeoutMs: 60000, toolTimeoutMs: 120000 },
-    playwright: { transport: "stdio", command: BROWSER.command, args: BROWSER.args },
+    playwright: { transport: "stdio", ...browserFor("kimi") },
   };
   write(p, JSON.stringify(s, null, 2) + "\n");
 }
@@ -167,7 +175,7 @@ if (tokens.kimi2) {
   s.mcpServers = {
     ...(s.mcpServers ?? {}),
     jobhunter: { transport: "http", url: MCP_URL, bearerTokenEnvVar: "JOBHUNTER_TOKEN", startupTimeoutMs: 60000, toolTimeoutMs: 120000 },
-    playwright: { transport: "stdio", command: BROWSER.command, args: BROWSER.args },
+    playwright: { transport: "stdio", ...browserFor("kimi2") },
   };
   write(p, JSON.stringify(s, null, 2) + "\n");
 }
@@ -192,8 +200,8 @@ if (tokens.mistral) {
     "[[mcp_servers]]",
     'name = "playwright"',
     'transport = "stdio"',
-    `command = ${toml(BROWSER.command)}`,
-    `args = [${BROWSER.args.map(toml).join(", ")}]`,
+    `command = ${toml(browserFor("mistral").command)}`,
+    `args = [${browserFor("mistral").args.map(toml).join(", ")}]`,
     END,
     "",
   ].join("\n");

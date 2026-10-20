@@ -1,0 +1,12 @@
+{
+  "browser": {
+    "launchOptions": {
+      "args": ["--disable-blink-features=AutomationControlled"],
+      "proxy": { "server": "socks5://PROXY_HOST:1080", "username": "PROXY_USER", "password": "PROXY_PASS" }
+    },
+    "contextOptions": {
+      "locale": "en-US",
+      "timezoneId": "America/Los_Angeles"
+    }
+  }
+}
