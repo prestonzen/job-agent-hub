@@ -93,6 +93,29 @@ Not tested: `gpt-oss:120b` (65 GB, judged too large and slow for a shared box); 
    `glm-4.7-flash`. `qwen3.6:35b-a3b-nvfp4` needs Ollama's MLX runtime, which the Linux build does not have, so the
    GGUF `q4_K_M` build was used.
 
+## Cyber triage bake-off (2026-10-20)
+
+The form-filling eval above picks the application-lane model; cyber research needs a different
+skill (noise rejection, severity calibration), so the local models got their own head-to-head:
+`bounty/local-bakeoff.py` runs two fixed trap scenarios (from the cyber-dispatch calibration
+bank — a scary scanner "critical" that does not hold up, plus a quiet real finding that must
+be ranked first) against each model on the GPU box via the raw Ollama API. 10 points per
+scenario: trap rejected (+3), correct first report (+3), realistic severity (+1), noise not
+inflated (+1), parseable JSON (+1), no refusal (+1).
+
+| Score | Model | Speed | Notes |
+| --- | --- | --- | --- |
+| 19/20 | **qwen3.6:35b-a3b-q4_K_M** | 73 tok/s | Winner; 2.4x faster than gemma4 |
+| 18/20 | gemma4:26b | 30 tok/s | Previous production model |
+| 18/20 | qwen3:30b-a3b-fast | 9 tok/s | Accurate but slowest despite the name |
+| 12/20 | qwen3-coder-next (51 GB) | 6 tok/s | Lost 8 points to one JSON discipline failure |
+| 4/20 | qwen3-abliterated:14b | 24 tok/s | Too small for calibrated triage |
+
+No model refused the cyber task — refusal risk is not the differentiator locally; JSON
+discipline and calibration are. **qwen3.6:35b-a3b-q4_K_M is now the production Ollama model**
+(research-lab timesink + cyber passes), set in the sparky runner config. Full results:
+`/opt/bounty/local-bakeoff.json` on CT 134. Re-run after pulling new local models.
+
 ## How the local agent is deployed
 
 - The **browser and harness run on a small always-on server** (a US IP, which job sites prefer), and call the GPU box's
