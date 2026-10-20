@@ -49,8 +49,8 @@ const TOOLS = [
   },
   {
     name: "get_resume",
-    description: "Pick the best tailored resume for a job from the resume bank (by role title). On a runner the file is already in ./resumes/<filename>; elsewhere download it from downloadUrl with your bearer token.",
-    inputSchema: { type: "object", properties: { role: { type: "string", description: "The job title, e.g. 'Senior Forward Deployed Engineer'" } }, required: ["role"] },
+    description: "Pick the best tailored resume for a job from the resume bank (by role title plus the posting text). Always pass the job description so a generic title still gets the right variant. On a runner the file is already in ./resumes/<filename>; elsewhere download it from downloadUrl with your bearer token.",
+    inputSchema: { type: "object", properties: { role: { type: "string", description: "The job title, e.g. 'Senior Forward Deployed Engineer'" }, description: { type: "string", description: "The posting text (responsibilities, requirements, company blurb) — the first few thousand characters are enough" } }, required: ["role"] },
   },
   {
     name: "handoff_job",
@@ -172,7 +172,7 @@ async function callTool(env: Env, agent: string, name: string, args: Args, origi
         ats: Array.isArray(args.ats) ? args.ats.map(String) : undefined,
       }, identity);
     case "get_resume": {
-      const pick = await pickResume(env, String(args.role ?? ""));
+      const pick = await pickResume(env, String(args.role ?? ""), s(args.description));
       if (!pick) return { error: "resume bank is empty; use the resume named in the playbook" };
       return { ...pick, runnerPath: `./resumes/${pick.filename}`, downloadUrl: `${origin}/api/agent/resumes/${pick.id}/file` };
     }

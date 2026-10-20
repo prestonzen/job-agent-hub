@@ -219,7 +219,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     if (sub === "/instructions" && method === "GET") return text(agentInstructions(agent, url.origin, "rest"));
     if (sub === "/playbook" && method === "GET") return text(await playbook(env));
     if (sub === "/resume" && method === "GET") {
-      const pick = await pickResume(env, url.searchParams.get("role") ?? "");
+      const pick = await pickResume(env, url.searchParams.get("role") ?? "", url.searchParams.get("text"));
       return json(pick ? { ...pick, downloadUrl: `${url.origin}/api/agent/resumes/${pick.id}/file` } : { error: "resume bank is empty" }, pick ? 200 : 404);
     }
     const arf = sub.match(/^\/resumes\/(\d+)\/file$/);
@@ -447,7 +447,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       await deleteResume(env, Number(res[1]));
       return json({ ok: true });
     }
-    if (path === "/api/admin/resume-pick" && method === "GET") return json(await pickResume(env, url.searchParams.get("role") ?? ""));
+    if (path === "/api/admin/resume-pick" && method === "GET") return json(await pickResume(env, url.searchParams.get("role") ?? "", url.searchParams.get("text")));
 
     // Notifications + replies.
     if (path === "/api/admin/telegram/test" && method === "POST") {

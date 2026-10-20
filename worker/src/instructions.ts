@@ -14,7 +14,7 @@ export function agentInstructions(agent: string, origin: string, mode: "mcp" | "
           report: "`report_result`",
           release: "`release_job`",
           get: "`get_job`",
-          resume: "`get_resume` with the job title",
+          resume: "`get_resume` with the job title and the posting text (description)",
           code: "`request_code` (with the job id), then `wait_for_code` repeatedly",
           handoff: "`handoff_job` (id, reason)",
           email: "`send_application_email` (id, body)",

@@ -130,17 +130,30 @@ export async function resumeFile(env: Env, id: number): Promise<Response> {
   });
 }
 
-/** Best variant for a role title: most tag phrases found in the title; ties and no match → default. */
-export async function pickResume(env: Env, role: string): Promise<(Resume & { matched: string[] }) | null> {
+const norm = (s: string) => ` ${s.toLowerCase().replace(/[^a-z0-9+#]+/g, " ")} `;
+
+/**
+ * Best variant for a job: tag phrases found in the title count double, phrases found in the description
+ * (first 6k chars) count once, so "Senior Software Engineer" at a voice-AI company gets the voice resume
+ * instead of the generalist one. Ties and no match → default.
+ */
+export async function pickResume(env: Env, role: string, text?: string | null): Promise<(Resume & { matched: string[]; score: number }) | null> {
   const all = await listResumes(env);
   if (!all.length) return null;
-  const title = ` ${role.toLowerCase().replace(/[^a-z0-9+#]+/g, " ")} `;
-  let best: (Resume & { matched: string[] }) | null = null;
+  const title = norm(role);
+  const body = text ? norm(text.slice(0, 6000)) : "";
+  let best: (Resume & { matched: string[]; score: number }) | null = null;
   for (const r of all) {
-    const matched = r.tags.filter((t) => title.includes(` ${t.replace(/[^a-z0-9+#]+/g, " ").trim()} `));
-    if (!best || matched.length > best.matched.length || (matched.length === best.matched.length && r.isDefault && !best.isDefault)) {
-      best = { ...r, matched };
+    let score = 0;
+    const matched: string[] = [];
+    for (const t of r.tags) {
+      const phrase = ` ${t.replace(/[^a-z0-9+#]+/g, " ").trim()} `;
+      const inTitle = title.includes(phrase);
+      const inBody = body.includes(phrase);
+      if (inTitle || inBody) matched.push(t);
+      score += (inTitle ? 2 : 0) + (inBody ? 1 : 0);
     }
+    if (!best || score > best.score || (score === best.score && r.isDefault && !best.isDefault)) best = { ...r, matched, score };
   }
   return best;
 }
