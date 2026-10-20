@@ -12,7 +12,7 @@ import { taskSwitches, workSettings } from "./work";
 
 /** "email": only email applications. "email-first": any job, but email applications first (cheap for a free tier). */
 export type Lane = "email" | "email-first" | "web" | "none";
-export const DEFAULT_LANES: Record<string, Lane | null> = { codex: "email-first", kimi: "email-first", kimi2: "web", claude: "email-first", claude2: "web", gemini: "email", mistral: "email-first", deepseek: "email-first", ollama: "email-first" };
+export const DEFAULT_LANES: Record<string, Lane | null> = { codex: "email-first", kimi: "email-first", kimi2: "web", claude: "email-first", claude2: "web", claude3: "web", gemini: "email", mistral: "email-first", deepseek: "email-first", ollama: "email-first" };
 
 export async function agentLane(env: Env, agent: string): Promise<Lane | null> {
   const tasks = taskSwitches(await workSettings(env), agent);

@@ -24,6 +24,7 @@ const PW_CONFIG = "/opt/job-agent-runner/pw-config.json";
 const VIEWPORTS = {
   claude:   { width: 1920, height: 1080 }, // most common desktop resolution worldwide
   claude2:  { width: 1680, height: 1050 },
+  claude3:  { width: 1728, height: 1117 }, // 16" MacBook Pro logical resolution
   codex:    { width: 1536, height: 864 },  // classic 1080p laptop at 125% scaling
   kimi:     { width: 1440, height: 900 },
   kimi2:    { width: 1600, height: 900 },
@@ -82,19 +83,20 @@ if (tokens.claude) {
   }
 }
 
-// A second Claude account for parallel capacity: the same Claude Code CLI with its own
-// CLAUDE_CONFIG_DIR and its own login, so two accounts apply at once without clobbering each other.
-if (tokens.claude2) {
-  const dir = join(H, ".claude-2");
-  mkdirSync(dir, { recursive: true });
+// Extra Claude accounts for parallel capacity: the same Claude Code CLI with its own CLAUDE_CONFIG_DIR
+// and its own login (claude2 = Preston's runner account, claude3 = Roman's API key), so they never clobber each other.
+for (const [agent, dir] of [["claude2", ".claude-2"], ["claude3", ".claude-3"]]) {
+  if (!tokens[agent]) continue;
+  const home = join(H, dir);
+  mkdirSync(home, { recursive: true });
   for (const [name, def] of [
-    ["jobhunter", { type: "http", url: MCP_URL, headers: { Authorization: bearer("claude2") } }],
-    ["playwright", { type: "stdio", ...browserFor("claude2") }],
+    ["jobhunter", { type: "http", url: MCP_URL, headers: { Authorization: bearer(agent) } }],
+    ["playwright", { type: "stdio", ...browserFor(agent) }],
   ]) {
-    const env = { ...process.env, CLAUDE_CONFIG_DIR: dir };
+    const env = { ...process.env, CLAUDE_CONFIG_DIR: home };
     spawnSync("claude", ["mcp", "remove", "-s", "user", name], { stdio: "ignore", env });
     const r = spawnSync("claude", ["mcp", "add-json", "-s", "user", name, JSON.stringify(def)], { encoding: "utf8", env });
-    console.log(`claude2 mcp ${name}:`, r.status === 0 ? "ok" : (r.stderr || r.stdout).trim());
+    console.log(`${agent} mcp ${name}:`, r.status === 0 ? "ok" : (r.stderr || r.stdout).trim());
   }
 }
 

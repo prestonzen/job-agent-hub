@@ -253,7 +253,7 @@ export async function autopilotTick(env: Env): Promise<string | null> {
         if (r.status === "failed") streak++; else break;
       }
       const backoff = streak >= 3 ? 24 * 3_600_000 : streak === 2 ? 6 * 3_600_000 : streak === 1 ? 2 * 3_600_000 : 45 * 60_000;
-      const SOURCERS = ["claude", "codex", "kimi", "claude2", "kimi2"];
+      const SOURCERS = ["claude", "codex", "kimi", "claude2", "claude3", "kimi2"];
       const canSource = (a: string) => readyAgents.includes(a) && taskSwitches(s, a).sourcing && !inFlight.some((r) => r.agent === a) && failStreak(runs, a, "applications") < FAIL_STREAK_PAUSE;
       // Prefer an agent whose last sourcing run did not fail, so a dead key or empty credit rotates to the next one.
       const sourcer = SOURCERS.find((a) => canSource(a) && runs.find((r) => r.agent === a && r.task === "sourcing")?.status !== "failed") ?? SOURCERS.find(canSource);
