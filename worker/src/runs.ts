@@ -355,15 +355,18 @@ export async function finishRun(env: Env, id: number, runner: string, f: { exitC
   if (r && !quota) {
     const mins = Math.max(1, Math.round((r.finished_at - r.started_at) / 60_000));
     const result = await getRun(env, id);
-    if (result.task === "cyber" || (result.task === "diagnostic" && status === "succeeded")) return;
     const o=result.outcome!;
-    const icon=status==='cancelled'?'⏹️':status==='failed'||o.blocked+o.failed+o.unfinished>0?'⚠️':o.applied+o.emailed+o.added+o.cyber+o.triaged>0?'✅':'ℹ️';
-    const why = status === "failed" ? failureReason(r.tail) : null;
-    await notify(
-      env,
-      `${icon} Run #${id} <b>${esc(r.agent)}</b> (${esc(result.task)}) on ${esc(runner)} after ${mins} min\n${esc(result.summary ?? status)}${why ? `\n❌ ${esc(why)}` : ""}`,
-      { silent: status === "succeeded" },
-    );
+    // Wins are announced the moment they land — including cyber, which used to be silent here.
+    // Everything else (empty "no work recorded" runs, blocked, failed, cancelled) sends NO ping:
+    // it rolls into the daily digest in bulk with top reasons (Preston, 2026-10-21: fewer
+    // notifications, small wins for morale, failures addressed in bulk).
+    const wins = o.applied + o.emailed + o.added + o.cyber + o.triaged;
+    if (wins > 0 && !(result.task === "diagnostic" && status === "succeeded")) {
+      await notify(
+        env,
+        `✅ Run #${id} <b>${esc(r.agent)}</b> (${esc(result.task)}) on ${esc(runner)} after ${mins} min\n${esc(result.summary ?? status)}`,
+      );
+    }
   }
 }
 

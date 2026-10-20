@@ -5,7 +5,7 @@ import { adminUser, agentName, agentNames, clearedCookie, isAdminToken, resolveI
 import { HttpError, addComment, appendDocPage, getDocPage, getPlaybook, listDocPages, patchDocPage, replayWrite, requeueTask, setStatus } from "./clickup";
 import { flushOutbox, mirrorAge, mirrorTasks, outboxSize, usageToday } from "./mirror";
 import { isApplication } from "./classify";
-import { activeClaims, db as dbHandle, heartbeat, lastEventAt, listEvents, listHeartbeats, loadSnapshot, saveSnapshot, setSetting } from "./db";
+import { activeClaims, db as dbHandle, exportEvents, heartbeat, lastEventAt, listEvents, listHeartbeats, loadSnapshot, saveSnapshot, setSetting } from "./db";
 import { agentInstructions } from "./instructions";
 import {
   addJob,
@@ -36,7 +36,7 @@ import { DEFAULT_POLICY, getPolicy, pacingState, pacingSummary, type PacingPolic
 import { deleteResume, listResumes, pickResume, resumeFile, updateResume, uploadResume } from "./resumes";
 import { coverLetterFile, makeCoverLetter } from "./coverletters";
 import { createSchedule, deleteSchedule, listSchedules, tick, updateSchedule, type ScheduleKind } from "./schedules";
-import { notify, setHubWebhook, telegramConfigured, webhookInfo } from "./telegram";
+import { notify, esc, setHubWebhook, telegramConfigured, webhookInfo } from "./telegram";
 import { handleTelegramUpdate } from "./telegram-bot";
 import { getCodeRequest, requestCode, waitForCode } from "./codes";
 import { addBountyEvent, bountySummary, upsertBountyTech, type BountyEventInput } from "./bounty";
@@ -351,6 +351,13 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       const kind = b.kind?.toLowerCase();
       if (kind !== "scan" && kind !== "finding") return json({ error: "Only scan and finding events are accepted" }, 400);
       const created = await addBountyEvent(env, "bounty-pipeline", b);
+      // Wins are announced as they land (Preston, 2026-10-21): a completed scan is a small win,
+      // a finding is a loud one. Failures stay quiet and roll into the daily digest.
+      if (kind === "finding") {
+        await notify(env, `🚨 <b>Bounty finding</b> — ${esc(b.program ?? b.target ?? "?")} (${esc(b.platform ?? "?")})${b.severity ? ` [${esc(b.severity)}]` : ""}\n${esc(b.title ?? "")}${b.detail ? `\n${esc(b.detail.slice(0, 300))}` : ""}`);
+      } else if (b.status === "done") {
+        await notify(env, `✅ <b>Bounty scan completed</b> — ${esc(b.program ?? b.target ?? "?")} (${esc(b.platform ?? "?")})\n${esc((b.detail ?? b.title ?? "").slice(0, 250))}`);
+      }
       return json({ ok: true, agent: "bounty-pipeline", ...created }, 201);
     }
     // Technology matrix: CT 134 pushes parsed httpx tech-detect rows after recon passes.
@@ -398,6 +405,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     }
 
     if (path === "/api/admin/playbook" && method === "GET") return text(await playbook(env));
+    if (path === "/api/admin/events" && method === "GET") return json(await exportEvents(env, Number(url.searchParams.get("days") ?? 30)));
     if (path === "/api/admin/playbook/pages" && method === "GET") return json(await listDocPages(env));
     // Exact in-place edits of a playbook page (each `find` must match exactly once, or nothing is written).
     if (path === "/api/admin/playbook/page" && method === "GET") return text((await getDocPage(env, url.searchParams.get("id") ?? "")).content);

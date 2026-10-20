@@ -17,9 +17,44 @@ const tokens = cfg.agentTokens ?? {};
 // timezone, and AutomationControlled hardening live in pw-config.json on the runner (see docs/ANTI-DETECTION.md).
 const PROFILE_ROOT = "/var/lib/job-agent-runner/profiles";
 const PW_CONFIG = "/opt/job-agent-runner/pw-config.json";
+// Real-user screen geometries, one per agent, stable per agent (a returning user keeps the same
+// machine). A fleet that all reports the Playwright default 1280x720 viewport is a bot-farm tell;
+// ten distinct, common desktop resolutions blended with per-agent profiles is not. The per-agent
+// config copy lives inside the agent's own profile dir so the agent user can write it.
+const VIEWPORTS = {
+  claude:   { width: 1920, height: 1080 }, // most common desktop resolution worldwide
+  claude2:  { width: 1680, height: 1050 },
+  codex:    { width: 1536, height: 864 },  // classic 1080p laptop at 125% scaling
+  kimi:     { width: 1440, height: 900 },
+  kimi2:    { width: 1600, height: 900 },
+  gemini:   { width: 1366, height: 768 },  // most common laptop panel ever shipped
+  mistral:  { width: 2560, height: 1440 },
+  qwen:     { width: 1280, height: 800 },
+  deepseek: { width: 1920, height: 1200 },
+  ollama:   { width: 1512, height: 982 },  // 14" MacBook Pro logical resolution
+};
+const pwConfigFor = (agent) => {
+  const base = JSON.parse(readFileSync(PW_CONFIG, "utf8"));
+  // Unknown future agents pick deterministically from the pool (name hash) so no two collide silently.
+  const pool = Object.values(VIEWPORTS);
+  const hash = [...agent].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+  const vp = VIEWPORTS[agent] ?? pool[hash % pool.length];
+  base.browser = base.browser ?? {};
+  base.browser.contextOptions = {
+    ...(base.browser.contextOptions ?? {}),
+    viewport: vp,
+    screen: vp,
+    deviceScaleFactor: 1,
+    isMobile: false,
+    hasTouch: false,
+  };
+  const p = `${PROFILE_ROOT}/${agent}/pw-config.json`;
+  writeFileSync(p, JSON.stringify(base, null, 2));
+  return p;
+};
 const browserFor = (agent) => ({
   command: "playwright-mcp",
-  args: ["--user-data-dir", `${PROFILE_ROOT}/${agent}`, "--config", PW_CONFIG, "--browser", "chrome", "--image-responses", "omit", "--output-dir", ".playwright"],
+  args: ["--user-data-dir", `${PROFILE_ROOT}/${agent}`, "--config", pwConfigFor(agent), "--browser", "chrome", "--image-responses", "omit", "--output-dir", ".playwright"],
 });
 const H = homedir();
 

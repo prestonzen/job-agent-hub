@@ -187,6 +187,16 @@ export async function listEvents(env: Env, limit = 100): Promise<AgentEvent[]> {
   }));
 }
 
+/** Raw outcome history for analysis (admin): every event in the window, oldest first. */
+export async function exportEvents(env: Env, days = 30): Promise<unknown[]> {
+  const since = Date.now() - Math.min(90, Math.max(1, days)) * 86_400_000;
+  const { results } = await (await db(env))
+    .prepare("SELECT at, agent, type, ats, company, task_name, message FROM events WHERE at > ? ORDER BY at ASC LIMIT 20000")
+    .bind(since)
+    .all();
+  return results;
+}
+
 export async function heartbeat(env: Env, agent: string, client: string | null): Promise<void> {
   await (await db(env))
     .prepare(
