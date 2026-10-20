@@ -134,7 +134,9 @@ def main() -> None:
         rec["fed"] = True
         changed = True
         if run.get("status") != "succeeded" or len(run.get("log") or "") < 400:
-            print(f"[research-lab] {tech}: run {rec['run_id']} {run.get('status')}; not feeding ({run.get('summary', '')})")
+            # Failed/killed runs (e.g. gpu-gate pause) must not burn the tech's weekly slot.
+            state.get("history", {}).pop(tech, None)
+            print(f"[research-lab] {tech}: run {rec['run_id']} {run.get('status')}; will retry ({run.get('summary', '')})")
             continue
         week = time.strftime("%Y-%W", time.gmtime(rec["at"]))
         evidence = (
