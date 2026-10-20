@@ -124,6 +124,35 @@ export default function Bounty() {
         </section>
       )}
 
+      {data.tech && data.tech.hostsProfiled > 0 && (
+        <section className="card wide">
+          <div className="card-head">
+            <h2>Technology matrix</h2>
+            <span className="muted small">
+              {data.tech.programsProfiled} programs · {data.tech.hostsProfiled.toLocaleString()} hosts profiled
+              {data.tech.lastIngest ? ` · updated ${ago(data.tech.lastIngest)}` : ""}
+            </span>
+          </div>
+          <p className="muted small">
+            What the scanned in-scope surface actually runs (httpx tech-detect). Drives exploit matching:
+            new Exploit-DB / CISA KEV entries are checked against this matrix, and research passes target
+            the technologies with the most coverage.
+          </p>
+          <div className="bars">
+            {data.tech.top.slice(0, 20).map((row) => (
+              <div key={row.tech} className="bar-row">
+                <span className="chip">{row.tech}</span>
+                <div className="bar-track">
+                  <div className="bar-fill" style={{ width: `${(row.programs / Math.max(1, data.tech.top[0]?.programs ?? 1)) * 100}%` }} />
+                </div>
+                <b>{row.programs} prog</b>
+                <span className="muted small">{row.hosts.toLocaleString()} hosts</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {data.programs.length > 0 && (
         <details className="card wide">
           <summary>Programs ({data.programs.length})</summary>
@@ -135,6 +164,7 @@ export default function Bounty() {
               <tr>
                 <th>Program</th>
                 <th>Platform</th>
+                <th>Stack</th>
                 <th>Scans</th>
                 <th>Findings</th>
                 <th>Reports</th>
@@ -147,6 +177,7 @@ export default function Bounty() {
                 <tr key={p.program}>
                   <td>{p.program}</td>
                   <td>{p.platform ?? "—"}</td>
+                  <td className="muted small">{p.stack?.length ? p.stack.slice(0, 4).join(", ") : "—"}</td>
                   <td>{p.scans}</td>
                   <td>{p.findings}</td>
                   <td>{p.reports}</td>

@@ -50,6 +50,14 @@ export interface BountyProgramRollup {
   reports: number;
   payoutsUsd: number;
   lastAt: string;
+  /** Most-seen technologies on this program's live hosts (from the tech matrix). */
+  stack: string[];
+}
+
+export interface BountyTechStat {
+  tech: string;
+  programs: number;
+  hosts: number;
 }
 
 export interface BountySummary {
@@ -64,6 +72,8 @@ export interface BountySummary {
     payouts: number;
     payoutsUsd: number;
   };
+  /** Technology matrix across all scanned programs (httpx tech-detect, pushed by CT 134). */
+  tech: { programsProfiled: number; hostsProfiled: number; lastIngest: string | null; top: BountyTechStat[] };
   programs: BountyProgramRollup[];
   recent: BountyEvent[];
 }
@@ -124,6 +134,101 @@ interface Row {
   amount: number | null;
 }
 
+export interface BountyTechHostInput {
+  host?: string;
+  status?: number;
+  title?: string;
+  techs?: string[];
+}
+export interface BountyTechProgramInput {
+  program?: string;
+  platform?: string;
+  hosts?: BountyTechHostInput[];
+}
+
+/**
+ * Replace one scan's worth of tech-detect rows for each listed program. CT 134 pushes
+ * the full parsed httpx output after every recon pass, so a rescan naturally refreshes
+ * the program's stack; hosts not seen anymore disappear.
+ */
+export async function upsertBountyTech(env: Env, body: { programs?: BountyTechProgramInput[] }): Promise<{ programs: number; hosts: number }> {
+  const programs = Array.isArray(body.programs) ? body.programs.slice(0, 200) : [];
+  const d = await db(env);
+  const now = Date.now();
+  let hostCount = 0;
+  for (const p of programs) {
+    const program = s(p.program, 120);
+    if (!program) continue;
+    const platform = s(p.platform, 40)?.toLowerCase() ?? null;
+    const hosts = (Array.isArray(p.hosts) ? p.hosts : []).slice(0, 2000);
+    const stmts: D1PreparedStatement[] = [d.prepare("DELETE FROM bounty_hosts WHERE program = ?").bind(program)];
+    for (const h of hosts) {
+      const host = s(h.host, 300);
+      if (!host) continue;
+      const techs = (Array.isArray(h.techs) ? h.techs : []).map((t) => s(t, 80)).filter((t): t is string => !!t).slice(0, 40);
+      const status = typeof h.status === "number" && Number.isFinite(h.status) ? Math.trunc(h.status) : null;
+      stmts.push(
+        d
+          .prepare(
+            `INSERT INTO bounty_hosts (program, platform, host, status, title, techs, first_seen, last_seen)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT (program, host) DO UPDATE SET platform=excluded.platform, status=excluded.status,
+               title=excluded.title, techs=excluded.techs, last_seen=excluded.last_seen`,
+          )
+          .bind(program, platform, host, status, s(h.title, 200), JSON.stringify(techs), now, now),
+      );
+      hostCount++;
+    }
+    // D1 batches cap at ~1000 statements; a program with more hosts is ingested in chunks.
+    for (let i = 0; i < stmts.length; i += 500) await d.batch(stmts.slice(i, i + 500));
+  }
+  return { programs: programs.length, hosts: hostCount };
+}
+
+/** "Who runs what": technology frequency across the whole scanned surface, plus per-program stacks. */
+export async function techMatrixStats(env: Env): Promise<{ stats: BountySummary["tech"]; stacks: Map<string, string[]> }> {
+  const d = await db(env);
+  const empty = { stats: { programsProfiled: 0, hostsProfiled: 0, lastIngest: null, top: [] as BountyTechStat[] }, stacks: new Map<string, string[]>() };
+  const [top, perProgram, meta] = await Promise.all([
+    d
+      .prepare(
+        `SELECT je.value AS tech, COUNT(DISTINCT program) AS programs, COUNT(*) AS hosts
+         FROM bounty_hosts, json_each(bounty_hosts.techs) je
+         GROUP BY je.value ORDER BY programs DESC, hosts DESC LIMIT 40`,
+      )
+      .all<{ tech: string; programs: number; hosts: number }>()
+      .catch(() => ({ results: [] as { tech: string; programs: number; hosts: number }[] })),
+    d
+      .prepare(
+        `SELECT program, je.value AS tech, COUNT(*) AS n
+         FROM bounty_hosts, json_each(bounty_hosts.techs) je
+         GROUP BY program, je.value ORDER BY program, n DESC`,
+      )
+      .all<{ program: string; tech: string; n: number }>()
+      .catch(() => ({ results: [] as { program: string; tech: string; n: number }[] })),
+    d
+      .prepare("SELECT COUNT(DISTINCT program) AS programs, COUNT(*) AS hosts, MAX(last_seen) AS last FROM bounty_hosts")
+      .first<{ programs: number; hosts: number; last: number | null }>()
+      .catch(() => null),
+  ]);
+  if (!meta) return empty;
+  const stacks = new Map<string, string[]>();
+  for (const r of perProgram.results) {
+    const list = stacks.get(r.program) ?? [];
+    if (list.length < 6) list.push(r.tech);
+    stacks.set(r.program, list);
+  }
+  return {
+    stats: {
+      programsProfiled: meta.programs ?? 0,
+      hostsProfiled: meta.hosts ?? 0,
+      lastIngest: meta.last ? new Date(meta.last).toISOString() : null,
+      top: top.results,
+    },
+    stacks,
+  };
+}
+
 const toEvent = (r: Row): BountyEvent => ({ ...r, kind: r.kind as BountyKind, at: new Date(r.at).toISOString() });
 
 /** Totals over the whole bounty lane (bounty work is low-volume; no window needed yet). */
@@ -169,7 +274,7 @@ export async function bountyTotals(env: Env): Promise<BountySummary["totals"]> {
 /** Full view for the admin Bug bounty tab. */
 export async function bountySummary(env: Env): Promise<BountySummary> {
   const d = await db(env);
-  const [totals, progs, recent] = await Promise.all([
+  const [totals, progs, recent, tech] = await Promise.all([
     bountyTotals(env),
     d
       .prepare(
@@ -188,10 +293,12 @@ export async function bountySummary(env: Env): Promise<BountySummary> {
       .prepare("SELECT * FROM bounty_events WHERE COALESCE(platform,'') != 'benchmark' AND COALESCE(program,'') != 'Pipeline Test' AND COALESCE(title,'') NOT IN ('Account enrolled','Recon probe (httpx + nuclei, low-noise)') ORDER BY at DESC LIMIT 50")
       .all<Row>()
       .catch(() => ({ results: [] as Row[] })),
+    techMatrixStats(env),
   ]);
   return {
     generatedAt: new Date().toISOString(),
     totals,
+    tech: tech.stats,
     programs: progs.results.map((r) => ({
       program: r.program,
       platform: r.platform,
@@ -200,6 +307,7 @@ export async function bountySummary(env: Env): Promise<BountySummary> {
       reports: r.reports,
       payoutsUsd: Math.round((r.payoutsUsd ?? 0) * 100) / 100,
       lastAt: new Date(r.lastAt).toISOString(),
+      stack: tech.stacks.get(r.program) ?? [],
     })),
     recent: recent.results.map(toEvent),
   };

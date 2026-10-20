@@ -100,10 +100,12 @@ export interface BountyEvent {
   platform: string | null; program: string | null; target: string | null; severity: string | null;
   status: string | null; title: string | null; detail: string | null; amount: number | null;
 }
-export interface BountyProgram { program: string; platform: string | null; scans: number; findings: number; reports: number; payoutsUsd: number; lastAt: string }
+export interface BountyProgram { program: string; platform: string | null; scans: number; findings: number; reports: number; payoutsUsd: number; lastAt: string; stack: string[] }
+export interface BountyTechStat { tech: string; programs: number; hosts: number }
 export interface BountySummary {
   generatedAt: string;
   totals: { programs: number; scans: number; hostsScanned: number; findings: number; bySeverity: Record<string, number>; reports: number; payouts: number; payoutsUsd: number };
+  tech: { programsProfiled: number; hostsProfiled: number; lastIngest: string | null; top: BountyTechStat[] };
   programs: BountyProgram[];
   recent: BountyEvent[];
   cyber?: { enabled:boolean; counts: {evidence:number;pending:number;running:number;blocked:number;drafts:number;plausible:number;accepted:number;falsePositive:number;reviewed:number};

@@ -39,7 +39,7 @@ import { createSchedule, deleteSchedule, listSchedules, tick, updateSchedule, ty
 import { notify, setHubWebhook, telegramConfigured, webhookInfo } from "./telegram";
 import { handleTelegramUpdate } from "./telegram-bot";
 import { getCodeRequest, requestCode, waitForCode } from "./codes";
-import { addBountyEvent, bountySummary, type BountyEventInput } from "./bounty";
+import { addBountyEvent, bountySummary, upsertBountyTech, type BountyEventInput } from "./bounty";
 import { cyberTick, cyberSummary, enqueueCyber, getCyberWork, completeCyber, reviewCyber } from "./cyber";
 import { toPublicSummary } from "./sanitize";
 import type { Env, PublicSummary } from "./types";
@@ -352,6 +352,10 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       if (kind !== "scan" && kind !== "finding") return json({ error: "Only scan and finding events are accepted" }, 400);
       const created = await addBountyEvent(env, "bounty-pipeline", b);
       return json({ ok: true, agent: "bounty-pipeline", ...created }, 201);
+    }
+    // Technology matrix: CT 134 pushes parsed httpx tech-detect rows after recon passes.
+    if (path === "/api/admin/bounty-tech" && method === "POST") {
+      return json(await upsertBountyTech(env, await readJson(request)), 201);
     }
     if(path==='/api/admin/cyber' && method==='POST')return json(await enqueueCyber(env,await readJson(request)),201);
     const cyberReview=path.match(/^\/api\/admin\/cyber\/(\d+)\/review$/);

@@ -52,6 +52,21 @@ const SCHEMA = [
      amount REAL
    )`,
   `CREATE INDEX IF NOT EXISTS bounty_events_at ON bounty_events (at DESC)`,
+  // Technology matrix: every live in-scope host seen by recon, with its detected stack.
+  // One row per (program, host); a rescan replaces the program's rows. Powers the
+  // "who runs what" stats and exploit-to-stack matching.
+  `CREATE TABLE IF NOT EXISTS bounty_hosts (
+     program TEXT NOT NULL,
+     platform TEXT,
+     host TEXT NOT NULL,
+     status INTEGER,
+     title TEXT,
+     techs TEXT NOT NULL DEFAULT '[]',
+     first_seen INTEGER NOT NULL,
+     last_seen INTEGER NOT NULL,
+     PRIMARY KEY (program, host)
+   )`,
+  `CREATE INDEX IF NOT EXISTS bounty_hosts_seen ON bounty_hosts (last_seen DESC)`,
 ];
 
 /** Columns added after the first release; ALTER fails harmlessly when they already exist. */
