@@ -121,7 +121,7 @@ export interface RunnerInfo {
   host: string | null;
 }
 
-export type RunTask = "applications" | "email" | "sourcing" | "cyber" | "diagnostic" | "custom" | "login";
+export type RunTask = "applications" | "email" | "sourcing" | "cyber" | "diagnostic" | "custom" | "login" | "prep";
 export type TaskSwitches = Record<"applications" | "email" | "sourcing" | "cyber", boolean>;
 export interface AgentWorkState {
   agent: string; state: "working" | "queued" | "waiting" | "ready" | "idle" | "offline" | "paused" | "off" | "not-ready";

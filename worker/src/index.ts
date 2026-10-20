@@ -35,6 +35,8 @@ import { handleInbound, markHandled, recentInbound, type InboundEmail } from "./
 import { DEFAULT_POLICY, getPolicy, pacingState, pacingSummary, type PacingPolicy } from "./pacing";
 import { deleteResume, listResumes, pickResume, resumeFile, updateResume, uploadResume } from "./resumes";
 import { coverLetterFile, makeCoverLetter } from "./coverletters";
+import { prepNow, saveKit } from "./kits";
+import { runFeeds } from "./feeds";
 import { createSchedule, deleteSchedule, listSchedules, tick, updateSchedule, type ScheduleKind } from "./schedules";
 import { notify, esc, setHubWebhook, telegramConfigured, webhookInfo } from "./telegram";
 import { handleTelegramUpdate } from "./telegram-bot";
@@ -236,6 +238,9 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     if (sub === "/cover-letter" && method === "POST") return json(await makeCoverLetter(env, agent, url.origin, await readJson(request)), 201);
     const clf = sub.match(/^\/cover-letters\/([A-Za-z0-9._-]+)$/);
     if (clf && method === "GET") return coverLetterFile(env, clf[1]);
+    // Prep kit for a parked job: resume pick, cover letter, drafted answers — what Preston pastes to finish it.
+    const kitRoute = sub.match(/^\/jobs\/([^/]+)\/kit$/);
+    if (kitRoute && method === "POST") return json(await saveKit(env, agent, url.origin, { ...(await readJson<Record<string, unknown>>(request)), id: kitRoute[1] }), 201);
 
     if (sub === "/queue" && method === "GET") {
       const q = await queue(env);
@@ -480,6 +485,15 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     const replyNotify=path.match(/^\/api\/admin\/inbound\/([^/]+)\/notify$/);
     if(replyNotify && method === "POST")return json(await recoverReplyNotification(env,replyNotify[1]));
     if (path === "/api/admin/inbound" && method === "GET") return json({ emails: await recentInbound(env) });
+    // Assisted-tab helpers: download a kit's cover letter, send an agent to prep one job now, pull the job feeds now.
+    const aclf = path.match(/^\/api\/admin\/cover-letters\/([A-Za-z0-9._-]+)$/);
+    if (aclf && method === "GET") return coverLetterFile(env, decodeURIComponent(aclf[1]));
+    const prep = path.match(/^\/api\/admin\/jobs\/([^/]+)\/prep$/);
+    if (prep && method === "POST") {
+      const b = await readJson<{ agent?: string }>(request).catch(() => ({}) as { agent?: string });
+      return json(await prepNow(env, prep[1], b.agent ?? "claude"), 201);
+    }
+    if (path === "/api/admin/feeds/run" && method === "POST") return json(await runFeeds(env, true));
     // Tick an employer email as dealt with so it leaves the digest / /needs action list.
     const handled = path.match(/^\/api\/admin\/inbound\/([^/]+)\/handled$/);
     if (handled && method === "POST") return json({ ok: await markHandled(env, decodeURIComponent(handled[1])) });

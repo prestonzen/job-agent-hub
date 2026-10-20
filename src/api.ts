@@ -119,7 +119,16 @@ export const setCyberContinuous=(enabled:boolean)=>request('/api/admin/cyber/con
 
 // ---------- assisted queue ----------
 export interface AttemptLog { agent: string; at: string; outcome: string; note: string | null; log: string | null }
-export interface AssistedJob { id: string; name: string; company: string; role: string; applyUrl: string | null; applyEmail: string | null; ats: string | null; fit: number | null; pay: string | null; clickupUrl: string; category: string; reason: string; attempts: AttemptLog[] }
+export interface KitAnswer { question: string; answer: string }
+export interface Kit {
+  taskId: string; agent: string; at: string; formUrl: string | null;
+  resume: { id: number; name: string; filename: string; downloadPath: string } | null;
+  coverLetter: string | null; coverPdf: { filename: string; downloadPath: string } | null;
+  answers: KitAnswer[]; notes: string | null;
+}
+export interface AssistedJob { id: string; name: string; company: string; role: string; applyUrl: string | null; applyEmail: string | null; ats: string | null; fit: number | null; pay: string | null; clickupUrl: string; category: string; reason: string; attempts: AttemptLog[]; kit: Kit | null }
 export const getAssisted = () => request<{ jobs: AssistedJob[]; notWorkable: number }>("/api/admin/assisted");
+export const prepJob = (id: string, agent?: string) => request<{ runId: number }>(`/api/admin/jobs/${id}/prep`, { method: "POST", body: JSON.stringify({ agent }) });
+export const runFeedsNow = () => request<{ ran: boolean; added: string[]; seen: number; kept: number; errors: string[] }>("/api/admin/feeds/run", { method: "POST" });
 
 export const recoverReplyAlert = (id:string) => request<{state:string;receipt:number|null;error:string|null}>(`/api/admin/inbound/${encodeURIComponent(id)}/notify`,{method:"POST",body:"{}"});

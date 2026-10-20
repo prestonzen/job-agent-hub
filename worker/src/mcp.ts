@@ -4,6 +4,7 @@ import { agentInstructions } from "./instructions";
 import { OUTCOMES, addJob, claimJobs, getJob, logApplication, playbook, queue, isAvailable, releaseJob, renewLease, reportResult, type Outcome } from "./jobs";
 import { pickResume } from "./resumes";
 import { makeCoverLetter } from "./coverletters";
+import { saveKit } from "./kits";
 import { getJob as jobById } from "./jobs";
 import { requestCode, waitForCode } from "./codes";
 import { handoffJob } from "./jobs";
@@ -58,6 +59,23 @@ const TOOLS = [
     description:
       "Typeset a cover letter you wrote (per the playbook's cover-letter rule) as a one-page PDF for a claimed job, so you can upload it where a form offers a cover-letter file. Returns downloadUrl: fetch it with your bearer token (curl -H 'Authorization: Bearer <token>' -o <filename> <downloadUrl>) and upload that file. For a cover-letter TEXT field, paste the text directly instead.",
     inputSchema: { type: "object", properties: { id: str, text: { type: "string", description: "The full letter, 3-4 short paragraphs, plain text with blank lines between paragraphs; no LinkedIn URL" } }, required: ["id", "text"] },
+  },
+  {
+    name: "save_prep_kit",
+    description:
+      "Save the copy/paste kit for a job Preston will finish himself: the resume you picked, your cover letter, every form question with your drafted answer, and a note on what only he can do. Call it whenever you report needs_human (before the report), and in prep runs. Replaces any earlier kit for the job.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: str,
+        form_url: { type: "string", description: "The exact page the form is on" },
+        resume_id: { type: "number", description: "id from get_resume" },
+        cover_letter: { type: "string", description: "Full cover letter text (plain text, blank lines between paragraphs); omit if the form has nowhere for one" },
+        answers: { type: "array", items: { type: "object", properties: { question: str, answer: str }, required: ["question", "answer"] }, description: "Every non-trivial field: the question as shown, and the answer exactly as it should be entered (dropdowns: the option text)" },
+        notes: { type: "string", description: "What only Preston can do here (attestation question, CAPTCHA, code, account), and anything unusual about the form" },
+      },
+      required: ["id"],
+    },
   },
   {
     name: "handoff_job",
@@ -185,6 +203,8 @@ async function callTool(env: Env, agent: string, name: string, args: Args, origi
     }
     case "make_cover_letter":
       return await makeCoverLetter(env, agent, origin, { id: s(args.id), text: s(args.text) });
+    case "save_prep_kit":
+      return await saveKit(env, agent, origin, { id: s(args.id), form_url: s(args.form_url), resume_id: args.resume_id as number | undefined, cover_letter: s(args.cover_letter), answers: args.answers, notes: s(args.notes) });
     case "handoff_job":
       return await handoffJob(env, agent, String(args.id), String(args.reason ?? ""), s(args.to) ?? undefined, false, s(args.log), identity);
     case "send_application_email":

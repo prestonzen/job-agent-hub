@@ -1,7 +1,104 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { getAssisted, releaseJob, reportJob, type AssistedJob } from "../api";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { getAssisted, prepJob, releaseJob, reportJob, runFeedsNow, type AssistedJob, type Kit } from "../api";
 import { agentColor, agentLabel } from "../agents";
 import { Card } from "./Panels";
+
+/** Answers every form asks for, straight from the playbook. One click copies the value. */
+const STANDARD: [string, string][] = [
+  ["Full name", "Preston Zen"],
+  ["Legal name (signatures)", "Preston Dang-Khoa Zen"],
+  ["Email", "contact@prestonzen.com"],
+  ["Phone", "+1 650-870-2017"],
+  ["Location", "Las Vegas, NV, United States (fully remote)"],
+  ["Website / portfolio", "https://portfolio.prestonzen.com"],
+  ["GitHub", "https://github.com/prestonzen"],
+  ["LinkedIn", "(leave blank — if required: https://portfolio.prestonzen.com)"],
+  ["Authorized to work in the US", "Yes — U.S. citizen"],
+  ["Need sponsorship", "No"],
+  ["Current company / title", "Kaizen Apps — Senior Full Stack Engineer"],
+  ["Salary ask", "75% point of the posted range, rounded up to $5k (no range: $155,000–$190,000)"],
+  ["How did you hear", "Job board"],
+  ["Are you human / did you use AI?", "You are human: pick \"human\". Used AI to help: Yes — \"I use AI tools daily and used them to organize and word my materials; the experience is mine.\""],
+];
+
+function CopyBtn({ text, label = "Copy" }: { text: string; label?: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      className="ghost small-btn"
+      onClick={() => {
+        void navigator.clipboard?.writeText(text).then(() => setDone(true)).catch(() => undefined);
+        setTimeout(() => setDone(false), 1500);
+      }}
+    >
+      {done ? "Copied" : label}
+    </button>
+  );
+}
+
+function KitPanel({ kit }: { kit: Kit }) {
+  return (
+    <div className="kit">
+      <h4>
+        Apply kit <span className="muted small">prepared by {agentLabel(kit.agent)} · {ago(kit.at)}</span>
+        {kit.formUrl && (
+          <a className="btn alt small" href={kit.formUrl} target="_blank" rel="noreferrer">
+            Open the form ↗
+          </a>
+        )}
+      </h4>
+      {kit.notes && <div className="notes">⚠️ {kit.notes}</div>}
+      <div className="files">
+        {kit.resume ? (
+          <a className="btn small" href={kit.resume.downloadPath}>
+            ⬇ Resume: {kit.resume.name}
+          </a>
+        ) : (
+          <span className="muted small">No resume picked — use the bank.</span>
+        )}
+        {kit.coverPdf && (
+          <a className="btn small" href={kit.coverPdf.downloadPath}>
+            ⬇ Cover letter PDF
+          </a>
+        )}
+      </div>
+      <details open>
+        <summary>Standard fields</summary>
+        <div className="kit-grid">
+          {STANDARD.map(([q, a]) => (
+            <Fragment key={q}>
+              <div className="q">{q}</div>
+              <div className="a">{a}</div>
+              <CopyBtn text={a.startsWith("(") ? "" : a} />
+            </Fragment>
+          ))}
+        </div>
+      </details>
+      {kit.answers.length > 0 && (
+        <details open>
+          <summary>Form questions ({kit.answers.length})</summary>
+          <div className="kit-grid">
+            {kit.answers.map((qa, i) => (
+              <Fragment key={i}>
+                <div className="q">{qa.question}</div>
+                <div className="a">{qa.answer}</div>
+                <CopyBtn text={qa.answer} />
+              </Fragment>
+            ))}
+          </div>
+        </details>
+      )}
+      {kit.coverLetter && (
+        <details>
+          <summary>
+            Cover letter text <CopyBtn text={kit.coverLetter} label="Copy all" />
+          </summary>
+          <textarea readOnly value={kit.coverLetter} />
+        </details>
+      )}
+    </div>
+  );
+}
 
 const PROMPT = `Work the assisted queue. Use GET /api/admin/assisted (admin token), take the jobs one at a time in my Chrome, read each job's attempt log first, finish the application, and report the result with POST /api/admin/jobs/<id>/report. Ask me when you need a code or a challenge solved.`;
 
@@ -19,6 +116,7 @@ export default function Assisted() {
   const [open, setOpen] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [feeds, setFeeds] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -61,8 +159,21 @@ export default function Assisted() {
     <>
       <Card title="Assisted queue" className="wide" aside={<span className="muted small">{data.jobs.length} to push through{data.notWorkable ? ` · ${data.notWorkable} not workable (eligibility, travel, already done)` : ""}</span>}>
         <p className="muted small">
-          Jobs the agents couldn't finish: a second failure, a code or challenge, an account to sign in to. Work them in a real, signed-in Chrome with a person nearby. Each job carries the agents' attempt logs so nothing starts from zero.
+          Jobs the agents couldn't finish: a second failure, a code or challenge, an account to sign in to. Each one gets an <b>apply kit</b> — the resume, a cover letter PDF, and every form question answered — so you finish it by copy/paste in your own browser. Kits are prepared automatically; "Prep now" sends an agent for one job immediately.
         </p>
+        <div className="row-actions">
+          <button
+            className="ghost small-btn"
+            disabled={feeds === "…"}
+            onClick={() => {
+              setFeeds("…");
+              runFeedsNow().then((r) => setFeeds(`Feeds: ${r.added.length} added (${r.seen} seen, ${r.kept} passed filters)${r.errors.length ? ` · ${r.errors.length} errors` : ""}`)).catch((e: Error) => setFeeds(e.message));
+            }}
+          >
+            Pull job feeds now
+          </button>
+          {feeds && <span className="muted small">{feeds}</span>}
+        </div>
         <div className="assist-how">
           <b>Run it with Claude in Chrome</b>: open a Claude session with the Chrome extension and paste:
           <pre>{PROMPT}</pre>
@@ -127,12 +238,16 @@ export default function Assisted() {
                   ))}
                 </ol>
               )}
+              {j.kit && <KitPanel kit={j.kit} />}
               <div className="row-actions">
                 {j.applyUrl && (
                   <a className="btn alt small" href={j.applyUrl} target="_blank" rel="noreferrer">
                     Open posting ↗
                   </a>
                 )}
+                <button className="ghost" disabled={busy === j.id} title="Send an agent to read the form and draft every answer, the cover letter and the resume pick (no submission)" onClick={() => void act(j, () => prepJob(j.id))}>
+                  {j.kit ? "Re-prep" : "Prep now"}
+                </button>
                 <button className="ghost" disabled={busy === j.id} onClick={() => void act(j, () => reportJob(j.id, "applied", "Finished in the assisted queue", undefined))}>
                   Mark applied
                 </button>

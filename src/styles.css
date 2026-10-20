@@ -439,3 +439,14 @@ button.danger { color: #e5484d; border-color: color-mix(in srgb, #e5484d 40%, va
 .admin-main .feed { max-height:290px; overflow:auto; }
 .admin-main .card { min-width:0; overflow-x:auto; }
 .admin-main .compact-autopilot p { margin:8px 0; }
+
+/* Assisted tab: copy/paste kit for a parked job */
+.kit { margin: 10px 0 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel, transparent); display: grid; gap: 10px; }
+.kit h4 { margin: 0; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.kit-grid { display: grid; grid-template-columns: minmax(140px, 220px) 1fr auto; gap: 6px 10px; align-items: start; }
+.kit-grid .q { font-weight: 600; font-size: 0.85rem; overflow-wrap: anywhere; }
+.kit-grid .a { white-space: pre-wrap; font-size: 0.9rem; overflow-wrap: anywhere; min-width: 0; }
+.kit textarea { width: 100%; min-height: 160px; font: inherit; font-size: 0.9rem; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: inherit; }
+.kit .files { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.kit .notes { font-size: 0.9rem; padding: 8px 10px; border-left: 3px solid var(--warn, #d29922); }
+@media (max-width: 640px) { .kit-grid { grid-template-columns: 1fr; } .kit-grid .q { margin-top: 6px; } }

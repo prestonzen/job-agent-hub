@@ -6,6 +6,8 @@ import { checkJob, getPolicy, pacingState } from "./pacing";
 import { createRun, listRunners, listRuns } from "./runs";
 import { BROAD_SOURCE_PROMPT } from "./sourcing";
 import { processFollowUps } from "./followups";
+import { runFeeds } from "./feeds";
+import { maybeLaunchPrep } from "./kits";
 import { esc, notify } from "./telegram";
 import type { Env } from "./types";
 
@@ -224,6 +226,8 @@ export async function autopilotTick(env: Env): Promise<string | null> {
   if (!online.length) return null;
   // Quiet email applications get one follow-up (self-gated to a few times a day; never blocks the tick).
   await processFollowUps(env).catch(() => null);
+  // Public job feeds refill the queue twice a day with no tokens spent (self-gated).
+  await runFeeds(env).catch(() => null);
   const freeSlots = online.reduce((n, r) => n + Math.max(0, r.slots - r.busy), 0);
   const inFlight = runs.filter((r) => r.kind !== "login" && (r.status === "running" || r.status === "queued"));
   if (inFlight.length >= s.maxConcurrent || freeSlots <= inFlight.filter((r) => r.status === "queued").length) return null;
@@ -235,6 +239,10 @@ export async function autopilotTick(env: Env): Promise<string | null> {
 
   const d = await adb(env);
   const readyAgents = [...new Set(online.flatMap((r) => r.agents.filter((a) => a.ready).map((a) => a.id)))].filter((a) => s.agents[a] !== false);
+
+  // Parked jobs without a copy/paste kit get one prepared (read-only run, never submits): one at a time, every 20 min.
+  const prepped = await maybeLaunchPrep(env, { settings: s, readyAgents, busyAgents: new Set(inFlight.map((r) => r.agent)), prepInFlight: inFlight.some((r) => r.task === "prep") }).catch(() => null);
+  if (prepped) return prepped;
 
   // Demand-driven sourcing: when the fleet is truly idle (no ready jobs AND no application run in flight),
   // source fresh roles instead of waiting for the daily schedule. Guarded so it can never spin: one run at a

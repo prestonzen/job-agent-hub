@@ -2,6 +2,7 @@ import { db } from "./db";
 import { queue } from "./jobs";
 import { parkedCategory } from "./park";
 import type { Attempt } from "./attempts";
+import { getKits, type Kit } from "./kits";
 import type { Env } from "./types";
 
 /**
@@ -27,6 +28,8 @@ export interface AssistedJob {
   category: string;
   reason: string;
   attempts: Attempt[];
+  /** Copy/paste kit prepared by an agent (resume, cover letter, answers); null until one has run. */
+  kit: Kit | null;
 }
 
 async function attemptsFor(env: Env, ids: string[]): Promise<Map<string, Attempt[]>> {
@@ -50,7 +53,8 @@ export async function assistedQueue(env: Env): Promise<{ jobs: AssistedJob[]; no
   const parked = (await queue(env)).filter((j) => j.needsHuman && !j.claimedBy);
   const all = parked.map((j) => ({ j, category: parkedCategory(j.needsHuman ?? "") }));
   const workable = all.filter((x) => !NOT_WORKABLE.has(x.category));
-  const attempts = await attemptsFor(env, workable.map((x) => x.j.id));
+  const ids = workable.map((x) => x.j.id);
+  const [attempts, kits] = await Promise.all([attemptsFor(env, ids), getKits(env, ids).catch(() => new Map<string, Kit>())]);
   const jobs = workable
     .map(({ j, category }): AssistedJob => ({
       id: j.id,
@@ -66,6 +70,7 @@ export async function assistedQueue(env: Env): Promise<{ jobs: AssistedJob[]; no
       category,
       reason: j.needsHuman ?? "",
       attempts: attempts.get(j.id) ?? [],
+      kit: kits.get(j.id) ?? null,
     }))
     // Jobs that already cost agents attempts first (they're the ones that keep failing), then best fit.
     .sort((a, b) => b.attempts.length - a.attempts.length || (b.fit ?? 0) - (a.fit ?? 0) || a.name.localeCompare(b.name));

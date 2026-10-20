@@ -5,7 +5,7 @@ import type { RunnerInfo, RunRow } from "./runs";
 export const TASKS = ["applications", "email", "sourcing", "cyber"] as const;
 export type AgentTask = (typeof TASKS)[number];
 export type TaskSwitches = Record<AgentTask, boolean>;
-export type RunTask = AgentTask | "diagnostic" | "custom" | "login";
+export type RunTask = AgentTask | "diagnostic" | "custom" | "login" | "prep";
 export interface WorkSettings { enabled?: boolean; agents?: Record<string, boolean>; tasks?: Record<string, Partial<TaskSwitches>>; lanes?: Record<string, string | null>; maxConcurrent?: number }
 
 export function taskSwitches(settings: WorkSettings, agent: string): TaskSwitches {
