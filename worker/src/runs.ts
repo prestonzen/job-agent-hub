@@ -274,7 +274,7 @@ export async function claimRun(env: Env, runner: string, agents: string[], origi
       `UPDATE runs SET status = 'running', runner = ?1, started_at = ?2
        WHERE id = (SELECT id FROM runs WHERE status = 'queued' AND (not_before IS NULL OR not_before <= ?2)
                    AND ((kind != 'login' AND agent IN (SELECT value FROM json_each(?3))
-                     AND (task IN ('custom','diagnostic') OR (task IS NULL AND kind!='queue')
+                     AND (task IN ('custom','diagnostic','prep') OR (task IS NULL AND kind!='queue')
                        OR (task IS NULL AND (json_extract(?5,'$.'||agent||'.applications')=1 OR json_extract(?5,'$.'||agent||'.email')=1))
                        OR json_extract(?5,'$.'||agent||'.'||task)=1))
                      OR (kind = 'login' AND agent IN (SELECT value FROM json_each(?4))))
