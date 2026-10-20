@@ -45,6 +45,9 @@ async function idb(env: Env) {
   if (!ready) {
     await d.prepare(SCHEMA).run();
     await d.prepare(REPLY_DELIVERY_SCHEMA).run();
+    // Added later: links found in the mail (assessment / scheduling URLs) and a "handled" tick for action items.
+    await d.prepare("ALTER TABLE inbound ADD COLUMN links TEXT").run().catch(() => {});
+    await d.prepare("ALTER TABLE inbound ADD COLUMN handled INTEGER NOT NULL DEFAULT 0").run().catch(() => {});
     ready = true;
   }
   return d;
@@ -110,6 +113,42 @@ function matchTask(tasks: Task[], company: string | null, e: InboundEmail, inclu
   return best;
 }
 
+/** Categories where Preston has to do something (reply, book, complete a test). These get the loud, linked alert. */
+export const ACTION_CATEGORIES: readonly Category[] = ["interview", "assessment", "offer", "onboarding"];
+
+/** Gmail link for the message: direct when the id is a Gmail id, else a search on the subject. */
+export const mailLink = (id: string, subject: string) =>
+  /^[0-9a-f]{12,20}$/i.test(id) ? `https://mail.google.com/mail/u/0/#all/${id}` : `https://mail.google.com/mail/u/0/#search/${encodeURIComponent(`subject:"${subject.slice(0, 80)}"`)}`;
+
+/** The first few real links in the body (assessment portals, booking pages), minus unsubscribe/tracking noise. */
+export function extractLinks(text: string, max = 5): string[] {
+  const out: string[] = [];
+  for (const m of text.matchAll(/https?:\/\/[^\s<>"')\]]+/g)) {
+    const u = m[0].replace(/[.,;:]+$/, "");
+    if (/unsubscribe|list-manage|mailtrack|pixel|\.(png|gif|jpg)$|fonts\.|w3\.org|schema\.org/i.test(u)) continue;
+    if (!out.includes(u)) out.push(u);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+export interface ActionItem { message_id: string; at: number; from_addr: string; subject: string; category: Category; company: string | null; task_id: string | null; summary: string; links: string | null }
+/** Recent emails that still need Preston's hand (not ticked as handled). */
+export async function actionItems(env: Env, days = 7, limit = 10): Promise<ActionItem[]> {
+  const { results } = await (await idb(env))
+    .prepare(`SELECT message_id, at, from_addr, subject, category, company, task_id, summary, links FROM inbound WHERE handled = 0 AND at > ?1 AND category IN (${ACTION_CATEGORIES.map((c) => `'${c}'`).join(",")}) ORDER BY at DESC LIMIT ?2`)
+    .bind(Date.now() - days * 86_400_000, limit)
+    .all<ActionItem>();
+  return results;
+}
+export async function markHandled(env: Env, messageId: string): Promise<boolean> {
+  const r = await (await idb(env)).prepare("UPDATE inbound SET handled = 1 WHERE message_id = ?").bind(messageId).run();
+  return r.meta.changes > 0;
+}
+/** One Telegram line per action item, used by the digest and /needs. */
+export const actionLine = (a: ActionItem) =>
+  `• ${ICON[a.category]} <b>${esc(a.company ?? a.from_addr.replace(/<.*/, "").trim())}</b> — ${esc(a.subject)} · <a href="${mailLink(a.message_id, a.subject)}">open email</a>${a.links ? ` · <a href="${a.links.split("\n")[0]}">first link</a>` : ""}\n  <i>${esc(a.summary)}</i>`;
+
 const NEXT_STATUS: Partial<Record<Category, string>> = { rejection: "rejected / paused", interview: "screening", assessment: "screening", offer: "accepted", confirmation: "applied" };
 const ICON: Record<Category, string> = { rejection: "❌", interview: "🗓️", assessment: "📝", offer: "🎉", confirmation: "📨", recruiter: "👋", onboarding: "📋", other: "✉️" };
 
@@ -144,13 +183,18 @@ export async function handleInbound(env: Env, e: InboundEmail): Promise<{ duplic
     await logEvent(env, { agent: "inbox", taskId: task.id, taskName: task.name, type: `reply:${category}`, message: summary });
   }
 
-  const record=d.prepare("INSERT OR IGNORE INTO inbound (message_id, at, from_addr, subject, category, company, task_id, action, summary) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-    .bind(e.id, Date.now(), e.from.slice(0, 200), e.subject.slice(0, 300), category, ai?.company ?? null, task?.id ?? null, action, summary);
+  const links = extractLinks(e.text);
+  const record=d.prepare("INSERT OR IGNORE INTO inbound (message_id, at, from_addr, subject, category, company, task_id, action, summary, links) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(e.id, Date.now(), e.from.slice(0, 200), e.subject.slice(0, 300), category, ai?.company ?? null, task?.id ?? null, action, summary, links.length ? links.join("\n") : null);
   if(category!=="confirmation"&&category!=="other"){
     const marketing=/job matches|job alerts|recommended jobs|unlock your|newsletter/i.test(e.subject);
-    const loud=["interview","assessment","offer","onboarding"].includes(category)||(category==="recruiter"&&!marketing&&/invited|schedule|availability|assessment|onboarding|interested|reply|respond|next step/i.test(`${e.subject} ${e.text.slice(0,3000)}`));
+    const loud=ACTION_CATEGORIES.includes(category)||(category==="recruiter"&&!marketing&&/invited|schedule|availability|assessment|onboarding|interested|reply|respond|next step/i.test(`${e.subject} ${e.text.slice(0,3000)}`));
     const where=task?`<a href="${task.url}">${esc(task.name)}</a> · ${esc(action)}`:"Unmatched opportunity · review the email";
-    const html=`${ICON[category]} <b>${esc(category)}</b>: ${esc(e.subject)}\n${where}\n<i>${esc(summary)}</i>`;
+    // Something Preston must do gets the full picture in one message: who, what they want, the email itself and
+    // the links in it (assessment portal, booking page), so nothing has to be hunted for in the inbox.
+    const html=loud
+      ? `⚡ <b>ACTION NEEDED — ${esc(category)}</b>: ${esc(ai?.company ?? e.from.replace(/<.*/, "").trim())}\n<b>${esc(e.subject)}</b>\nFrom ${esc(e.from)}\n<i>${esc(summary)}</i>\n<a href="${mailLink(e.id, e.subject)}">Open the email</a>${task?` · <a href="${task.url}">${esc(task.name)}</a>`:""}${links.length?`\nLinks: ${links.slice(0,3).map((u)=>`<a href="${u}">${esc(u.replace(/^https?:\/\//,"").slice(0,40))}</a>`).join(" · ")}`:""}`
+      : `${ICON[category]} <b>${esc(category)}</b>: ${esc(e.subject)}\n${where}\n<i>${esc(summary)}</i>`;
     await d.batch([record,d.prepare(`INSERT INTO inbound_notifications (message_id,html,silent,updated_at) VALUES (?,?,?,?) ON CONFLICT(message_id) DO NOTHING`).bind(e.id,html,loud?0:1,Date.now())]);
     await flushReplyNotifications(env);
   }else await record.run();

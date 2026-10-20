@@ -31,7 +31,7 @@ import { sourceCheckStatus } from "./sourcing";
 import type { RunTask } from "./work";
 import { sendDigest } from "./digest";
 import { flushReplyNotifications, recoverReplyNotification } from "./reply-delivery";
-import { handleInbound, recentInbound, type InboundEmail } from "./inbound";
+import { handleInbound, markHandled, recentInbound, type InboundEmail } from "./inbound";
 import { DEFAULT_POLICY, getPolicy, pacingState, pacingSummary, type PacingPolicy } from "./pacing";
 import { deleteResume, listResumes, pickResume, resumeFile, updateResume, uploadResume } from "./resumes";
 import { coverLetterFile, makeCoverLetter } from "./coverletters";
@@ -480,6 +480,15 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     const replyNotify=path.match(/^\/api\/admin\/inbound\/([^/]+)\/notify$/);
     if(replyNotify && method === "POST")return json(await recoverReplyNotification(env,replyNotify[1]));
     if (path === "/api/admin/inbound" && method === "GET") return json({ emails: await recentInbound(env) });
+    // Tick an employer email as dealt with so it leaves the digest / /needs action list.
+    const handled = path.match(/^\/api\/admin\/inbound\/([^/]+)\/handled$/);
+    if (handled && method === "POST") return json({ ok: await markHandled(env, decodeURIComponent(handled[1])) });
+    // Admin-authored Telegram note (e.g. "assessment drafted, review it"), loud by default.
+    if (path === "/api/admin/notify" && method === "POST") {
+      const b = await readJson<{ html?: string; silent?: boolean }>(request);
+      if (!b.html?.trim()) return json({ error: "html is required" }, 400);
+      return json({ ok: true, error: await notify(env, b.html.slice(0, 3500), { silent: !!b.silent }) });
+    }
     if (path === "/api/admin/telegram/webhook-info" && method === "GET") return json(await webhookInfo(env));
 
     // ClickUp usage: local copy age, deferred writes, calls today.

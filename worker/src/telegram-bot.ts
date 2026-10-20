@@ -10,6 +10,7 @@ import { mirrorAge, outboxSize, usageToday } from "./mirror";
 import { autopilotStatus, saveAutopilot } from "./autopilot";
 import { listSchedules, updateSchedule } from "./schedules";
 import { esc, isChatAdmin, send, threadId } from "./telegram";
+import { actionItems, actionLine } from "./inbound";
 import type { Env } from "./types";
 
 /**
@@ -113,7 +114,11 @@ export async function handleTelegramUpdate(env: Env, update: { message?: TgMessa
 
     case "/needs": {
       const human = (await queue(env)).filter((j) => j.needsHuman);
-      await reply(env, msg, human.length ? `🙋 <b>${human.length} waiting on you</b>\n${human.slice(0, 15).map((j) => `• <a href="${j.clickupUrl}">${esc(j.name)}</a>: ${esc((j.needsHuman ?? "").slice(0, 90))}`).join("\n")}` : "Nothing is waiting on you. 🎉");
+      const actions = await actionItems(env, 7).catch(() => []);
+      const parts: string[] = [];
+      if (actions.length) parts.push(`⚡ <b>Employers waiting on you (${actions.length})</b>\n${actions.map(actionLine).join("\n")}`);
+      if (human.length) parts.push(`🙋 <b>${human.length} parked for you</b>\n${human.slice(0, 15).map((j) => `• <a href="${j.clickupUrl}">${esc(j.name)}</a>: ${esc((j.needsHuman ?? "").slice(0, 90))}`).join("\n")}`);
+      await reply(env, msg, parts.length ? parts.join("\n\n") : "Nothing is waiting on you. 🎉");
       return;
     }
 

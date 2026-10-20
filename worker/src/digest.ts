@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { isAvailable, queue } from "./jobs";
 import { listRunners } from "./runs";
+import { actionItems, actionLine } from "./inbound";
 import { esc, notify } from "./telegram";
 import type { Env } from "./types";
 
@@ -38,6 +39,7 @@ export async function sendDigest(env: Env, origin = "https://jobhunter.prestonze
   const findings = cyberWins.find((r) => r.kind === "finding")?.n ?? 0;
   const scans = cyberWins.find((r) => r.kind === "scan")?.n ?? 0;
   const human = q.filter((j) => j.needsHuman);
+  const actions = await actionItems(env, 7).catch(() => []);
 
   // Rank bulk stall reasons (top 5), needs_human and failed together.
   const buckets = new Map<string, number>();
@@ -55,6 +57,11 @@ export async function sendDigest(env: Env, origin = "https://jobhunter.prestonze
     `Queue: ${q.filter(isAvailable).length} ready · ${q.filter((j) => j.claimedBy).length} in progress`,
     `Runners: ${runners.length ? runners.map((r) => `${esc(r.name)} ${r.online ? "🟢" : "🔴"} (${r.agents.filter((a) => a.ready).length}/${r.agents.length} ready)`).join(", ") : "none"}`,
   ];
+  // Employers waiting on Preston come first: an unanswered assessment or interview request is the priority.
+  if (actions.length) {
+    lines.push("", `⚡ <b>Employers waiting on you (${actions.length})</b>`);
+    for (const a of actions) lines.push(actionLine(a));
+  }
   if (stalled.length || (quiet[0]?.n ?? 0) > 0) {
     lines.push("", `⚠️ <b>Stalled / failed in bulk (${stalled.length} outcomes${quiet[0]?.n ? ` · ${quiet[0].n} empty runs` : ""})</b>`);
     if (ranked.length) {
@@ -68,5 +75,5 @@ export async function sendDigest(env: Env, origin = "https://jobhunter.prestonze
     for (const j of human.slice(0, 10)) lines.push(`• <a href="${j.clickupUrl}">${esc(j.name)}</a>: ${esc(j.needsHuman ?? "")}`);
   }
   lines.push("", `<a href="${origin}/admin">Open the hub</a>`);
-  return notify(env, lines.join("\n"), { silent: human.length === 0 });
+  return notify(env, lines.join("\n"), { silent: human.length === 0 && actions.length === 0 });
 }
