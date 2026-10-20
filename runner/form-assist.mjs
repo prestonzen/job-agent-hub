@@ -6,7 +6,7 @@
 // Never hard-code keys here.
 //
 // Usage:
-//   node form-assist.mjs --url <page-url> [--sitekey <key>] [--type auto|turnstile|recaptcha-v2|hcaptcha]
+//   node form-assist.mjs --url <page-url> [--sitekey <key>] [--type auto|turnstile|recaptcha-v2|recaptcha-enterprise|hcaptcha]
 //                        [--attempts 3] [--timeout 240] [--proxy http://user:pass@host:port]
 //
 // Exit code 0 + JSON on stdout when a token was obtained; exit 1 + {ok:false,...} otherwise.
@@ -41,7 +41,7 @@ const HELP = `form-assist.mjs — complete a human-verification challenge for a 
 
   --url <url>        page URL that shows the challenge (required)
   --sitekey <key>    challenge sitekey; if omitted it is scraped from the page HTML
-  --type <t>         auto (default) | turnstile | recaptcha-v2 | hcaptcha
+  --type <t>         auto (default) | turnstile | recaptcha-v2 | recaptcha-enterprise | hcaptcha
   --attempts <n>     solve attempts before giving up (default 3)
   --timeout <sec>    max seconds to wait for a solution (default 240)
   --proxy <url>      upstream proxy for the solving service (residential; Turnstile often needs one)
@@ -91,13 +91,17 @@ async function fetchSitekey(url) {
     html = await res.text();
   } catch { return { sitekey: null, kindHint: null }; }
   const turnstile = html.match(/cf-turnstile[\s\S]{0,400}?data-sitekey=["']([^"']+)["']/i) ?? html.match(/data-sitekey=["']([^"']+)["'][\s\S]{0,400}?cf-turnstile/i) ?? html.match(/turnstile\.render\([^)]*?["']([^"']{10,})["']/i);
+  // Enterprise must be detected BEFORE generic recaptcha: enterprise.js contains "recaptcha".
+  const enterprise = html.match(/recaptcha\/enterprise\.js\?render=([0-9A-Za-z_-]{10,})/i) ?? html.match(/grecaptcha\.enterprise\.(?:render|execute)\([^)]*?["']([^"']{10,})["']/i);
   const recaptcha = html.match(/g-recaptcha[\s\S]{0,300}?data-sitekey=["']([^"']+)["']/i) ?? html.match(/\/recaptcha\/api\.js\?render=explicit|grecaptcha\.render\([^)]*?["']([^"']{10,})["']/i);
   const hcaptcha = html.match(/h-captcha[\s\S]{0,300}?data-sitekey=["']([^"']+)["']/i) ?? html.match(/hcaptcha\.render\([^)]*?["']([^"']{10,})["']/i) ?? html.match(/hcaptcha\.com\/1\/api\.js/i);
   if (turnstile?.[1]) return { sitekey: turnstile[1], kindHint: "turnstile" };
+  if (enterprise?.[1]) return { sitekey: enterprise[1], kindHint: "recaptcha-enterprise" };
   if (recaptcha?.[1] || recaptcha?.[2]) return { sitekey: recaptcha[1] ?? recaptcha[2], kindHint: "recaptcha-v2" };
   if (hcaptcha?.[1]) return { sitekey: hcaptcha[1], kindHint: "hcaptcha" };
   if (hcaptcha) return { sitekey: null, kindHint: "hcaptcha" }; // script present, key rendered by JS — pass --sitekey
   if (/cf-turnstile/i.test(html)) return { sitekey: null, kindHint: "turnstile" }; // invisible, no explicit key
+  if (/recaptcha\/enterprise/i.test(html)) return { sitekey: null, kindHint: "recaptcha-enterprise" };
   if (/recaptcha/i.test(html)) return { sitekey: null, kindHint: "recaptcha-v2" };
   return { sitekey: null, kindHint: null };
 }
@@ -113,6 +117,12 @@ async function solve2captcha({ apiKey, type, url, sitekey, proxy, timeoutSec }) 
     params.set("method", "hcaptcha");
     params.set("sitekey", sitekey ?? "");
     params.set("pageurl", url);
+  } else if (type === "recaptcha-enterprise") {
+    // Enterprise sitekeys reject plain-v2 worker tokens; enterprise=1 is mandatory.
+    params.set("method", "userrecaptcha");
+    params.set("googlekey", sitekey ?? "");
+    params.set("pageurl", url);
+    params.set("enterprise", "1");
   } else {
     params.set("method", "userrecaptcha");
     params.set("googlekey", sitekey ?? "");
@@ -139,6 +149,7 @@ async function solveCapsolver({ apiKey, type, url, sitekey, proxy, timeoutSec })
   let candidates;
   if (type === "turnstile") candidates = [proxy ? "AntiTurnstileTask" : "AntiTurnstileTaskProxyLess"];
   else if (type === "hcaptcha") candidates = proxy ? ["HCaptchaTurboTask", "HCaptchaTask"] : ["HCaptchaTaskProxyLess", "HCaptchaEnterpriseTaskProxyLess"];
+  else if (type === "recaptcha-enterprise") candidates = proxy ? ["ReCaptchaV2EnterpriseTask"] : ["ReCaptchaV2EnterpriseTaskProxyLess"];
   else candidates = [proxy ? "RecaptchaV2Task" : "RecaptchaV2TaskProxyLess"];
   if (proxy) task.proxy = proxy;
   const post = (path, body) => req(`https://api.capsolver.com${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
@@ -188,11 +199,12 @@ function injectHint(type) {
     ].join("\n");
   }
   return [
-    "reCAPTCHA v2 token (valid ~2 min). Apply in the page via browser_evaluate, then submit:",
+    "reCAPTCHA v2/Enterprise token (valid ~2 min). Apply in the page via browser_evaluate, then submit:",
     '  const t = TOKEN;',
     '  const el = document.getElementById("g-recaptcha-response");',
     '  if (el) { el.value = t; el.dispatchEvent(new Event("input", { bubbles: true })); el.dispatchEvent(new Event("change", { bubbles: true })); }',
     "  If grecaptcha is on the page: grecaptcha.getResponse() should return t; then click submit.",
+    "  Enterprise (Ashby etc.): the token must exist in the DOM BEFORE the form's submit handler runs grecaptcha.enterprise.execute(); fill the textarea first, then click the real submit button.",
   ].join("\n");
 }
 
