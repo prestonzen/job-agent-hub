@@ -8,6 +8,8 @@ export function parkedCategory(reason: string): string {
   if (/limiting applications|within the last \d+ days|90 days|reapply|applied for a position/.test(r)) return "Company limit (recent application)";
   // The agent found the employer's address but the job record had no applyEmail: a data fix, not a human task.
   if (/applyemail|apply email|emailing|email application|manual email|interest email/.test(r)) return "Email address not on record";
+  // Forms that ask the applicant to attest to being a person: an agent must not answer, so only Preston can submit.
+  if (/attestation|automated program|human being|best describes you|are you (a )?human|not a (ro)?bot|i am (a )?human/.test(r)) return "Human attestation (must be a person)";
   if (/essay|cover letter|written|statement|short answer|free.?text|open.?ended|question|case study|mission/.test(r)) return "Essay or written answers";
   if (/(verification|security|emailed|email|sms|one.?time|login|sign.?in).{0,14}code|code|otp|2fa/.test(r)) return "Emailed / SMS code";
   if (/captcha|bot|cloudflare|turnstile|human check|recaptcha|blocked|403/.test(r)) return "CAPTCHA / bot check";
