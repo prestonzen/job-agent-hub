@@ -357,8 +357,9 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       if (kind !== "scan" && kind !== "finding") return json({ error: "Only scan and finding events are accepted" }, 400);
       const created = await addBountyEvent(env, "bounty-pipeline", b);
       // Wins are announced as they land (Preston, 2026-10-21): a completed scan is a small win,
-      // a finding is a loud one. Failures stay quiet and roll into the daily digest.
-      if (kind === "finding") {
+      // a CONFIRMED finding is a loud one. Refuted/unconfirmed validation is bookkeeping —
+      // it stays silent and rolls into the daily digest like other failures.
+      if (kind === "finding" && b.status === "confirmed") {
         await notify(env, `🚨 <b>Bounty finding</b> — ${esc(b.program ?? b.target ?? "?")} (${esc(b.platform ?? "?")})${b.severity ? ` [${esc(b.severity)}]` : ""}\n${esc(b.title ?? "")}${b.detail ? `\n${esc(b.detail.slice(0, 300))}` : ""}`);
       } else if (b.status === "done") {
         await notify(env, `✅ <b>Bounty scan completed</b> — ${esc(b.program ?? b.target ?? "?")} (${esc(b.platform ?? "?")})\n${esc((b.detail ?? b.title ?? "").slice(0, 250))}`);
