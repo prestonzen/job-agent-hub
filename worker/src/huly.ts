@@ -43,7 +43,11 @@ export async function findAll<T = Record<string, unknown>>(cfg: HulyCfg, _class:
   if (Object.keys(options).length) p.set("options", JSON.stringify(options));
   const r = (await rest(cfg, `/find-all/${cfg.ws}?${p}`)) as { value?: T[]; error?: unknown };
   if (r.error) throw new HttpError(502, `Huly find-all: ${JSON.stringify(r.error).slice(0, 200)}`);
-  return r.value ?? [];
+  // The transactor's REST find-all leaves out every field the query matched on (_id, space, identifier,
+  // attachedTo…); put equality-matched values back so callers see complete documents.
+  const fixed: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(query)) if (v === null || ["string", "number", "boolean"].includes(typeof v)) fixed[k] = v;
+  return (r.value ?? []).map((d) => ({ ...fixed, ...(d as Record<string, unknown>) }) as T);
 }
 export async function findOne<T = Record<string, unknown>>(cfg: HulyCfg, _class: string, query: Record<string, unknown>): Promise<T | null> {
   return (await findAll<T>(cfg, _class, query, { limit: 1 }))[0] ?? null;
@@ -289,9 +293,7 @@ export async function listIssues(cfg: HulyCfg, p: Project): Promise<HulyIssue[]>
   return findAll<HulyIssue>(cfg, "tracker:class:Issue", { space: p.id }, { limit: 5000 });
 }
 export async function getIssue(cfg: HulyCfg, p: Project, id: string): Promise<HulyIssue> {
-  const byId = await findOne<HulyIssue>(cfg, "tracker:class:Issue", { _id: id, space: p.id });
-  // The REST find-all drops `_id` from a document matched by `_id`; put it back, everything downstream keys on it.
-  const i = byId ? { ...byId, _id: byId._id ?? id } : await findOne<HulyIssue>(cfg, "tracker:class:Issue", { identifier: id.toUpperCase(), space: p.id });
+  const i = (await findOne<HulyIssue>(cfg, "tracker:class:Issue", { _id: id, space: p.id })) ?? (await findOne<HulyIssue>(cfg, "tracker:class:Issue", { identifier: id.toUpperCase(), space: p.id }));
   if (!i) throw new HttpError(404, `no issue ${id}`);
   return i;
 }

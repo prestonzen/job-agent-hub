@@ -249,18 +249,19 @@ export async function reconcileFromClickUp(env: Env, dry = true): Promise<{ chec
     const t = cid ? cuTasks.get(cid) : undefined;
     if (!t) continue;
     checked++;
+    // ClickUp wins only where it was edited more recently than the issue; an empty ClickUp field never clears Huly.
+    if (Date.parse(t.updatedAt) <= i.modifiedOn) continue;
     const ops: Record<string, unknown> = {};
     const fields: Record<string, unknown> = {};
     const status = p.statusByName[t.status.toLowerCase()];
     if (status && status !== i.status) ops.status = status;
-    const na = (f.nextAction as string | undefined) ?? null;
-    if ((t.nextAction ?? null) !== na) fields.nextAction = t.nextAction ?? null;
-    const by = h.enumValue(p, "appliedBy", t.appliedBy) ?? null;
-    if (by !== ((f.appliedBy as string | undefined) ?? null)) fields.appliedBy = by;
-    const plat = h.enumValue(p, "platformApplied", t.platform) ?? null;
-    if (plat !== ((f.platformApplied as string | undefined) ?? null)) fields.platformApplied = plat;
+    if (t.nextAction && t.nextAction !== ((f.nextAction as string | undefined) ?? null)) fields.nextAction = t.nextAction;
+    const by = h.enumValue(p, "appliedBy", t.appliedBy);
+    if (by && by !== ((f.appliedBy as string | undefined) ?? null)) fields.appliedBy = by;
+    const plat = h.enumValue(p, "platformApplied", t.platform);
+    if (plat && plat !== ((f.platformApplied as string | undefined) ?? null)) fields.platformApplied = plat;
     const on = t.appliedOn ? Date.parse(`${t.appliedOn}T12:00:00Z`) : null;
-    if ((on ?? null) !== ((f.appliedOn as number | undefined) ?? null)) fields.appliedOn = on;
+    if (on && on !== ((f.appliedOn as number | undefined) ?? null)) fields.appliedOn = on;
     if (!Object.keys(ops).length && !Object.keys(fields).length) continue;
     changes.push(`${i.identifier} ${i.title.slice(0, 40)}: ${[...Object.entries(ops).map(([k]) => `${k}→${t.status}`), ...Object.keys(fields)].join(", ")}`);
     if (dry) continue;
