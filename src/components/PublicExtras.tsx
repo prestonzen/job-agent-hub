@@ -159,7 +159,7 @@ export function UnderTheHood({ ops }: { ops?: PublicSummary["ops"] }) {
     { h: "One queue, many agents", d: "Claims are a single atomic SQL statement in D1, so two agents can never take the same job. Each claim is a lease that expires if the agent dies." },
     { h: "Any agent can join", d: "A stateless MCP server plus a REST twin. Claude Code, Codex, Gemini CLI, Kimi and Mistral Vibe all connect with their own bearer token, and the token decides who they are." },
     { h: "Real browsers, residential IP", d: "A runner on a home Linux box starts each CLI headless with Playwright, a virtual display and a residential connection, so applications look like a person's." },
-    { h: "Guardrails, not vibes", d: "Per-ATS pacing and per-company limits, a cached copy of the tracker so API limits never bite, and a Telegram control room for anything that needs a person." },
+    { h: "Guardrails, not vibes", d: "Per-ATS pacing and per-company limits, a cached copy of the tracker so API limits never bite, and Telegram notifications for items that need human review." },
   ];
   return (
     <section className="hood">

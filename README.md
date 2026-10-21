@@ -74,7 +74,7 @@ flowchart LR
     end
 
     subgraph Human["🙋 Human-in-the-loop"]
-        TG["Telegram control room<br/>/status /run /pause /digest"]
+        TG["Telegram notifications<br/>outbound only"]
         GM["Gmail — recruiter replies,<br/>verification codes"]
     end
 
@@ -118,7 +118,7 @@ Runner ── /api/runner ─────┘                                   �
 - 🗓️ **Schedules + daily digest** — recurring runs, plus a Telegram digest: wins, bulk failure reasons, and what needs a human.
 - 📄 **Resume bank** — tailored variants in R2 tagged by role keywords; agents pick the best match per posting. Cover letters typeset to PDF on the fly.
 - 📬 **Reply tracking** — a Gmail Apps Script forwards recruiter mail; Workers AI classifies it and moves each application's status.
-- 💬 **Telegram control room** — wins and digest posted to its own topic; commands: `/status` `/needs` `/run` `/stop` `/pause` `/resume` `/digest`. Owner/admins only.
+- 💬 **Telegram notifications** — wins, digests, and human-review requests are posted to their configured topics. The bot does not read or reply to chat messages.
 - 🌙 **Overnight autonomy** — applications must not stall waiting for a person: equipped runners handle verification steps themselves and escalate to Telegram only as a last resort.
 - 🛰️ **Bug-bounty lane** — hourly-updated program scopes, a live technology matrix (430+ hosts), offline vulnerability-hypothesis generation on the local GPU, and a multi-model jury that reviews every finding before a human ever sees it.
 - 🌍 **Public dashboard** — a sanitized live view: funnel, who applied, applications per day, platforms. No contact details, notes, links or queued targets.
@@ -231,8 +231,8 @@ npx wrangler pages secret put <NAME> --project-name job-agent-hub    # prompts f
 | `ADMIN_TOKEN` | 24+ char random string; paste it on `/admin` to sign in. |
 | `RUNNER_TOKEN` | Shared secret for runner machines (`runner/`). |
 | `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather; the bot must be admin in the chat set by `TELEGRAM_CHAT_ID`. |
+| `TELEGRAM_HUB_SECRET` | Validates and removes any legacy inbound Telegram webhook; Ava only posts notifications. |
 | `INBOUND_TOKEN` | Shared secret for the Gmail reply tracker (`integrations/gmail-reply-tracker.gs`). |
-| `TELEGRAM_HUB_SECRET` | Webhook `secret_token`; then `POST /api/admin/telegram/set-webhook`. |
 
 **Bindings**: D1 `job-agent-hub` (`DB`), R2 `job-agent-hub-resumes` (`RESUMES`), Workers AI (`AI`).
 

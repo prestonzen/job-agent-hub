@@ -39,8 +39,7 @@ import { coverLetterFile, makeCoverLetter } from "./coverletters";
 import { prepNow, saveKit } from "./kits";
 import { PHASES, runFeeds, type Phase } from "./feeds";
 import { createSchedule, deleteSchedule, listSchedules, tick, updateSchedule, type ScheduleKind } from "./schedules";
-import { notify, notifyBounty, esc, setHubWebhook, telegramConfigured, webhookInfo } from "./telegram";
-import { handleTelegramUpdate } from "./telegram-bot";
+import { notify, notifyBounty, esc, disableTelegramReplies, telegramConfigured, webhookInfo } from "./telegram";
 import { getCodeRequest, requestCode, waitForCode } from "./codes";
 import { addBountyEvent, bountyHosts, bountySummary, scanReportLines, upsertBountyTech, type BountyEventInput } from "./bounty";
 import { cyberTick, cyberSummary, enqueueCyber, getCyberWork, completeCyber, reviewCyber } from "./cyber";
@@ -147,13 +146,12 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     return json(await handleInbound(env, { id: String(b.id), from: String(b.from ?? ""), subject: String(b.subject), date: b.date, text: String(b.text ?? "") }));
   }
 
-  // ---------- Telegram webhook (bot updates; acts only on the Job Agent Hub topic) ----------
+  // ---------- Telegram inbound updates are intentionally ignored; remove any legacy webhook on first callback. ----------
   if ((path === "/api/telegram/webhook" || path === "/api/telegram/update") && method === "POST") {
     const secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token") ?? request.headers.get("X-Hub-Secret") ?? "";
     if (!env.TELEGRAM_HUB_SECRET || env.TELEGRAM_HUB_SECRET.length < 24 || secret !== env.TELEGRAM_HUB_SECRET) return json({ error: "unauthorized" }, 401);
-    const update = await readJson<Parameters<typeof handleTelegramUpdate>[1]>(request);
-    ctx.waitUntil(handleTelegramUpdate(env, update, url.origin).catch((e) => console.error("telegram update:", e)));
-    return json({ ok: true });
+    const disabled = await disableTelegramReplies(env);
+    return json(disabled, disabled.ok ? 200 : 502);
   }
 
   // ---------- MCP (bearer token) ----------
@@ -534,9 +532,9 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       const flushed = await flushOutbox(env, (m, p, body) => replayWrite(env, m, p, body));
       return json({ tasks: tasks.length, flushed, outbox: await outboxSize(env) });
     }
-    if (path === "/api/admin/telegram/set-webhook" && method === "POST") {
-      if (!env.TELEGRAM_HUB_SECRET) return json({ error: "TELEGRAM_HUB_SECRET is not set" }, 400);
-      return json(await setHubWebhook(env, `${url.origin}/api/telegram/webhook`));
+    if ((path === "/api/admin/telegram/disable-replies" || path === "/api/admin/telegram/set-webhook") && method === "POST") {
+      const disabled = await disableTelegramReplies(env);
+      return json(disabled, disabled.ok ? 200 : 502);
     }
 
     // Remote agent runs (executed by runner machines).

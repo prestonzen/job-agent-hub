@@ -48,10 +48,10 @@ export interface Env {
   RUNNER_TOKEN?: string;
   /** Telegram bot token (BotFather). */
   TELEGRAM_BOT_TOKEN?: string;
+  /** Validates and disables any legacy inbound Telegram webhook. */
+  TELEGRAM_HUB_SECRET?: string;
   /** Shared secret for the Gmail reply-tracker script posting to /api/inbound/email. */
   INBOUND_TOKEN?: string;
-  /** Shared secret Ava's worker sends when forwarding Job Agent Hub topic messages (X-Hub-Secret). */
-  TELEGRAM_HUB_SECRET?: string;
   CLICKUP_TOKEN?: string;
   /** Huly workspace token (selectWorkspace). */
   HULY_TOKEN?: string;

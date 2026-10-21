@@ -57,7 +57,7 @@ export function telegramConfigured(env: Env): boolean {
 export async function send(
   env: Env,
   html: string,
-  opts: { silent?: boolean; replyTo?: number; topic?: "hub" | "bounty" } = {},
+  opts: { silent?: boolean; topic?: "hub" | "bounty" } = {},
 ): Promise<{ messageId: number | null; error: string | null; uncertain?: boolean }> {
   if (!telegramConfigured(env)) return { messageId: null, error: "Telegram is not configured (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)" };
   try {
@@ -67,7 +67,6 @@ export async function send(
       api(env, "sendMessage", {
         chat_id: env.TELEGRAM_CHAT_ID,
         ...(t ? { message_thread_id: t } : {}),
-        ...(opts.replyTo ? { reply_parameters: { message_id: opts.replyTo, allow_sending_without_reply: true } } : {}),
         text: html.slice(0, 4000),
         parse_mode: "HTML",
         disable_web_page_preview: true,
@@ -109,16 +108,15 @@ export async function isChatAdmin(env: Env, userId: number): Promise<boolean> {
   return ok;
 }
 
-/** Point the bot's webhook at the hub (only message updates) and register the topic's command menu. */
-export async function setHubWebhook(env: Env, url: string): Promise<unknown> {
-  const hook = await api(env, "setWebhook", { url, secret_token: env.TELEGRAM_HUB_SECRET, allowed_updates: ["message", "edited_message"], drop_pending_updates: false });
-  const commands = [
-    ["status", "Queue, runners and runs"], ["needs", "Jobs waiting on you"], ["run", "Queue a run: /run claude 3"], ["runs", "Recent runs"],
-    ["stop", "Stop a run: /stop 12 or /stop all"], ["pause", "Pause all schedules"], ["resume", "Resume all schedules"],
-    ["digest", "Summary now"], ["code", "Answer a code request"], ["help", "Hub commands"],
-  ].map(([command, description]) => ({ command, description }));
-  const menu = await api(env, "setMyCommands", { commands, scope: { type: "chat", chat_id: env.TELEGRAM_CHAT_ID } });
-  return { webhook: hook.ok ? "set" : hook.description, commands: menu.ok ? "set" : menu.description };
+/** Disable inbound bot interaction; outbound sendMessage notifications keep working. */
+export async function disableTelegramReplies(env: Env): Promise<{ ok: boolean; inbound: string; commands: string }> {
+  const hook = await api(env, "deleteWebhook", { drop_pending_updates: true });
+  const menu = await api(env, "setMyCommands", { commands: [], scope: { type: "chat", chat_id: env.TELEGRAM_CHAT_ID } });
+  return {
+    ok: hook.ok && menu.ok,
+    inbound: hook.ok ? "disabled" : hook.description ?? "failed",
+    commands: menu.ok ? "cleared" : menu.description ?? "failed",
+  };
 }
 
 /** Where the bot's updates go. */
