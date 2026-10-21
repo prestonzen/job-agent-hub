@@ -3,23 +3,25 @@
 #
 # 1. Refresh the program queue from bounty-targets-data (hourly-updated upstream).
 # 2. Pick the top N not-recently-scanned programs and scan them with up to PAR
-#    concurrent scanner containers (default 4). Per-target politeness is unchanged:
+#    concurrent scanner containers (default 6). Per-target politeness is unchanged:
 #    each container stays at SCAN_RPS=1 and every container works a DIFFERENT
 #    company, so no single target sees more than 1 req/s — the daily wall-clock
-#    just shrinks ~4x. Programs listed in /opt/bounty/priority.txt (one name per
+#    just shrinks ~6x. Programs listed in /opt/bounty/priority.txt (one name per
 #    line) are always picked first — regenerate that file from the unscanned
-#    backlog as needed.
+#    backlog as needed. Anything scanned >7 days ago is eligible again, so the
+#    whole queue re-scans on a rolling cycle (new nuclei CVE templates land
+#    daily, so re-scans surface fresh hits on old programs).
 # 3. Each scan posts its summary to the hub Bug bounty tab (per-company, so
 #    parallel ingest is safe: the hub upserts one Huly issue per program).
 #
 # Run by systemd timer (bounty-daily.timer, bounty-daily-evening.timer) or by hand:
-#   ./bounty-daily.sh              # 12 programs, 4 at a time
-#   TOP=6 ./bounty-daily.sh        # 6 programs, 4 at a time
+#   ./bounty-daily.sh              # 12 programs, 6 at a time
+#   TOP=6 ./bounty-daily.sh        # 6 programs, 6 at a time
 #   PAR=2 TOP=8 ./bounty-daily.sh  # gentler: 2 containers at a time
 
 set -u
 TOP=${TOP:-12}
-PAR=${PAR:-4}
+PAR=${PAR:-6}
 LOG=/root/bounty-daily.log
 
 # Only one batch at a time: skip if a previous timer/manual run is still going.

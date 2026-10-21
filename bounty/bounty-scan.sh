@@ -114,6 +114,10 @@ fi
 # IP — but matchType=prefix works (SURT prefix catches subdomains). Dedupe
 # client-side. archive.org only — zero target traffic. Feeds nuclei real
 # paths and powers php2shell-watch .php discovery via urls.txt.
+# 2026-10-22: plain-http CDX times out from this host — HTTPS only. Added an
+# AlienVault OTX harvest (reachable, no param restrictions) as a second
+# historical source; gau/waybackurls are installed but their CDX params are
+# blocked here, so the script talks to the APIs directly.
 WB_DOMAINS="$OUT/.wb-domains.txt"
 WB_BUDGET=${WB_BUDGET:-480}
 { [ -s "$OUT/wildcards.txt" ] && sed 's/^\*\.//' "$OUT/wildcards.txt"
@@ -125,10 +129,25 @@ if [ -s "$WB_DOMAINS" ]; then
   export wb_end OUT
   cat "$WB_DOMAINS" | xargs -P3 -I{} sh -c '
     [ "$(date +%s)" -gt "$wb_end" ] && exit 0
-    curl -s -m 25 "http://web.archive.org/cdx/search/cdx?url={}&matchType=prefix&fl=original&limit=2000" >> "$OUT/urls.raw.txt" 2>/dev/null || true
+    curl -s -m 25 "https://web.archive.org/cdx/search/cdx?url={}&matchType=prefix&fl=original&limit=2000" >> "$OUT/urls.raw.txt" 2>/dev/null || true
+  '
+  # AlienVault OTX: historical URLs per domain, paginated, same time budget.
+  cat "$WB_DOMAINS" | xargs -P3 -I{} sh -c '
+    for page in 1 2 3 4 5; do
+      [ "$(date +%s)" -gt "$wb_end" ] && exit 0
+      resp=$(curl -s -m 25 "https://otx.alienvault.com/api/v1/indicators/domain/{}/url_list?limit=500&page=$page" 2>/dev/null) || break
+      [ -z "$resp" ] && break
+      echo "$resp" | python3 -c "
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: sys.exit(0)
+for u in d.get(\"url_list\",[]): print(u.get(\"url\",\"\"))
+sys.exit(0 if d.get(\"has_next\") else 1)
+" >> "$OUT/urls.raw.txt" 2>/dev/null || break
+    done
   '
   sort -u "$OUT/urls.raw.txt" -o "$OUT/urls.raw.txt"
-  echo "wayback harvest: $(wc -l < "$OUT/urls.raw.txt") urls from $(wc -l < "$WB_DOMAINS") domains"
+  echo "wayback+otx harvest: $(wc -l < "$OUT/urls.raw.txt") urls from $(wc -l < "$WB_DOMAINS") domains"
 fi
 
 # Recon inside the scanner image.
@@ -179,9 +198,9 @@ with open("/out/urls.raw.txt") as src, open("/out/urls.txt","w") as dst:
 PY
   fi
   if [ -s /out/urls.txt ]; then
-    nuclei -silent -l /out/urls.txt -tags exposure,misconfig,cve -rl "$SCAN_RPS" -timeout 10 -o /out/nuclei.txt 2>/dev/null
+    nuclei -silent -l /out/urls.txt -tags exposure,misconfig,cve,vuln -rl "$SCAN_RPS" -timeout 10 -o /out/nuclei.txt 2>/dev/null
   else
-    nuclei -silent -l /out/live-hosts.txt -tags exposure,misconfig,cve -rl "$SCAN_RPS" -timeout 10 -o /out/nuclei.txt 2>/dev/null
+    nuclei -silent -l /out/live-hosts.txt -tags exposure,misconfig,cve,vuln -rl "$SCAN_RPS" -timeout 10 -o /out/nuclei.txt 2>/dev/null
   fi
   true
 '
