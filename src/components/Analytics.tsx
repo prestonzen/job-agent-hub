@@ -193,7 +193,7 @@ export default function Analytics() {
               <dd>{t.claimed ? `${Math.round((data.byAgent.reduce((s, a) => s + a.released, 0) / t.claimed) * 100)}%` : "—"}</dd>
             </div>
           </dl>
-          <h3>ClickUp API calls per day</h3>
+          <h3>ClickUp API calls per day (mirror)</h3>
           <Spark values={data.clickup.map((c) => c.calls)} />
           <p className="muted small">
             {data.clickup.length ? `${data.clickup[data.clickup.length - 1].calls.toLocaleString()} calls today` : "No calls recorded"} · every agent reads the hub's cached copy,

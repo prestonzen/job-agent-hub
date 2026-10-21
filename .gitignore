@@ -25,3 +25,4 @@ __pycache__/
 huly-mcp/node_modules/
 huly-mcp/docs/
 huly-mcp/remap.sql
+huly-mcp/reseed.sql

@@ -103,7 +103,7 @@ export default function CommandCenter() {
   }
 
   function skip(job: Job) {
-    const note = window.prompt(`Why skip "${job.name}"? (saved as a ClickUp comment)`);
+    const note = window.prompt(`Why skip "${job.name}"? (saved as a comment on the issue)`);
     if (note?.trim()) void act(job, () => reportJob(job.id, "skipped", note.trim()));
   }
 

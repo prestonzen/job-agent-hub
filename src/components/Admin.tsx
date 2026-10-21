@@ -55,7 +55,7 @@ export default function Admin() {
       <section className="hero compact">
         <h1>Admin</h1>
         <p>
-          Signed in as <b>{user}</b>. Changes write straight to ClickUp.{" "}
+          Signed in as <b>{user}</b>. Changes write to Huly (mirrored to ClickUp while both are in use).{" "}
           <button className="ghost" onClick={() => void logout().then(() => setUser(null))}>
             Sign out
           </button>
@@ -205,7 +205,7 @@ function Pipeline() {
                       Note
                     </button>{" "}
                     <a href={t.url} target="_blank" rel="noreferrer">
-                      ClickUp ↗
+                      Open ↗
                     </a>
                   </td>
                 </tr>
