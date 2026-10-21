@@ -25,13 +25,13 @@ export type Phase = (typeof PHASES)[number];
 interface Lead { company: string; role: string; url: string; applyUrl?: string; applyEmail?: string; location: string; text: string; pay?: string; source: string }
 
 const TITLE_OK = /\b(ai|a\.i\.|ml|machine learning|llm|genai|generative|agents?|agentic|full[- ]?stack|software engineer|backend|back-end|platform engineer|founding engineer|security engineer|ai security|applied scientist|forward deployed)\b/i;
-const TITLE_NO = /\b(intern|internship|junior|jr\.?|director|vp|vice president|head of|chief|principal|manager|recruiter|sales|marketing|designer|data entry|support engineer|account executive|contractor-?only|solutions? architect|web3|solidity|blockchain|crypto|defi|card authorization|payments? engineer|embedded|firmware|mobile|ios|android|game)\b/i;
+const TITLE_NO = /\b(intern|internship|junior|jr\.?|director|vp|vice president|head of|chief|principal|manager|recruiter|sales|marketing|designer|data entry|support engineer|account executive|contractor-?only|solutions? architect|web3|solidity|blockchain|crypto|defi|card authorization|payments? engineer|embedded|firmware|mobile|ios|android|game|training lead|trainer|annotat|data labell?ing|evaluator|rater|tutor)\b/i;
 const STAFF = /\bstaff\b/i;
 /** A generic engineering title only passes when the posting itself is about AI/LLM/agents. */
 const AI_TERMS = /\b(ai|a\.i\.|ml|machine learning|llm|genai|generative|agents?|agentic|rag|embeddings?|openai|anthropic|claude|gpt)\b/i;
 const GENERIC = /\b(full[- ]?stack|software engineer|backend|back-end|platform engineer|founding engineer)\b/i;
 /** Household names and >1,000-person companies: they don't convert and aren't the target (Preston, 2026-10-20). */
-const BIG_CO = /^(nvidia|google|alphabet|meta|facebook|amazon|aws|microsoft|apple|netflix|openai|anthropic|cohere|elevenlabs|eleven labs|stripe|coinbase|gitlab|github|datadog|cloudflare|salesforce|oracle|ibm|intel|adobe|uber|lyft|airbnb|doordash|shopify|atlassian|twilio|snowflake|databricks|palantir|betterhelp|toast|reddit|zscaler|samsara|servicenow|workday|vmware|cisco|dell|hp|sap|paypal|block|square|robinhood|instacart|pinterest|snap|tiktok|bytedance|linkedin|x|twitter|tesla|spacex|grafana labs|mongodb|elastic|hashicorp|okta|crowdstrike|zoominfo|typeform|launchdarkly|hubspot|zendesk|intercom|notion|figma|canva|dropbox|box|slack|zoom|docusign|affirm|chime|sofi|nerdwallet|upstart|brex|ramp|rippling|gusto|deel|remote|mercury|plaid|checkr|verkada|anduril|scale ai|turing|wellfound|spotify)\b/i;
+const BIG_CO = /^(nvidia|google|alphabet|meta|facebook|amazon|aws|microsoft|apple|netflix|openai|anthropic|cohere|elevenlabs|eleven labs|stripe|coinbase|gitlab|github|datadog|cloudflare|salesforce|oracle|ibm|intel|adobe|uber|lyft|airbnb|doordash|shopify|atlassian|twilio|snowflake|databricks|palantir|betterhelp|toast|reddit|zscaler|samsara|servicenow|workday|vmware|cisco|dell|hp|sap|paypal|block|square|robinhood|instacart|pinterest|snap|tiktok|bytedance|linkedin|x|twitter|tesla|spacex|grafana labs|mongodb|elastic|hashicorp|okta|crowdstrike|zoominfo|typeform|launchdarkly|hubspot|zendesk|intercom|notion|figma|canva|dropbox|box|slack|zoom|docusign|affirm|chime|sofi|nerdwallet|upstart|brex|ramp|rippling|gusto|deel|remote|mercury|plaid|checkr|verkada|anduril|scale ai|turing|wellfound|spotify|canonical|doximity|glean|tether|customer\.io|postscript|dremio|supabase|g-p|globalization partners)\b/i;
 const LOC_OK = /\b(united states|usa|u\.s\.|us only|us-only|us-based|north america|americas|worldwide|anywhere|global|remote)\b/i;
 const LOC_NO = /\b(europe|emea|eu only|uk only|united kingdom|germany|france|netherlands|spain|poland|india|latam|apac|australia|canada only|brazil|ukraine|portugal|japan|singapore)\b/i;
 const URL_NO = /ashbyhq\.com|workatastartup\.com|wellfound\.com|angel\.co|linkedin\.com/i;
@@ -145,8 +145,15 @@ async function hnLeads(): Promise<Lead[]> {
       const head = text.split("\n")[0] ?? text.slice(0, 200);
       const parts = head.split("|").map((x) => x.trim()).filter(Boolean);
       if (parts.length < 2) continue;
-      const company = parts[0].replace(/\(.*?\)/g, "").trim().slice(0, 80);
-      const role = (parts.find((p) => /engineer|developer|scientist|architect|founding/i.test(p)) ?? parts[1]).slice(0, 120);
+      const company = parts[0].replace(/\(.*?\)/g, "").replace(/https?:\/\/\S+/g, "").trim().slice(0, 80);
+      // The role must be a short header segment that names a role; a description-looking segment means the
+      // post isn't in the usual "Company | Role | Location" shape, so look for "hiring a <role>" in the body.
+      const ROLE = /engineer|developer|scientist|architect|founding|swe\b|programmer/i;
+      let role = parts.slice(1).find((p) => p.length <= 80 && ROLE.test(p) && !/https?:\/\//.test(p)) ?? "";
+      if (!role) role = text.match(/(?:hiring|looking for|seeking)\s+(?:an?\s+|\d+\s+)?((?:senior|staff|lead|founding|principal|full[- ]?stack|backend|ai|ml|software|platform|applied)[^.,;:\n|]{0,60}?(?:engineers?|developers?|scientists?))/i)?.[1]?.trim() ?? "";
+      if (!role) continue;
+      role = role.replace(/\s+/g, " ").slice(0, 120);
+      if (!company || /^https?:/.test(company)) continue;
       const em = text.match(EMAIL_RE);
       const applyEmail = em ? `${em[1]}@${em[2]}.${em[3]}`.toLowerCase() : undefined;
       const urls = [...text.matchAll(/https?:\/\/[^\s)<>"']+/g)].map((m) => m[0].replace(/[.,;:]+$/, "")).filter((u) => !/news\.ycombinator\.com|linkedin\.com|twitter\.com|x\.com/i.test(u));
