@@ -150,7 +150,7 @@ async function hnLeads(): Promise<Lead[]> {
       const head = text.split("\n")[0] ?? text.slice(0, 200);
       const parts = head.split("|").map((x) => x.trim()).filter(Boolean);
       if (parts.length < 2) continue;
-      const company = parts[0].replace(/\(.*?\)/g, "").replace(/https?:\/\/\S+/g, "").trim().slice(0, 80);
+      const company = parts[0].replace(/\(.*?\)/g, "").replace(/https?:\s*\/?\/?\S+/g, "").replace(/www\.\S+/g, "").trim().slice(0, 80);
       // The role must be a short header segment that names a role; a description-looking segment means the
       // post isn't in the usual "Company | Role | Location" shape, so look for "hiring a <role>" in the body.
       const ROLE = /engineer|developer|scientist|architect|founding|swe\b|programmer/i;
@@ -159,6 +159,7 @@ async function hnLeads(): Promise<Lead[]> {
       if (!role) continue;
       role = role.replace(/\s+/g, " ").slice(0, 120);
       if (!company || /^https?:/.test(company)) continue;
+      if (/(multiple|various|several|many).*roles?/i.test(role)) continue; // "Multiple Engineering roles": nothing specific to apply for
       const em = text.match(EMAIL_RE);
       const applyEmail = em ? `${em[1]}@${em[2]}.${em[3]}`.toLowerCase() : undefined;
       const urls = [...text.matchAll(/https?:\/\/[^\s)<>"']+/g)].map((m) => m[0].replace(/[.,;:]+$/, "")).filter((u) => !/news\.ycombinator\.com|linkedin\.com|twitter\.com|x\.com/i.test(u));
