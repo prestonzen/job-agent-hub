@@ -62,6 +62,7 @@ const pwConfigFor = (agent) => {
     };
   }
   const p = `${PROFILE_ROOT}/${agent}/pw-config.json`;
+  mkdirSync(dirname(p), { recursive: true }); // first run of a newly added agent
   writeFileSync(p, JSON.stringify(base, null, 2));
   return p;
 };
