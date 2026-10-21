@@ -8,7 +8,8 @@ import type { Env } from "./types";
  * Feed sourcing with no LLM in the loop: public job boards with JSON/RSS feeds, the monthly Hacker News
  * "Who is hiring?" thread, Built In, and the Greenhouse / Lever / Workable boards of companies already in the
  * tracker. Postings are filtered by title, by US/worldwide eligibility, by company size (blocklist of household
- * names) and by the platform behind the apply link (never Ashby, Work At A Startup, Wellfound or LinkedIn),
+ * names) and by the platform behind the apply link (never Ashby, Wellfound or LinkedIn; Work At A Startup
+ * is allowed again since 2026-10-22 — Preston's account session is synced into every agent profile),
  * then handed to addJob, which de-duplicates against ClickUp.
  *
  * Runs from the autopilot tick in three rotating phases (one per 4 h, so each source is polled twice a day)
@@ -41,7 +42,7 @@ const BIG_CO = /^(nvidia|google|alphabet|meta|facebook|amazon|aws|microsoft|appl
 const REMOTE = /(remote|work from home|wfh|work from anywhere|anywhere|worldwide|distributed|telecommut|home[- ]based|fully remote|remote[- ]first)/i;
 const ONSITE_ONLY = /(on[- ]?site only|onsite only|in[- ]office only|hybrid only|no remote|not remote|must be on[- ]?site|office[- ]based role|relocation required)/i;
 const NON_ENGLISH = /(ingenieur|ingénieur|entwickler|desarrollador|sviluppatore|programista|développeur|разработчик|инженер|ontwikkelaar|utvecklare|kehittäjä|yazılım|開発|工程师|エンジニア)/i;
-const URL_NO = /ashbyhq\.com|workatastartup\.com|wellfound\.com|angel\.co|linkedin\.com/i;
+const URL_NO = /ashbyhq\.com|wellfound\.com|angel\.co|linkedin\.com/i;
 
 function keep(l: Lead): boolean {
   const apply = l.applyUrl ?? l.url;
