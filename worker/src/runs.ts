@@ -1,6 +1,6 @@
 import { HttpError } from "./clickup";
 import { agentInstructions } from "./instructions";
-import { esc, notify } from "./telegram";
+import { esc, notify, notifyBounty } from "./telegram";
 import type { Env } from "./types";
 import { db as eventDb, getSetting, setSetting } from "./db";
 import { EMPTY_OUTCOME, TASKS, inferRunTask, outcomeSummary, taskSwitches, workSettings, type RunOutcome, type RunTask } from "./work";
@@ -362,7 +362,9 @@ export async function finishRun(env: Env, id: number, runner: string, f: { exitC
     // notifications, small wins for morale, failures addressed in bulk).
     const wins = o.applied + o.emailed + o.added + o.cyber + o.triaged;
     if (wins > 0 && !(result.task === "diagnostic" && status === "succeeded")) {
-      await notify(
+      // Cyber wins land in the Bug Bounty topic; job-hunting wins stay in the hub topic.
+      const deliver = result.task === "cyber" ? notifyBounty : notify;
+      await deliver(
         env,
         `✅ Run #${id} <b>${esc(r.agent)}</b> (${esc(result.task)}) on ${esc(runner)} after ${mins} min\n${esc(result.summary ?? status)}`,
       );

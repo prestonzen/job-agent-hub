@@ -8,6 +8,7 @@ import type { Env } from "./types";
  */
 
 const TOPIC_NAME = "🤖 Job Agent Hub";
+const BOUNTY_TOPIC_NAME = "🐞 Bug Bounty";
 
 export const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -34,6 +35,20 @@ export async function threadId(env: Env): Promise<number | undefined> {
   return undefined; // not a forum, or the bot can't manage topics: post to the main chat
 }
 
+/** Bug bounty / cyber notifications get their own topic so wins don't drown in job-hunter chatter. */
+export async function bountyThreadId(env: Env): Promise<number | undefined> {
+  if (env.TELEGRAM_BOUNTY_THREAD_ID) return Number(env.TELEGRAM_BOUNTY_THREAD_ID) || undefined;
+  const saved = await getSetting<number>(env, "telegram_thread_bounty").catch(() => null);
+  if (saved) return saved;
+  const r = await api(env, "createForumTopic", { chat_id: env.TELEGRAM_CHAT_ID, name: BOUNTY_TOPIC_NAME, icon_color: 0xd67e53 });
+  const id = (r.result as { message_thread_id?: number } | undefined)?.message_thread_id;
+  if (r.ok && id) {
+    await setSetting(env, "telegram_thread_bounty", id);
+    return id;
+  }
+  return undefined;
+}
+
 export function telegramConfigured(env: Env): boolean {
   return !!(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID);
 }
@@ -42,11 +57,12 @@ export function telegramConfigured(env: Env): boolean {
 export async function send(
   env: Env,
   html: string,
-  opts: { silent?: boolean; replyTo?: number } = {},
+  opts: { silent?: boolean; replyTo?: number; topic?: "hub" | "bounty" } = {},
 ): Promise<{ messageId: number | null; error: string | null; uncertain?: boolean }> {
   if (!telegramConfigured(env)) return { messageId: null, error: "Telegram is not configured (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)" };
   try {
-    const thread = await threadId(env);
+    const bounty = opts.topic === "bounty";
+    const thread = bounty ? await bountyThreadId(env) : await threadId(env);
     const post = (t?: number) =>
       api(env, "sendMessage", {
         chat_id: env.TELEGRAM_CHAT_ID,
@@ -60,7 +76,7 @@ export async function send(
     let r = await post(thread);
     if (!r.ok && thread && /thread|topic/i.test(r.description ?? "")) {
       // Topic was deleted: forget it and fall back to the main chat (a new topic is made next time).
-      await setSetting(env, "telegram_thread", 0);
+      await setSetting(env, bounty ? "telegram_thread_bounty" : "telegram_thread", 0);
       r = await post(undefined);
     }
     const id = (r.result as { message_id?: number } | undefined)?.message_id ?? null;
@@ -73,6 +89,11 @@ export async function send(
 /** Send an HTML message. Returns an error string instead of throwing. */
 export async function notify(env: Env, html: string, opts: { silent?: boolean } = {}): Promise<string | null> {
   return (await send(env, html, opts)).error;
+}
+
+/** Send an HTML message to the Bug Bounty topic (cyber runs, validations, findings, report drafts). */
+export async function notifyBounty(env: Env, html: string, opts: { silent?: boolean } = {}): Promise<string | null> {
+  return (await send(env, html, { ...opts, topic: "bounty" })).error;
 }
 
 const adminCache = new Map<number, { at: number; ok: boolean }>();

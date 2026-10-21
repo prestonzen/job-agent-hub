@@ -38,7 +38,7 @@ import { coverLetterFile, makeCoverLetter } from "./coverletters";
 import { prepNow, saveKit } from "./kits";
 import { PHASES, runFeeds, type Phase } from "./feeds";
 import { createSchedule, deleteSchedule, listSchedules, tick, updateSchedule, type ScheduleKind } from "./schedules";
-import { notify, esc, setHubWebhook, telegramConfigured, webhookInfo } from "./telegram";
+import { notify, notifyBounty, esc, setHubWebhook, telegramConfigured, webhookInfo } from "./telegram";
 import { handleTelegramUpdate } from "./telegram-bot";
 import { getCodeRequest, requestCode, waitForCode } from "./codes";
 import { addBountyEvent, bountyHosts, bountySummary, upsertBountyTech, type BountyEventInput } from "./bounty";
@@ -279,7 +279,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
         const lines = [what, `${b.program ?? "unknown program"}${b.target ? ` · ${b.target}` : ""}`];
         if (b.title) lines.push(b.title);
         lines.push(`${url.origin}/admin#bounty`);
-        ctx.waitUntil(notify(env, lines.join("\n")).then((e) => e && console.error("bounty notify:", e)));
+        ctx.waitUntil(notifyBounty(env, lines.join("\n")).then((e) => e && console.error("bounty notify:", e)));
       }
       return json({ ok: true, agent, ...created }, 201);
     }
@@ -360,9 +360,9 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       // a CONFIRMED finding is a loud one. Refuted/unconfirmed validation is bookkeeping —
       // it stays silent and rolls into the daily digest like other failures.
       if (kind === "finding" && b.status === "confirmed") {
-        await notify(env, `🚨 <b>Bounty finding</b> — ${esc(b.program ?? b.target ?? "?")} (${esc(b.platform ?? "?")})${b.severity ? ` [${esc(b.severity)}]` : ""}\n${esc(b.title ?? "")}${b.detail ? `\n${esc(b.detail.slice(0, 300))}` : ""}`);
+        await notifyBounty(env, `🚨 <b>Bounty finding</b> — ${esc(b.program ?? b.target ?? "?")} (${esc(b.platform ?? "?")})${b.severity ? ` [${esc(b.severity)}]` : ""}\n${esc(b.title ?? "")}${b.detail ? `\n${esc(b.detail.slice(0, 300))}` : ""}`);
       } else if (b.status === "done") {
-        await notify(env, `✅ <b>Bounty scan completed</b> — ${esc(b.program ?? b.target ?? "?")} (${esc(b.platform ?? "?")})\n${esc((b.detail ?? b.title ?? "").slice(0, 250))}`);
+        await notifyBounty(env, `✅ <b>Bounty scan completed</b> — ${esc(b.program ?? b.target ?? "?")} (${esc(b.platform ?? "?")})\n${esc((b.detail ?? b.title ?? "").slice(0, 250))}`);
       }
       return json({ ok: true, agent: "bounty-pipeline", ...created }, 201);
     }

@@ -2,7 +2,7 @@ import { db, getSetting, logEvent } from './db';
 import { HttpError } from './clickup';
 import { cancelRun, createRun, getRun, listRunners, listRuns } from './runs';
 import { eligibleAgents, taskSwitches, workSettings } from './work';
-import { esc, notify } from './telegram';
+import { esc, notifyBounty } from './telegram';
 import { agentModels } from './auth';
 import type { Env } from './types';
 
@@ -80,7 +80,7 @@ export async function completeCyber(env: Env, id:number, agent:string, body:Reco
  if(saved.meta.changes!==1)throw new HttpError(409,'Work ownership changed');
  await logEvent(env,{agent,type:'cyber_triage',message:`Evidence #${id}: ${verdict}; ${detail.toLowerCase()}`,identity});
  if(complete&&verdict==='draft'){
-  const error=await notify(env,`📝 <b>Bug bounty report draft ready for review</b>\n${esc(row.program)} · evidence #${id}\nReview the full report before any submission: https://jobhunter.prestonzen.com/admin#bounty`);
+  const error=await notifyBounty(env,`📝 <b>Bug bounty report draft ready for review</b>\n${esc(row.program)} · evidence #${id}\nReview the full report before any submission: https://jobhunter.prestonzen.com/admin#bounty`);
   if(error)console.error('cyber report draft notify:',error);
  }
  return {ok:true,id,verdict,pass:pass.sequence,complete};
@@ -143,7 +143,7 @@ export async function cyberTick(env:Env):Promise<number> {
     if(last){
      const verdict=last.verdict, detail=verdict==='draft'?'Multi-model report draft awaiting human review':verdict==='needs-validation'?'Multi-model review recommends further validation':'Multi-model review rejected evidence';
      await d.prepare("UPDATE cyber_work SET status='completed',agent=?,run_id=NULL,pass_agents=?,verdict=?,result=?,detail=? WHERE id=? AND status='pending'").bind(last.agent,JSON.stringify(plan),verdict,last.result,detail,w.id).run();
-     if(verdict==='draft')await notify(env,`📝 <b>Bug bounty report draft ready for review</b>\n${esc(w.program)} · evidence #${w.id}\nReview the full report before any submission: https://jobhunter.prestonzen.com/admin#bounty`);
+     if(verdict==='draft')await notifyBounty(env,`📝 <b>Bug bounty report draft ready for review</b>\n${esc(w.program)} · evidence #${w.id}\nReview the full report before any submission: https://jobhunter.prestonzen.com/admin#bounty`);
     }else await d.prepare("UPDATE cyber_work SET status='blocked',detail='No cyber review agents are enabled' WHERE id=?").bind(w.id).run();
     continue;
    }

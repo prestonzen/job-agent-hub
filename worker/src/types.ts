@@ -30,6 +30,8 @@ export interface Env {
   /** Telegram chat for notifications (Kaizen Apps Operations forum); TELEGRAM_THREAD_ID pins a topic. */
   TELEGRAM_CHAT_ID?: string;
   TELEGRAM_THREAD_ID?: string;
+  /** Pins the bug bounty topic (cyber runs, validations, findings); a topic is created if unset. */
+  TELEGRAM_BOUNTY_THREAD_ID?: string;
 
   // --- secrets (wrangler pages secret put ...) ---
   /** Admin login token (24+ chars). Traded for a signed session cookie on /admin. */
