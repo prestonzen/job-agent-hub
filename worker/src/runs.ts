@@ -1,6 +1,7 @@
 import { HttpError } from "./clickup";
 import { agentInstructions } from "./instructions";
 import { esc, notify, notifyBounty } from "./telegram";
+import { agentName } from "./names";
 import type { Env } from "./types";
 import { db as eventDb, getSetting, setSetting } from "./db";
 import { EMPTY_OUTCOME, TASKS, inferRunTask, outcomeSummary, taskSwitches, workSettings, type RunOutcome, type RunTask } from "./work";
@@ -302,7 +303,7 @@ export async function appendLog(env: Env, id: number, runner: string, chunk: str
   if (!r) throw new HttpError(404, `run ${id} is not held by ${runner}`);
   if (r.kind === "login" && /https?:\/\//.test(chunk)) {
     const lines = chunk.split("\n").map((l) => l.trim()).filter((l) => /https?:\/\/|\b[A-Z0-9]{4}-[A-Z0-9]{4,}\b|code|expires/i.test(l));
-    await notify(env, `🔑 <b>${esc(r.agent)} login</b> on ${esc(runner)}: open the link and approve.\n${lines.map((l) => esc(l)).join("\n")}\n\n<i>Don't use /login again until this one finishes; that would cancel this code.</i>`);
+    await notify(env, `🔑 <b>${esc(agentName(r.agent))} login</b> on ${esc(runner)}: open the link and approve.\n${lines.map((l) => esc(l)).join("\n")}\n\n<i>Don't use /login again until this one finishes; that would cancel this code.</i>`);
   }
   return { cancel: !!r.cancel || r.status !== "running" };
 }
@@ -347,8 +348,8 @@ export async function finishRun(env: Env, id: number, runner: string, f: { exitC
       await notify(
         env,
         resumes
-          ? `⏳ <b>${esc(r.agent)}</b> paused: ${esc(quota.label)} (run #${id}). Resumes automatically ${esc(when)}.`
-          : `⏸️ <b>${esc(r.agent)}</b> switched off: ${esc(quota.label)} (run #${id}). ${quota.kind === "auth" ? "Sign in on the runner, then turn it on" : "Auto-resume is off for this agent; turn it on"} in the agent manager.`,
+          ? `⏳ <b>${esc(agentName(r.agent))}</b> paused: ${esc(quota.label)} (run #${id}). Resumes automatically ${esc(when)}.`
+          : `⏸️ <b>${esc(agentName(r.agent))}</b> switched off: ${esc(quota.label)} (run #${id}). ${quota.kind === "auth" ? "Sign in on the runner, then turn it on" : "Auto-resume is off for this agent; turn it on"} in the agent manager.`,
         { silent: resumes && quota.kind !== "auth" },
       );
   }
@@ -387,7 +388,7 @@ export async function finishRun(env: Env, id: number, runner: string, f: { exitC
         .map((l) => esc(l));
       await deliver(
         env,
-        `✅ Run #${id} <b>${esc(r.agent)}</b> (${esc(result.task)}) on ${esc(runner)} after ${mins} min\n${esc(result.summary ?? status)}${bullets.length ? `\n${bullets.join("\n")}` : ""}`,
+        `✅ Run #${id} <b>${esc(agentName(r.agent))}</b> (${esc(result.task)}) on ${esc(runner)} after ${mins} min\n${esc(result.summary ?? status)}${bullets.length ? `\n${bullets.join("\n")}` : ""}`,
       );
     }
   }

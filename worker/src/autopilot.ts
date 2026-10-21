@@ -6,6 +6,7 @@ import { checkJob, getPolicy, pacingState } from "./pacing";
 import { createRun, listRunners, listRuns } from "./runs";
 import { BROAD_SOURCE_PROMPT } from "./sourcing";
 import { processFollowUps } from "./followups";
+import { agentName } from "./names";
 import { runFeeds } from "./feeds";
 import { maybeLaunchPrep } from "./kits";
 import { esc, notify } from "./telegram";
@@ -308,7 +309,7 @@ export async function autopilotTick(env: Env): Promise<string | null> {
       const seen = await getSetting<number>(env, `autopilot_paused_${agent}`).catch(() => null);
       if (seen !== last) {
         await setSetting(env, `autopilot_paused_${agent}`, last);
-        await notify(env, `⚠️ <b>Autopilot paused ${esc(agent)}</b>: ${streak} runs failed in a row (latest #${last}). Check the log, fix it, then <code>/resume</code> or switch it on again in the admin.`);
+        await notify(env, `⚠️ <b>Autopilot paused ${esc(agentName(agent))}</b>: ${streak} runs failed in a row (latest #${last}). Check the log, fix it, then <code>/resume</code> or switch it on again in the admin.`);
       }
       continue;
     }

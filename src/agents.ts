@@ -16,11 +16,26 @@ export const agentColor = (name: string | null | undefined) => {
   return (AGENT_ORDER as readonly string[]).includes(k) ? `var(--agent-${k})` : "var(--agent-unknown)";
 };
 
+/** Display names for the instances (keep worker/src/names.ts in step). */
+export const AGENT_NAMES: Record<string, string> = {
+  claude: "Claude 1 · Main (Preston)",
+  claude2: "Claude 2 · Galaxy Contact",
+  claude3: "Claude 3 · Roman",
+  kimi: "Kimi 1 · Preston",
+  kimi2: "Kimi 2 · Roman",
+  codex: "Codex · Preston",
+  gemini: "Gemini · free keys (email lane)",
+  mistral: "Mistral · Vibe",
+  deepseek: "DeepSeek · via Claude Code",
+  qwen: "Qwen Code",
+  ollama: "Ollama · sparky (local)",
+  feeds: "Feeds (no LLM)",
+  hub: "Hub",
+};
 export const agentLabel = (name: string | null | undefined) => {
   const k = agentKey(name);
   if (k === "unknown") return "Unknown";
-  if (k === "deepseek") return "DeepSeek";
-  return k[0].toUpperCase() + k.slice(1);
+  return AGENT_NAMES[k] ?? k[0].toUpperCase() + k.slice(1);
 };
 
 /** Palette slot order first, then anything unexpected alphabetically. */
