@@ -36,7 +36,7 @@ import { DEFAULT_POLICY, getPolicy, pacingState, pacingSummary, type PacingPolic
 import { deleteResume, listResumes, pickResume, resumeFile, updateResume, uploadResume } from "./resumes";
 import { coverLetterFile, makeCoverLetter } from "./coverletters";
 import { prepNow, saveKit } from "./kits";
-import { runFeeds } from "./feeds";
+import { PHASES, runFeeds, type Phase } from "./feeds";
 import { createSchedule, deleteSchedule, listSchedules, tick, updateSchedule, type ScheduleKind } from "./schedules";
 import { notify, esc, setHubWebhook, telegramConfigured, webhookInfo } from "./telegram";
 import { handleTelegramUpdate } from "./telegram-bot";
@@ -498,7 +498,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       const b = await readJson<{ agent?: string }>(request).catch(() => ({}) as { agent?: string });
       return json(await prepNow(env, prep[1], b.agent ?? "claude"), 201);
     }
-    if (path === "/api/admin/feeds/run" && method === "POST") return json(await runFeeds(env, true));
+    if (path === "/api/admin/feeds/run" && method === "POST") { const ph = url.searchParams.get("phase"); return json(await runFeeds(env, true, PHASES.includes(ph as Phase) ? (ph as Phase) : undefined)); }
     // Tick an employer email as dealt with so it leaves the digest / /needs action list.
     const handled = path.match(/^\/api\/admin\/inbound\/([^/]+)\/handled$/);
     if (handled && method === "POST") return json({ ok: await markHandled(env, decodeURIComponent(handled[1])) });
