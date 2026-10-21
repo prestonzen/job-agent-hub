@@ -21,3 +21,5 @@ desktop.ini
 .demo-seed.sql
 .mailer-token.local.txt
 __pycache__/
+.huly-token.local.txt
+huly-mcp/node_modules/

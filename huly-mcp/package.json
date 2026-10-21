@@ -1,0 +1,21 @@
+{
+  "name": "job-agent-hub-huly-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server for the Job Hunter workspace on self-hosted Huly: issues (applications), statuses, custom fields, comments and playbook documents.",
+  "bin": { "huly-mcp": "server.mjs" },
+  "scripts": {
+    "start": "node server.mjs",
+    "smoke": "node smoke.mjs"
+  },
+  "dependencies": {
+    "@hcengineering/api-client": "0.7.423",
+    "@hcengineering/core": "0.7.423",
+    "@hcengineering/text": "0.7.423",
+    "@hcengineering/text-markdown": "0.7.423",
+    "@modelcontextprotocol/sdk": "^1.17.3",
+    "ws": "^8.18.0",
+    "zod": "^3.23.8"
+  }
+}
