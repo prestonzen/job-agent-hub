@@ -2,7 +2,7 @@ import { assistedQueue } from "./assisted";
 import { buildAnalytics } from "./analytics";
 import { sendApplicationEmail, sendTestEmail } from "./emailer";
 import { adminUser, agentName, agentNames, clearedCookie, isAdminToken, resolveIdentity, sessionCookie } from "./auth";
-import { HttpError, addComment, appendDocPage, getDocPage, getPlaybook, listDocPages, patchDocPage, replayWrite, requeueTask, setStatus } from "./clickup";
+import { HttpError, addComment, appendDocPage, ensureCyberList, getDocPage, getPlaybook, listDocPages, patchDocPage, replayWrite, requeueTask, setStatus } from "./clickup";
 import { flushOutbox, mirrorAge, mirrorTasks, outboxSize, usageToday } from "./mirror";
 import { isApplication } from "./classify";
 import { activeClaims, db as dbHandle, exportEvents, heartbeat, lastEventAt, listEvents, listHeartbeats, loadSnapshot, saveSnapshot, setSetting } from "./db";
@@ -374,6 +374,8 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     if (path === "/api/admin/bounty-hosts" && method === "GET") {
       return json(await bountyHosts(env, { tech: url.searchParams.get("tech"), program: url.searchParams.get("program"), limit: Number(url.searchParams.get("limit") ?? 100) }));
     }
+    // One-task-per-program ClickUp list for the cyber lane; idempotent.
+    if (path === "/api/admin/clickup/cyber-list" && method === "POST") return json(await ensureCyberList(env));
     if(path==='/api/admin/cyber' && method==='POST')return json(await enqueueCyber(env,await readJson(request)),201);
     const cyberReview=path.match(/^\/api\/admin\/cyber\/(\d+)\/review$/);
     if(cyberReview && method==='POST')return json(await reviewCyber(env,Number(cyberReview[1]),await readJson(request),adminName(env)));

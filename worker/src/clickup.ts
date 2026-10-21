@@ -386,3 +386,73 @@ async function fetchPlaybook(env: Env): Promise<string> {
   walk(pages);
   return out.join("\n\n");
 }
+
+// ---------- Bug Bounty / Cyber list ----------
+
+const CYBER_LIST_NAME = "Bug Bounty — Cyber Operations";
+
+/** Cyber pipeline stages as ClickUp statuses (override of the space defaults). */
+const CYBER_STATUSES = [
+  { status: "scoping", type: "open", orderindex: 0, color: "#7f77f1" },
+  { status: "scanning", type: "custom", orderindex: 1, color: "#04a9f4" },
+  { status: "validating", type: "custom", orderindex: 2, color: "#f9d900" },
+  { status: "report drafted", type: "custom", orderindex: 3, color: "#ff7fab" },
+  { status: "submitted", type: "custom", orderindex: 4, color: "#e65100" },
+  { status: "accepted", type: "done", orderindex: 5, color: "#6bc950" },
+  { status: "refuted", type: "closed", orderindex: 6, color: "#656f7d" },
+  { status: "parked", type: "custom", orderindex: 7, color: "#d92d20" },
+];
+
+/** Custom fields carried by every cyber task (program = one task). */
+const CYBER_FIELDS: Record<string, unknown>[] = [
+  { name: "Platform", type: "drop_down", type_config: { options: ["hackerone", "bugcrowd", "intigriti", "yeswehack", "research"].map((name, i) => ({ name, orderindex: i })) } },
+  { name: "Severity", type: "drop_down", type_config: { options: ["critical", "high", "medium", "low", "info"].map((name, i) => ({ name, orderindex: i })) } },
+  { name: "Program URL", type: "url" },
+  { name: "Tech Stack", type: "text" },
+  { name: "Hosts Scanned", type: "number" },
+  { name: "Findings", type: "number" },
+  { name: "Payouts USD", type: "currency", type_config: { precision: 2, currency_type: "USD" } },
+  { name: "Last Scan", type: "date" },
+];
+
+/**
+ * One-task-per-bounty-program list, created next to the jobs list (same space).
+ * Idempotent: a stored setting short-circuits, and a half-created list/field set is
+ * completed rather than duplicated. Scan summaries and tech stacks flow in via syncCyberTask.
+ */
+export async function ensureCyberList(env: Env): Promise<{ listId: string; created: boolean }> {
+  const existing = await getSetting<string>(env, "clickup_cyber_list").catch(() => null);
+  if (existing) return { listId: existing, created: false };
+
+  const jobsList = (await cu(env, `/list/${env.CLICKUP_LIST_ID}`)) as { space?: { id: string } };
+  const spaceId = jobsList.space?.id;
+  if (!spaceId) throw new HttpError(502, "Could not resolve the jobs list's space");
+
+  const lists = (await cu(env, `/space/${spaceId}/list?archived=false`)) as { lists?: { id: string; name: string }[] };
+  let list = (lists.lists ?? []).find((l) => l.name === CYBER_LIST_NAME);
+  if (!list) {
+    list = (await cu(env, `/space/${spaceId}/list`, {
+      method: "POST",
+      body: JSON.stringify({
+        name: CYBER_LIST_NAME,
+        markdown_content:
+          "One task per bug bounty program. The bounty pipeline keeps statuses, scan counts, tech stacks and findings in sync from the hub (bounty_events). Reports are drafts until Preston approves submission.",
+      }),
+    })) as { id: string; name: string };
+  }
+
+  await cu(env, `/list/${list.id}`, {
+    method: "PUT",
+    body: JSON.stringify({ override_statuses: true, statuses: CYBER_STATUSES }),
+  });
+
+  const have = (await cu(env, `/list/${list.id}/field`)) as { fields?: { name?: string }[] };
+  const present = new Set((have.fields ?? []).map((f) => f.name));
+  for (const field of CYBER_FIELDS) {
+    if (present.has(field.name as string)) continue;
+    await cu(env, `/list/${list.id}/field`, { method: "POST", body: JSON.stringify(field) });
+  }
+
+  await setSetting(env, "clickup_cyber_list", list.id);
+  return { listId: list.id, created: true };
+}
