@@ -42,7 +42,7 @@ import { createSchedule, deleteSchedule, listSchedules, tick, updateSchedule, ty
 import { notify, notifyBounty, esc, setHubWebhook, telegramConfigured, webhookInfo } from "./telegram";
 import { handleTelegramUpdate } from "./telegram-bot";
 import { getCodeRequest, requestCode, waitForCode } from "./codes";
-import { addBountyEvent, bountyHosts, bountySummary, upsertBountyTech, type BountyEventInput } from "./bounty";
+import { addBountyEvent, bountyHosts, bountySummary, scanReportLines, upsertBountyTech, type BountyEventInput } from "./bounty";
 import { cyberTick, cyberSummary, enqueueCyber, getCyberWork, completeCyber, reviewCyber } from "./cyber";
 import { toPublicSummary } from "./sanitize";
 import type { Env, PublicSummary } from "./types";
@@ -365,7 +365,13 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       if (kind === "finding" && b.status === "confirmed") {
         await notifyBounty(env, `🚨 <b>Bounty finding</b> — ${esc(b.program ?? b.target ?? "?")} (${esc(b.platform ?? "?")})${b.severity ? ` [${esc(b.severity)}]` : ""}\n${esc(b.title ?? "")}${b.detail ? `\n${esc(b.detail.slice(0, 300))}` : ""}`);
       } else if (b.status === "done") {
-        await notifyBounty(env, `✅ <b>Bounty scan completed</b> — ${esc(b.program ?? b.target ?? "?")} (${esc(b.platform ?? "?")})\n${esc((b.detail ?? b.title ?? "").slice(0, 250))}`);
+        // Structured scan report (Preston, 2026-10-22): labeled lines instead of the scanner's run-on funnel.
+        const lines = scanReportLines(b.detail ?? b.title ?? "");
+        await notifyBounty(env, [
+          `✅ <b>Bounty scan completed</b> — ${esc(b.program ?? b.target ?? "?")} · ${esc(b.platform ?? "?")}`,
+          ...lines.map((l) => esc(l)),
+          `${url.origin}/admin#bounty`,
+        ].join("\n"));
       }
       return json({ ok: true, agent: "bounty-pipeline", ...created }, 201);
     }

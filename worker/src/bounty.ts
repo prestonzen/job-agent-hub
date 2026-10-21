@@ -80,6 +80,28 @@ export interface BountySummary {
 
 const s = (v: unknown, n: number): string | null => (typeof v === "string" && v.trim() ? v.trim().slice(0, n) : null);
 
+/**
+ * The scanner's scan-done detail is one run-on funnel ("0 wildcard roots and 7 exact targets ->
+ * 7 in-scope hosts -> 5 live hosts -> 0\n0 nuclei observations. Raw results on CT 134: /root/bbscans/X").
+ * Turn it into labeled Telegram lines; anything unrecognized is returned as-is (truncated).
+ */
+export function scanReportLines(detail: string): string[] {
+  const d = detail.replace(/\s+/g, " ").trim();
+  if (!d) return [];
+  const lines: string[] = [];
+  const scope = d.match(/(\d+)\s+wildcard roots? and (\d+)\s+exact targets?/);
+  if (scope) lines.push(`Scope: ${scope[1]} wildcard roots, ${scope[2]} exact targets`);
+  const funnel = d.match(/(\d+)\s+in-scope hosts? ->\s*(\d+)\s+live hosts? ->\s*(\d+)/);
+  if (funnel) lines.push(`Funnel: ${funnel[1]} in-scope hosts → ${funnel[2]} live → ${funnel[3]} nuclei hits`);
+  const nuclei = d.match(/(\d+)\s+nuclei observations?/);
+  if (nuclei && !funnel) lines.push(`Nuclei observations: ${nuclei[1]}`);
+  const wayback = d.match(/wayback harvest:?\s*(\d+)\s*(?:raw\s*)?urls?/i);
+  if (wayback) lines.push(`Wayback URLs harvested: ${wayback[1]}`);
+  const raw = d.match(/Raw results on CT ?134:\s*(\S+)/i);
+  if (raw) lines.push(`Raw results (CT134): ${raw[1]}`);
+  return lines.length ? lines : [d.slice(0, 250)];
+}
+
 /** Record one bounty-lane event. Agent-authenticated; called by runner tooling and agents. */
 export async function addBountyEvent(env: Env, agent: string, body: BountyEventInput): Promise<{ id: number }> {
   const kind = body.kind?.toLowerCase() ?? "";
