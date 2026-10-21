@@ -231,6 +231,34 @@ export async function techMatrixStats(env: Env): Promise<{ stats: BountySummary[
 
 const toEvent = (r: Row): BountyEvent => ({ ...r, kind: r.kind as BountyKind, at: new Date(r.at).toISOString() });
 
+/**
+ * Hosts running a given technology (or all hosts of one program), for the validation dispatcher
+ * on CT 134: a "Tech research: X" hypothesis needs a real in-scope host that runs X.
+ */
+export async function bountyHosts(env: Env, opts: { tech?: string | null; program?: string | null; limit?: number }): Promise<unknown[]> {
+  const d = await db(env);
+  const limit = Math.min(200, Math.max(1, opts.limit ?? 100));
+  if (opts.tech) {
+    const { results } = await d
+      .prepare(
+        `SELECT h.program, h.platform, h.host, h.status, h.title, h.last_seen
+         FROM bounty_hosts h, json_each(h.techs) je
+         WHERE LOWER(je.value) = LOWER(?1) ORDER BY h.last_seen DESC LIMIT ?2`,
+      )
+      .bind(opts.tech, limit)
+      .all();
+    return results;
+  }
+  if (opts.program) {
+    const { results } = await d
+      .prepare("SELECT program, platform, host, status, title, techs, last_seen FROM bounty_hosts WHERE program = ? ORDER BY last_seen DESC LIMIT ?")
+      .bind(opts.program, limit)
+      .all();
+    return results;
+  }
+  return [];
+}
+
 /** Totals over the whole bounty lane (bounty work is low-volume; no window needed yet). */
 export async function bountyTotals(env: Env): Promise<BountySummary["totals"]> {
   const d = await db(env);

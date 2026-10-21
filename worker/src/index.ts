@@ -41,7 +41,7 @@ import { createSchedule, deleteSchedule, listSchedules, tick, updateSchedule, ty
 import { notify, esc, setHubWebhook, telegramConfigured, webhookInfo } from "./telegram";
 import { handleTelegramUpdate } from "./telegram-bot";
 import { getCodeRequest, requestCode, waitForCode } from "./codes";
-import { addBountyEvent, bountySummary, upsertBountyTech, type BountyEventInput } from "./bounty";
+import { addBountyEvent, bountyHosts, bountySummary, upsertBountyTech, type BountyEventInput } from "./bounty";
 import { cyberTick, cyberSummary, enqueueCyber, getCyberWork, completeCyber, reviewCyber } from "./cyber";
 import { toPublicSummary } from "./sanitize";
 import type { Env, PublicSummary } from "./types";
@@ -368,6 +368,10 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     // Technology matrix: CT 134 pushes parsed httpx tech-detect rows after recon passes.
     if (path === "/api/admin/bounty-tech" && method === "POST") {
       return json(await upsertBountyTech(env, await readJson(request)), 201);
+    }
+    // Hosts running a technology (validation dispatcher picks targets for research hypotheses).
+    if (path === "/api/admin/bounty-hosts" && method === "GET") {
+      return json(await bountyHosts(env, { tech: url.searchParams.get("tech"), program: url.searchParams.get("program"), limit: Number(url.searchParams.get("limit") ?? 100) }));
     }
     if(path==='/api/admin/cyber' && method==='POST')return json(await enqueueCyber(env,await readJson(request)),201);
     const cyberReview=path.match(/^\/api\/admin\/cyber\/(\d+)\/review$/);
