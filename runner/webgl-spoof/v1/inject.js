@@ -1,5 +1,5 @@
 // WebGL identity normalization: the container has no GPU, so Chrome reports the
-// SwiftShader software renderer — an instant automation flag to reCAPTCHA/Turnstile.
+// SwiftShader software renderer - an instant automation flag to reCAPTCHA/Turnstile.
 // Report a common real-GPU string instead (constant per agent profile = stable machine).
 // Pixel output still comes from SwiftShader; no consumer anti-bot compares the two.
 (() => {

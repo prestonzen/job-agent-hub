@@ -27,10 +27,17 @@ install -d -o "$RUN_USER" -g "$RUN_USER" -m 700 "$RUN_HOME/resume" /var/lib/job-
 install -d -m 755 /opt/job-agent-runner
 install -m 644 "$HERE/runner.mjs" "$HERE/usage.mjs" "$HERE/configure-agents.mjs" /opt/job-agent-runner/
 install -m 755 "$HERE/update.sh" "$HERE/form-assist.mjs" "$HERE/inbox-assist.mjs" "$HERE/with-key.mjs" "$HERE/gpu-gate.mjs" /opt/job-agent-runner/
-# WebGL renderer normalization extension (one stable variant per agent profile).
+# WebGL renderer normalization extension. Branded Google Chrome ignores --load-extension,
+# so this ships as a CRX force-installed into every profile via ExtensionInstallForcelist
+# policy, served by a tiny local update server (see webgl-spoof/install-webgl-spoof.sh).
+# The signing key decides the extension id — preserve it across redeploys so the
+# force-installed copy keeps updating in place instead of dangling a dead id.
+[ -f /opt/job-agent-runner/webgl-spoof/v1.pem ] && cp /opt/job-agent-runner/webgl-spoof/v1.pem /tmp/webgl-spoof-v1.pem.bak
 rm -rf /opt/job-agent-runner/webgl-spoof
 cp -r "$HERE/webgl-spoof" /opt/job-agent-runner/webgl-spoof
+[ -f /tmp/webgl-spoof-v1.pem.bak ] && { mv /tmp/webgl-spoof-v1.pem.bak /opt/job-agent-runner/webgl-spoof/v1.pem; }
 chmod -R a+rX /opt/job-agent-runner/webgl-spoof
+[ "$MODE" = server ] && bash /opt/job-agent-runner/webgl-spoof/install-webgl-spoof.sh
 install -m 755 "$HERE/set-key.sh" /usr/local/bin/jar-set-key
 chown "root:$RUN_USER" "$CONFIG" && chmod 640 "$CONFIG"
 

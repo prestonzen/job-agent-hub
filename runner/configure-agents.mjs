@@ -49,18 +49,9 @@ const pwConfigFor = (agent) => {
     isMobile: false,
     hasTouch: false,
   };
-  // WebGL renderer normalization: the container's SwiftShader string is an instant bot flag.
-  // Each agent gets one stable real-GPU variant (deterministic by name — a returning user
-  // keeps their machine; the fleet doesn't share a single renderer).
-  const variant = `v${1 + (hash % 4)}`;
-  const ext = `/opt/job-agent-runner/webgl-spoof/${variant}`;
-  const args = base.browser.launchOptions?.args ?? [];
-  if (!args.some((a) => a.includes("webgl-spoof"))) {
-    base.browser.launchOptions = {
-      ...(base.browser.launchOptions ?? {}),
-      args: [...args, `--load-extension=${ext}`, `--disable-extensions-except=${ext}`],
-    };
-  }
+  // WebGL renderer normalization is NOT done here: branded Google Chrome ignores
+  // --load-extension entirely, so the spoof ships as a force-installed extension via
+  // ExtensionInstallForcelist policy (runner/webgl-spoof/install-webgl-spoof.sh).
   const p = `${PROFILE_ROOT}/${agent}/pw-config.json`;
   mkdirSync(dirname(p), { recursive: true }); // first run of a newly added agent
   writeFileSync(p, JSON.stringify(base, null, 2));
