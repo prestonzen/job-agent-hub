@@ -75,8 +75,11 @@ ssh root@kloud "pct exec 134 -- sh /opt/darkmoon-smoke-test.sh"
    latest evidence, check time, source URL and content hash. The classifier is local text matching;
    it does not currently use Ollama, and policy wording outside its patterns can be missed.
 2. **Daily scans** — `bounty-daily.timer` (05:17 UTC) runs `bounty/bounty-daily.sh`: refresh the
-   full queue, then scan up to 6 not-recently-scanned programs sequentially (`TOP` tunable). Queueing
-   all default-allow programs does not increase the number scanned in a run.
+   full queue, then scan up to 12 not-recently-scanned programs with up to `PAR=4` scanner
+   containers in flight (`TOP`/`PAR` tunables; a `flock` skips overlapping batches). Containers
+   always work different companies, so per-target rate stays 1 req/s (`SCAN_RPS=1` each) while
+   wall-clock drops ~4x. Per-program logs fold back into `/root/bounty-daily.log` in batch order.
+   Queueing all default-allow programs does not increase the number scanned in a run.
    Each scan (`bounty/bounty-scan.sh`): subfinder → httpx → nuclei (non-intrusive, rate-limited),
    posts a summary event to the hub (`POST /api/admin/bounty-events`) → admin
    **Bug bounty** tab. CT 134 authenticates as a service; these events are attributed to

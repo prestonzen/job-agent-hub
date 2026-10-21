@@ -2,19 +2,29 @@
 # bounty-daily.sh — daily bounty lane routine for CT 134.
 #
 # 1. Refresh the program queue from bounty-targets-data (hourly-updated upstream).
-# 2. Pick the top N not-recently-scanned programs and scan them sequentially at one
-#    request per second to keep traffic low and policy limits easy to honor.
-#    Programs listed in /opt/bounty/priority.txt (one name per line) are always
-#    picked first — regenerate that file from the unscanned backlog as needed.
-# 3. Each scan posts its summary to the hub Bug bounty tab.
+# 2. Pick the top N not-recently-scanned programs and scan them with up to PAR
+#    concurrent scanner containers (default 4). Per-target politeness is unchanged:
+#    each container stays at SCAN_RPS=1 and every container works a DIFFERENT
+#    company, so no single target sees more than 1 req/s — the daily wall-clock
+#    just shrinks ~4x. Programs listed in /opt/bounty/priority.txt (one name per
+#    line) are always picked first — regenerate that file from the unscanned
+#    backlog as needed.
+# 3. Each scan posts its summary to the hub Bug bounty tab (per-company, so
+#    parallel ingest is safe: the hub upserts one Huly issue per program).
 #
 # Run by systemd timer (bounty-daily.timer, bounty-daily-evening.timer) or by hand:
-#   ./bounty-daily.sh            # 8 sequential scans
-#   TOP=6 ./bounty-daily.sh
+#   ./bounty-daily.sh              # 12 programs, 4 at a time
+#   TOP=6 ./bounty-daily.sh        # 6 programs, 4 at a time
+#   PAR=2 TOP=8 ./bounty-daily.sh  # gentler: 2 containers at a time
 
 set -u
 TOP=${TOP:-12}
+PAR=${PAR:-4}
 LOG=/root/bounty-daily.log
+
+# Only one batch at a time: skip if a previous timer/manual run is still going.
+exec 9>/tmp/bounty-daily.lock
+flock -n 9 || { echo "bounty-daily already running; skipping" | tee -a "$LOG"; exit 0; }
 
 echo "=== bounty-daily $(date -u) ===" >> "$LOG"
 
@@ -57,19 +67,38 @@ print("\n".join(picked))
 EOF
 
 N=$(grep -c . /tmp/bounty-batch.txt || true)
-echo "[2/2] scanning $N programs sequentially" | tee -a "$LOG"
+echo "[2/2] scanning $N programs, up to $PAR at a time" | tee -a "$LOG"
 cat /tmp/bounty-batch.txt | tee -a "$LOG" | sed 's/^/  /'
 
-DONE_LIST=""
+# Parallel scan pool. Each scan logs to its own file so concurrent output never
+# interleaves; per-program logs are concatenated into the main log (batch order)
+# once the pool drains. TAB-separated because program names contain spaces.
 while IFS= read -r PROGRAM; do
   [ -n "$PROGRAM" ] || continue
-  bash /opt/bounty/bounty-scan.sh "$PROGRAM" >> "$LOG" 2>&1
-  DONE_LIST="$DONE_LIST $PROGRAM"
-done < /tmp/bounty-batch.txt
+  SAFE=$(echo "$PROGRAM" | tr -cs 'A-Za-z0-9' '-' | sed 's/^-//;s/-$//')
+  printf '%s\t%s\n' "$SAFE" "$PROGRAM"
+done < /tmp/bounty-batch.txt > /tmp/bounty-batch-safe.tsv
+
+xargs -P "$PAR" -d '\n' -I{} sh -c '
+  SAFE=$(printf "%s" "$1" | cut -f1)
+  PROGRAM=$(printf "%s" "$1" | cut -f2-)
+  bash /opt/bounty/bounty-scan.sh "$PROGRAM" > "/root/bounty-daily.$SAFE.log" 2>&1
+  echo "scanned: $PROGRAM (rc=$?)"
+' _ {} < /tmp/bounty-batch-safe.tsv | tee -a "$LOG"
+
+# Fold per-program logs into the main log in batch order.
+while IFS=$'\t' read -r SAFE _; do
+  [ -f "/root/bounty-daily.$SAFE.log" ] || continue
+  { echo "--- $SAFE ---"; cat "/root/bounty-daily.$SAFE.log"; } >> "$LOG"
+  rm -f "/root/bounty-daily.$SAFE.log"
+done < /tmp/bounty-batch-safe.tsv
 
 # Rotate: move scanned programs to the end of priority.txt so the next batch
 # picks the unscanned tail instead of re-scanning the same front of the list.
-[ -n "$DONE_LIST" ] && python3 /opt/bounty/bounty-rotate.py $DONE_LIST >> "$LOG" 2>&1 || true
+if [ -s /tmp/bounty-batch.txt ]; then
+  # shellcheck disable=SC2046
+  python3 /opt/bounty/bounty-rotate.py $(grep . /tmp/bounty-batch.txt) >> "$LOG" 2>&1 || true
+fi
 
 echo "=== done $(date -u) ===" >> "$LOG"
 tail -5 "$LOG"
