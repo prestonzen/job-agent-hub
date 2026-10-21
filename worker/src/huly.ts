@@ -289,7 +289,9 @@ export async function listIssues(cfg: HulyCfg, p: Project): Promise<HulyIssue[]>
   return findAll<HulyIssue>(cfg, "tracker:class:Issue", { space: p.id }, { limit: 5000 });
 }
 export async function getIssue(cfg: HulyCfg, p: Project, id: string): Promise<HulyIssue> {
-  const i = (await findOne<HulyIssue>(cfg, "tracker:class:Issue", { _id: id, space: p.id })) ?? (await findOne<HulyIssue>(cfg, "tracker:class:Issue", { identifier: id.toUpperCase(), space: p.id }));
+  const byId = await findOne<HulyIssue>(cfg, "tracker:class:Issue", { _id: id, space: p.id });
+  // The REST find-all drops `_id` from a document matched by `_id`; put it back, everything downstream keys on it.
+  const i = byId ? { ...byId, _id: byId._id ?? id } : await findOne<HulyIssue>(cfg, "tracker:class:Issue", { identifier: id.toUpperCase(), space: p.id });
   if (!i) throw new HttpError(404, `no issue ${id}`);
   return i;
 }
