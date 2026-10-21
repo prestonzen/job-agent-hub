@@ -1,4 +1,4 @@
-import { getSetting, setSetting } from "./db";
+import { db, getSetting, setSetting } from "./db";
 import { countCall, enqueueWrite } from "./mirror";
 import type { Env, Task } from "./types";
 
@@ -455,4 +455,102 @@ export async function ensureCyberList(env: Env): Promise<{ listId: string; creat
 
   await setSetting(env, "clickup_cyber_list", list.id);
   return { listId: list.id, created: true };
+}
+
+/** Status order for the cyber list; a program's task only ever advances, never regresses. */
+const CYBER_STATUS_ORDER = ["scoping", "scanning", "validating", "report drafted", "submitted", "accepted"];
+
+interface CyberSyncInput {
+  program: string;
+  platform?: string | null;
+  kind?: string;
+  status?: string | null;
+  severity?: string | null;
+  detail?: string | null;
+  title?: string | null;
+  amount?: number | null;
+}
+
+/** Map a bounty event to the list status the program's task should sit at (null = keep current). */
+function cyberStatusFor(i: CyberSyncInput): string | null {
+  if (i.kind === "payout") return "accepted";
+  if (i.kind === "report") return "report drafted";
+  if (i.kind === "finding" && i.status === "confirmed") return "validating";
+  if (i.kind === "scan") return "scanning";
+  if (i.kind === "program") return "scoping";
+  return null;
+}
+
+/**
+ * Mirror a bounty event into the cyber ClickUp list: one task per program, fields refreshed
+ * from the hub's own tables (host/finding counts, tech stack, payouts), status advanced, and
+ * the event's summary appended as a comment. Never throws into the caller's request path —
+ * failures surface as console errors and the next event retries the state.
+ */
+export async function syncCyberTask(env: Env, input: CyberSyncInput): Promise<void> {
+  const program = input.program.trim();
+  if (!program || program === "Pipeline Test") return;
+  const listId = await getSetting<string>(env, "clickup_cyber_list").catch(() => null);
+  if (!listId) return; // list not provisioned yet
+
+  // Find the program's task (cyber lists are small; a page or two at most).
+  let task: { id: string; status: { status: string } } | undefined;
+  for (let page = 0; page < 5 && !task; page++) {
+    const res = (await cu(env, `/list/${listId}/task?include_closed=true&page=${page}`)) as { tasks?: { id: string; name: string; status: { status: string } }[] };
+    const tasks = res.tasks ?? [];
+    task = tasks.find((t) => t.name === program);
+    if (tasks.length < 100) break;
+  }
+  if (!task) {
+    const created = (await cu(env, `/list/${listId}/task`, {
+      method: "POST",
+      body: JSON.stringify({ name: program, description: "Bug bounty program. Fields and comments are synced from the hub's bounty pipeline.", status: "scoping" }),
+    })) as { id: string; status: { status: string } };
+    task = { id: created.id, status: created.status };
+  }
+
+  // Aggregate the hub's own tables for this program.
+  const d = await db(env);
+  const counts = (await d
+    .prepare(`SELECT COUNT(*) AS scans, SUM(kind='finding') AS findings, SUM(kind='payout' AND amount IS NOT NULL) AS payoutEvents, SUM(CASE WHEN kind='payout' THEN amount ELSE 0 END) AS payouts FROM bounty_events WHERE program = ?`)
+    .bind(program)
+    .first<{ scans: number; findings: number | null; payouts: number | null }>()) ?? { scans: 0, findings: 0, payouts: 0 };
+  const techRows = await d
+    .prepare(`SELECT DISTINCT je.value AS tech FROM bounty_hosts, json_each(bounty_hosts.techs) je WHERE program = ? LIMIT 20`)
+    .bind(program)
+    .all<{ tech: string }>()
+    .catch(() => ({ results: [] as { tech: string }[] }));
+
+  // Resolve field ids (and drop-down option ids) once per sync.
+  const fields = (await cu(env, `/list/${listId}/field`)) as { fields?: CuField[] };
+  const byName = new Map((fields.fields ?? []).map((f) => [f.name, f]));
+  const optionId = (field: string, name: string) =>
+    byName.get(field)?.type_config?.options?.find((o) => o.name.toLowerCase() === name.toLowerCase())?.id;
+
+  const custom: { id: string; value: unknown }[] = [];
+  const push = (name: string, value: unknown) => {
+    const f = byName.get(name);
+    if (f && value !== undefined && value !== null && value !== "") custom.push({ id: f.id, value });
+  };
+  if (input.platform) { const oid = optionId("Platform", input.platform); if (oid) push("Platform", oid); }
+  if (input.severity) { const oid = optionId("Severity", input.severity); if (oid) push("Severity", oid); }
+  push("Hosts Scanned", counts.scans ?? 0);
+  push("Findings", counts.findings ?? 0);
+  if ((counts.payouts ?? 0) > 0) push("Payouts USD", Math.round((counts.payouts ?? 0) * 100) / 100);
+  if (input.kind === "scan") push("Last Scan", Date.now());
+  const techs = techRows.results.map((r) => r.tech).filter(Boolean).slice(0, 15).join(", ");
+  if (techs) push("Tech Stack", techs);
+
+  // Advance the status only forward through the pipeline.
+  const next = cyberStatusFor(input);
+  const current = (task.status.status ?? "").toLowerCase();
+  const advance = next && CYBER_STATUS_ORDER.indexOf(next) > CYBER_STATUS_ORDER.indexOf(current) ? next : null;
+
+  await cu(env, `/task/${encodeURIComponent(task.id)}`, {
+    method: "PUT",
+    body: JSON.stringify({ ...(advance ? { status: advance } : {}), ...(custom.length ? { custom_fields: custom } : {}) }),
+  });
+
+  const summary = (input.detail ?? input.title ?? "").trim();
+  if (summary) await addComment(env, task.id, `[${input.kind}${input.status ? `/${input.status}` : ""}] ${summary}`.slice(0, 1500));
 }

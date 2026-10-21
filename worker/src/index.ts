@@ -2,7 +2,7 @@ import { assistedQueue } from "./assisted";
 import { buildAnalytics } from "./analytics";
 import { sendApplicationEmail, sendTestEmail } from "./emailer";
 import { adminUser, agentName, agentNames, clearedCookie, isAdminToken, resolveIdentity, sessionCookie } from "./auth";
-import { HttpError, addComment, appendDocPage, ensureCyberList, getDocPage, getPlaybook, listDocPages, patchDocPage, replayWrite, requeueTask, setStatus } from "./clickup";
+import { HttpError, addComment, appendDocPage, ensureCyberList, getDocPage, getPlaybook, listDocPages, patchDocPage, replayWrite, requeueTask, setStatus, syncCyberTask } from "./clickup";
 import { flushOutbox, mirrorAge, mirrorTasks, outboxSize, usageToday } from "./mirror";
 import { isApplication } from "./classify";
 import { activeClaims, db as dbHandle, exportEvents, heartbeat, lastEventAt, listEvents, listHeartbeats, loadSnapshot, saveSnapshot, setSetting } from "./db";
@@ -273,6 +273,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     if (sub === "/bounty" && method === "POST") {
       const b = await readJson<BountyEventInput>(request);
       const created = await addBountyEvent(env, agent, b);
+      if (b.program) ctx.waitUntil(syncCyberTask(env, { ...b, program: b.program }).catch((e) => console.error("cyber clickup sync:", e)));
       // Scanner labels and unreviewed findings do not need a human notification.
       if (b.kind === "payout") {
         const what = `💰 Bounty payout${b.amount ? ` — $${b.amount}` : ""}`;
@@ -356,6 +357,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       const kind = b.kind?.toLowerCase();
       if (kind !== "scan" && kind !== "finding") return json({ error: "Only scan and finding events are accepted" }, 400);
       const created = await addBountyEvent(env, "bounty-pipeline", b);
+      if (b.program) ctx.waitUntil(syncCyberTask(env, { ...b, program: b.program }).catch((e) => console.error("cyber clickup sync:", e)));
       // Wins are announced as they land (Preston, 2026-10-21): a completed scan is a small win,
       // a CONFIRMED finding is a loud one. Refuted/unconfirmed validation is bookkeeping —
       // it stays silent and rolls into the daily digest like other failures.
