@@ -1,0 +1,9 @@
+[Unit]
+Description=PHP2Shell exposure map after the morning bounty batch
+
+[Timer]
+OnCalendar=*-*-* 13:55:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

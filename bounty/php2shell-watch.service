@@ -1,0 +1,8 @@
+[Unit]
+Description=PHP2Shell exposure map (passive fingerprint of in-scope scan hosts)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/bounty/php2shell-watch.py
+Nice=10
+TimeoutStartSec=2h
