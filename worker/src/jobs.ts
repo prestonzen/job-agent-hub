@@ -1,15 +1,5 @@
-import {
-  HttpError,
-  addComment,
-  clearField,
-  createApplication,
-  getPlaybook,
-  getTask,
-  listTasks,
-  setField,
-  setStatus,
-  stampApplied,
-} from "./clickup";
+import { HttpError } from "./clickup";
+import { addComment, createApplication, getPlaybook, getTask, listTasks, setNextAction, setStatus, stampApplied } from "./store";
 import { isApplication } from "./classify";
 import { inferPlatform } from "./platform";
 import { activeAssignments, assignJob, clearAssignment, getAssignment, FALLBACK_AGENT, type Assignment } from "./assign";
@@ -273,7 +263,7 @@ export async function claimJobs(
     const expiresAt = await tryClaim(env, job.id, agent, leaseMs(env));
     if (!expiresAt) continue; // another agent won the race
     notePacedClaim(job, pace);
-    await write(env, () => setField(env, job.id, env.FIELD_NEXT_ACTION, claimNote(agent, expiresAt)));
+    await write(env, () => setNextAction(env, job.id, claimNote(agent, expiresAt)));
     await logEvent(env, { agent, taskId: job.id, taskName: job.name, type: "claimed", ats: atsKey(job.ats), company: companyKey(job.company), identity });
     out.push({ ...job, claimedBy: agent, claimExpiresAt: new Date(expiresAt).toISOString() });
   }
@@ -302,7 +292,7 @@ async function routeToFallback(env: Env, agent: string, task: Task, why: string,
   await assignJob(env, task.id, FALLBACK_AGENT, why, agent);
   const next = `Assigned to ${FALLBACK_AGENT}: ${why}`.slice(0, 250);
   await write(env, async () => {
-    await setField(env, task.id, env.FIELD_NEXT_ACTION, next);
+    await setNextAction(env, task.id, next);
     await addComment(
       env,
       task.id,
@@ -333,7 +323,7 @@ export async function handoffJob(env: Env, agent: string, id: string, reason: st
   await saveAttempt(env, id, agent, "handoff", why, log?.trim() || null).catch(() => {});
   const today = new Date().toISOString().slice(0, 10);
   await write(env, async () => {
-    await setField(env, id, env.FIELD_NEXT_ACTION, `Assigned to ${target}: ${why}`.slice(0, 250));
+    await setNextAction(env, id, `Assigned to ${target}: ${why}`.slice(0, 250));
     await addComment(env, id, `[hub] ${today}: ${displayAgent(agent)} handed this to ${displayAgent(target)}: ${why}`);
   });
   if (!mock(env)) await patchMirror(env, id, { nextAction: `Assigned to ${target}: ${why}`.slice(0, 250) });
@@ -355,7 +345,7 @@ export async function renewLease(env: Env, agent: string, id: string): Promise<J
   if (job.status !== "not started") throw new HttpError(409, `${job.name} is already "${job.status}"`);
   const expiresAt = await tryClaim(env, id, agent, leaseMs(env));
   if (!expiresAt) throw new HttpError(409, `${job.name} was claimed by someone else`);
-  await write(env, () => setField(env, id, env.FIELD_NEXT_ACTION, claimNote(agent, expiresAt)));
+  await write(env, () => setNextAction(env, id, claimNote(agent, expiresAt)));
   return { ...job, claimedBy: agent, claimExpiresAt: new Date(expiresAt).toISOString() };
 }
 
@@ -366,7 +356,7 @@ export async function releaseJob(env: Env, agent: string, id: string, note?: str
   await deleteClaim(env, id);
   await clearAssignment(env, id);
   if (task.nextAction && (CLAIM_NOTE.test(task.nextAction) || /^Assigned to /i.test(task.nextAction) || (admin && NEEDS_HUMAN.test(task.nextAction)))) {
-    await write(env, () => clearField(env, id, env.FIELD_NEXT_ACTION));
+    await write(env, () => setNextAction(env, id, null));
     if (!mock(env)) await patchMirror(env, id, { nextAction: null });
   }
   if (note) await write(env, () => addComment(env, id, `[hub] Released by ${displayAgent(agent)}: ${note}`));
@@ -425,7 +415,7 @@ export async function reportResult(
         const stamped = await stampApplied(env, id, { agent, platform, on: today });
         if (!stamped.platform) warnings.push(`ClickUp "Platform Applied" has no option "${platform}"; add it in ClickUp (the comment records it meanwhile).`);
         if (!stamped.appliedBy) warnings.push(`ClickUp "Applied By" has no option "${who}"; add it in ClickUp to tag these.`);
-        await clearField(env, id, env.FIELD_NEXT_ACTION);
+        await setNextAction(env, id, null);
         await addComment(env, id, `[hub] ${today}: applied by ${who} via ${platform}.${note ? `\n${note}` : ""}`);
       });
       break;
@@ -437,7 +427,7 @@ export async function reportResult(
         break;
       }
       await write(env, async () => {
-        await setField(env, id, env.FIELD_NEXT_ACTION, `Needs human: ${note}`.slice(0, 250));
+        await setNextAction(env, id, `Needs human: ${note}`.slice(0, 250));
         await addComment(env, id, `[hub] ${today}: ${who} needs a human: ${note}${log ? `\n--- action log ---\n${log.slice(0, 2500)}` : ""}`);
       });
       break;
@@ -445,7 +435,7 @@ export async function reportResult(
     case "skipped": {
       await write(env, async () => {
         await setStatus(env, id, "rejected / paused");
-        await clearField(env, id, env.FIELD_NEXT_ACTION);
+        await setNextAction(env, id, null);
         await addComment(env, id, `[hub] ${today}: skipped by ${who}: ${note}`);
       });
       break;
@@ -459,13 +449,13 @@ export async function reportResult(
       if (parkFailed) {
         // Two agents already failed this one: stop burning runs on it and ask a person.
         await write(env, async () => {
-          await setField(env, id, env.FIELD_NEXT_ACTION, `Needs human: failed ${failures}x (${note ?? "see the hub comments"})`.slice(0, 250));
+          await setNextAction(env, id, `Needs human: failed ${failures}x (${note ?? "see the hub comments"})`.slice(0, 250));
           await addComment(env, id, `[hub] ${today}: ${who} failed this too (attempt ${failures}); parked for Preston.${note ? `\n${note}` : ""}${log ? `\n--- action log ---\n${log.slice(0, 2500)}` : ""}`);
         });
         break;
       }
       await write(env, async () => {
-        await clearField(env, id, env.FIELD_NEXT_ACTION);
+        await setNextAction(env, id, null);
         await addComment(env, id, `[hub] ${today}: ${who} could not finish; back in the queue.${note ? `\n${note}` : ""}`);
       });
       break;

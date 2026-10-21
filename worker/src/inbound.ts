@@ -1,5 +1,5 @@
 import { isApplication } from "./classify";
-import { addComment, setStatus } from "./clickup";
+import { addComment, setStatus } from "./store";
 import { db, logEvent } from "./db";
 import { loadTasks } from "./jobs";
 import { companyKey } from "./pacing";

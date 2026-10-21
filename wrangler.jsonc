@@ -19,7 +19,7 @@
   "ai": { "binding": "AI" },
   // Non-secret configuration (ClickUp ids are not credentials).
   // Secrets, set with `npx wrangler pages secret put <NAME> --project-name job-agent-hub`:
-  //   CLICKUP_TOKEN, AGENT_TOKENS, AGENT_IDENTITIES, ADMIN_TOKEN, RUNNER_TOKEN, TELEGRAM_BOT_TOKEN, INBOUND_TOKEN,
+  //   CLICKUP_TOKEN, HULY_TOKEN, AGENT_TOKENS, AGENT_IDENTITIES, ADMIN_TOKEN, RUNNER_TOKEN, TELEGRAM_BOT_TOKEN, INBOUND_TOKEN,
   //   ZADARMA_KEY / ZADARMA_SECRET (optional).
   "vars": {
     "MOCK": "false",
@@ -32,6 +32,13 @@
     "FIELD_APPLIED_ON": "a750f70b-fff3-4bb9-b2e9-e54b09d33600",
     "FIELD_NEXT_ACTION": "53dcff41-989e-472c-b18f-4adb76acfef7",
     "PLAYBOOK_DOC_ID": "kkr4k-6751",
+    // System of record: "huly" (ClickUp mirrored best-effort while Preston switches over) or "clickup".
+    "STORE": "clickup",
+    "HULY_URL": "https://projects.kaizenapps.com",
+    "HULY_WORKSPACE_ID": "589c70ca-363f-434d-b3a3-e816d21bd430",
+    "HULY_WORKSPACE_URL": "kaizengroup",
+    "HULY_PROJECT": "JOB",
+    "HULY_TEAMSPACE": "Job Hunter Playbook",
     "LEASE_MINUTES": "60",
     // Kaizen Apps Operations (forum supergroup); the hub creates its own topic there.
     "TELEGRAM_CHAT_ID": "-1002407890552",

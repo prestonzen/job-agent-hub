@@ -1,4 +1,4 @@
-import { addComment } from "./clickup";
+import { addComment } from "./store";
 import { db, getSetting, logEvent, setSetting } from "./db";
 import { DAILY_CAP, SIGNATURE, emailEnabled, mail } from "./emailer";
 import { getJob } from "./jobs";

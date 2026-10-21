@@ -25,6 +25,14 @@ export interface Env {
   FIELD_NEXT_ACTION: string;
   /** ClickUp Doc holding the application playbook (standard answers + rules). */
   PLAYBOOK_DOC_ID: string;
+  /** System of record: "huly" (ClickUp mirrored best-effort) or "clickup" (legacy). */
+  STORE?: string;
+  /** Huly (self-hosted): base URL, workspace uuid + url slug, project identifier and playbook teamspace. */
+  HULY_URL?: string;
+  HULY_WORKSPACE_ID?: string;
+  HULY_WORKSPACE_URL?: string;
+  HULY_PROJECT?: string;
+  HULY_TEAMSPACE?: string;
   /** How long a claim lasts before the job returns to the queue. */
   LEASE_MINUTES: string;
   /** Telegram chat for notifications (Kaizen Apps Operations forum); TELEGRAM_THREAD_ID pins a topic. */
@@ -45,6 +53,8 @@ export interface Env {
   /** Shared secret Ava's worker sends when forwarding Job Agent Hub topic messages (X-Hub-Secret). */
   TELEGRAM_HUB_SECRET?: string;
   CLICKUP_TOKEN?: string;
+  /** Huly workspace token (selectWorkspace). */
+  HULY_TOKEN?: string;
   /** JSON map of agent name -> bearer token, e.g. {"claude":"...","codex":"..."} */
   AGENT_TOKENS?: string;
   /** JSON map of bearer token -> { user, model, approach, billing }. Supersedes AGENT_TOKENS per token. */
@@ -69,6 +79,10 @@ export interface Task {
   description: string;
   createdAt: string;
   updatedAt: string;
+  /** Huly: human identifier (JOB-12), the mirrored ClickUp task id, and the record's modifiedOn for incremental syncs. */
+  identifier?: string;
+  clickupId?: string | null;
+  modifiedOn?: number;
 }
 
 /** A queue item: a "not started" posting under the parent task, with the posting details parsed out. */

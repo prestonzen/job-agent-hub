@@ -4,7 +4,7 @@ import { db } from "./db";
 import { sendDigest } from "./digest";
 import { isAvailable, queue } from "./jobs";
 import { cancelRun, createRun, listRunners, listRuns } from "./runs";
-import { getPlaybook } from "./clickup";
+import { getPlaybook } from "./store";
 import { loadTasks } from "./jobs";
 import { mirrorAge, outboxSize, usageToday } from "./mirror";
 import { autopilotStatus, saveAutopilot } from "./autopilot";
