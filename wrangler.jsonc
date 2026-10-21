@@ -33,7 +33,7 @@
     "FIELD_NEXT_ACTION": "53dcff41-989e-472c-b18f-4adb76acfef7",
     "PLAYBOOK_DOC_ID": "kkr4k-6751",
     // System of record: "huly" (ClickUp mirrored best-effort while Preston switches over) or "clickup".
-    "STORE": "clickup",
+    "STORE": "huly",
     "HULY_URL": "https://projects.kaizenapps.com",
     "HULY_WORKSPACE_ID": "589c70ca-363f-434d-b3a3-e816d21bd430",
     "HULY_WORKSPACE_URL": "kaizengroup",
