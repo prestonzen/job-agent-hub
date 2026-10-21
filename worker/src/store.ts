@@ -228,3 +228,44 @@ export async function appendDocPage(env: Env, ref: string, markdown: string): Pr
   const page = PAGE_MAP[d.title];
   if (page) await mirror(env, "playbook append", () => cu.appendDocPage(env, page, markdown));
 }
+
+// ---------- dual-run reconciliation ----------
+
+/**
+ * While both boards are in use, pull status / Next Action / Applied By / Platform / Applied On from the ClickUp twin
+ * of every issue into Huly where they differ (ClickUp wins: it is where edits made outside the hub still land).
+ * dry=true only reports. Returns one line per change.
+ */
+export async function reconcileFromClickUp(env: Env, dry = true): Promise<{ checked: number; changes: string[] }> {
+  if (!useHuly(env) || !mirrorOn(env)) return { checked: 0, changes: [] };
+  const cfg = h.hulyCfg(env), p = await h.project(cfg);
+  const cuTasks = new Map((await cu.listTasks(env)).map((t) => [t.id, t]));
+  const issues = await h.listIssues(cfg, p);
+  const changes: string[] = [];
+  let checked = 0;
+  for (const i of issues) {
+    const f = (i[p.mixin] as Record<string, unknown> | undefined) ?? {};
+    const cid = typeof f.clickupId === "string" ? f.clickupId : null;
+    const t = cid ? cuTasks.get(cid) : undefined;
+    if (!t) continue;
+    checked++;
+    const ops: Record<string, unknown> = {};
+    const fields: Record<string, unknown> = {};
+    const status = p.statusByName[t.status.toLowerCase()];
+    if (status && status !== i.status) ops.status = status;
+    const na = (f.nextAction as string | undefined) ?? null;
+    if ((t.nextAction ?? null) !== na) fields.nextAction = t.nextAction ?? null;
+    const by = h.enumValue(p, "appliedBy", t.appliedBy) ?? null;
+    if (by !== ((f.appliedBy as string | undefined) ?? null)) fields.appliedBy = by;
+    const plat = h.enumValue(p, "platformApplied", t.platform) ?? null;
+    if (plat !== ((f.platformApplied as string | undefined) ?? null)) fields.platformApplied = plat;
+    const on = t.appliedOn ? Date.parse(`${t.appliedOn}T12:00:00Z`) : null;
+    if ((on ?? null) !== ((f.appliedOn as number | undefined) ?? null)) fields.appliedOn = on;
+    if (!Object.keys(ops).length && !Object.keys(fields).length) continue;
+    changes.push(`${i.identifier} ${i.title.slice(0, 40)}: ${[...Object.entries(ops).map(([k]) => `${k}→${t.status}`), ...Object.keys(fields)].join(", ")}`);
+    if (dry) continue;
+    await h.updateIssue(cfg, p, i, ops);
+    await h.setFields(cfg, p, i, fields);
+  }
+  return { checked, changes };
+}

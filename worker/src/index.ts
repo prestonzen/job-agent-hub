@@ -3,7 +3,7 @@ import { buildAnalytics } from "./analytics";
 import { sendApplicationEmail, sendTestEmail } from "./emailer";
 import { adminUser, agentName, agentNames, clearedCookie, isAdminToken, resolveIdentity, sessionCookie } from "./auth";
 import { HttpError, ensureCyberList, replayWrite, syncCyberTask } from "./clickup";
-import { addComment, appendDocPage, getDocPage, getPlaybook, listDocPages, patchDocPage, requeueTask, setStatus } from "./store";
+import { addComment, appendDocPage, getDocPage, getPlaybook, listDocPages, patchDocPage, reconcileFromClickUp, requeueTask, setStatus } from "./store";
 import { flushOutbox, mirrorAge, mirrorTasks, outboxSize, usageToday } from "./mirror";
 import { isApplication } from "./classify";
 import { activeClaims, db as dbHandle, exportEvents, heartbeat, lastEventAt, listEvents, listHeartbeats, loadSnapshot, saveSnapshot, setSetting } from "./db";
@@ -520,6 +520,8 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       const [age, tasks, outbox, usage] = await Promise.all([mirrorAge(env), mirrorTasks(env), outboxSize(env), usageToday(env)]);
       return json({ mirrorAgeMin: Number.isFinite(age) ? Math.round(age / 60_000) : null, tasks: tasks.length, outbox, callsToday: usage.clickup ?? 0 });
     }
+    // Dual-run: copy ClickUp-side edits (status, Next Action, Applied By/On, Platform) into Huly. ?dry=1 reports only.
+    if (path === "/api/admin/clickup/reconcile" && method === "POST") return json(await reconcileFromClickUp(env, url.searchParams.get("dry") === "1"));
     if (path === "/api/admin/clickup/refresh" && method === "POST") {
       const tasks = await loadTasks(env, { force: true });
       await getPlaybook(env, true).catch(() => {});
