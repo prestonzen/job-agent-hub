@@ -115,7 +115,7 @@ def classify(version):
     return "patch-verify (8.2+; fix released 2026-10-21)"
 
 
-def probe_leak(url: str, payload_mb: int = 132, timeout=30):
+def probe_leak(url: str, payload_mb: int = 132, timeout=150):
     """CVE-2026-109618 upload-progress leak probe: one oversized multipart
     field name; an anomalous (long/non-hex) PHPSESSID Set-Cookie = leak."""
     boundary = "----php2shellwatch"
@@ -302,8 +302,6 @@ def main():
             if not rec.get("php_signal"):
                 continue
             progs = [p for p in c["programs"] if p.lower() in allow_active]
-            if not progs or rec["cls"] == "php-signal-unversioned":
-                continue
             if any(c["programs"][p].lower() in ("", "unknown") for p in progs):
                 continue
             code, cookies = probe_leak(host + "/")

@@ -13,7 +13,7 @@
 #   TOP=6 ./bounty-daily.sh
 
 set -u
-TOP=${TOP:-8}
+TOP=${TOP:-12}
 LOG=/root/bounty-daily.log
 
 echo "=== bounty-daily $(date -u) ===" >> "$LOG"
