@@ -2,7 +2,8 @@
 import api from "@hcengineering/api-client";
 import core from "@hcengineering/core";
 import { readFileSync } from "node:fs";
-const { connect, MarkupContent, NodeWebSocketFactory } = api;
+const { connect, NodeWebSocketFactory } = api;
+const upload = (c, cls, id, attr, md) => c.uploadMarkup(cls, id, attr, md, "markdown"); // api-client 0.7.423 never awaits a markup-content upload, so refs are uploaded by hand
 const { generateId } = core;
 globalThis.window ??= { addEventListener() {}, removeEventListener() {}, location: { href: "https://projects.kaizenapps.com" }, document: {} };
 globalThis.document ??= { addEventListener() {}, removeEventListener() {}, visibilityState: "visible" };
@@ -45,8 +46,9 @@ for (const t of rows.sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdA
     number++;
     const id = generateId();
     const body = `${desc.trim()}\n\n---\nImported from ClickUp ${t.url} on ${new Date().toISOString().slice(0, 10)}${t.parentId && t.parentId !== "None" ? ` (was a subtask of ${t.parentId})` : ""}.`;
+    const description = await upload(client, "tracker:class:Issue", id, "description", body);
     await client.addCollection("tracker:class:Issue", project._id, "tracker:ids:NoParent", "tracker:class:Issue", "subIssues", {
-      title: t.name.slice(0, 300), description: new MarkupContent(body, "markdown"), status, priority: PRIORITY[String(t.priority ?? "").toLowerCase()] ?? 0,
+      title: t.name.slice(0, 300), description, status, priority: PRIORITY[String(t.priority ?? "").toLowerCase()] ?? 0,
       number, identifier: `${project.identifier}-${number}`, kind: taskTypeId, rank: rank(number),
       assignee: null, component: null, milestone: null, dueDate: null, estimation: 0, remainingTime: 0, reportedTime: 0, reports: 0,
       subIssues: 0, parents: [], childInfo: [], comments: 0, attachments: 0, labels: 0,

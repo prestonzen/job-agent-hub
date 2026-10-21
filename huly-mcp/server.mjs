@@ -21,7 +21,8 @@ globalThis.window ??= { addEventListener() {}, removeEventListener() {}, locatio
 globalThis.document ??= { addEventListener() {}, removeEventListener() {}, visibilityState: "visible" };
 globalThis.navigator ??= { onLine: true };
 
-const { connect, MarkupContent, NodeWebSocketFactory } = api;
+const { connect, NodeWebSocketFactory } = api;
+const upload = (c, cls, id, attr, md) => c.uploadMarkup(cls, id, attr, md, "markdown"); // api-client 0.7.423 never awaits a markup-content upload, so refs are uploaded by hand
 const { generateId } = core;
 const { markdownToMarkup, markupToMarkdown } = textMd;
 const { jsonToMarkup, markupToJSON } = text;
@@ -147,8 +148,9 @@ server.tool("huly_create_issue", "Create an application issue. description is ma
   const fresh = await k.c.findOne("tracker:class:Project", { _id: k.project._id });
   const number = (fresh.sequence ?? 0) + 1;
   const id = generateId();
+  const descRef = description ? await upload(k.c, "tracker:class:Issue", id, "description", description) : null;
   await k.c.addCollection("tracker:class:Issue", k.project._id, "tracker:ids:NoParent", "tracker:class:Issue", "subIssues", {
-    title: title.slice(0, 300), description: description ? new MarkupContent(description, "markdown") : null, status: statusId, priority: PRIORITY.indexOf(priority ?? "none"),
+    title: title.slice(0, 300), description: descRef, status: statusId, priority: PRIORITY.indexOf(priority ?? "none"),
     number, identifier: `${k.project.identifier}-${number}`, kind: k.taskTypeId, rank: rank(number),
     assignee: null, component: null, milestone: null, dueDate: null, estimation: 0, remainingTime: 0, reportedTime: 0, reports: 0,
     subIssues: 0, parents: [], childInfo: [], comments: 0, attachments: 0, labels: 0,
@@ -169,7 +171,7 @@ server.tool("huly_update_issue", "Update title, status, priority, description (m
   if (title) ops.title = title.slice(0, 300);
   if (status) { const s = k.statusByName[status.toLowerCase()]; if (!s) throw new Error(`unknown status "${status}"; known: ${Object.values(k.statusById).join(", ")}`); ops.status = s; }
   if (priority) ops.priority = PRIORITY.indexOf(priority);
-  if (description !== undefined) ops.description = new MarkupContent(description, "markdown");
+  if (description !== undefined) ops.description = await upload(k.c, "tracker:class:Issue", i._id, "description", description);
   if (Object.keys(ops).length) await k.c.updateCollection("tracker:class:Issue", k.project._id, i._id, i.attachedTo, i.attachedToClass, i.collection, ops);
   const fx = coerceFields(k, fields);
   if (Object.keys(fx).length) {
@@ -211,7 +213,7 @@ server.tool("huly_append_document", "Append markdown to the end of a document (b
   if (!d) throw new Error(`no document matching "${ref}"`);
   const current = d.content ? await c.fetchMarkup("document:class:Document", d._id, "content", d.content, "markdown") : "";
   const next = `${current.replace(/\s+$/, "")}\n\n${markdown.trim()}\n`;
-  await c.updateDoc("document:class:Document", d.space, d._id, { content: new MarkupContent(next, "markdown") });
+  await c.updateDoc("document:class:Document", d.space, d._id, { content: await upload(c, "document:class:Document", d._id, "content", next) });
   return { ok: true, id: d._id, title: d.title, chars: next.length };
 }));
 
@@ -225,7 +227,7 @@ server.tool("huly_replace_in_document", "Exact in-place edit of a document: each
   const report = edits.map((e) => ({ find: e.find.slice(0, 70), matches: content.split(e.find).length - 1 }));
   if (dry || report.some((r) => r.matches !== 1)) return { applied: false, report };
   for (const e of edits) content = content.replace(e.find, () => e.replace);
-  await c.updateDoc("document:class:Document", d.space, d._id, { content: new MarkupContent(content, "markdown") });
+  await c.updateDoc("document:class:Document", d.space, d._id, { content: await upload(c, "document:class:Document", d._id, "content", content) });
   return { applied: true, report, chars: content.length };
 }));
 
@@ -234,7 +236,9 @@ server.tool("huly_create_document", "Create a document in a teamspace (by name) 
   const s = await c.findOne("document:class:Teamspace", { name: teamspace });
   if (!s) throw new Error(`no teamspace "${teamspace}"`);
   const n = (await c.findAll("document:class:Document", { space: s._id })).length + 1;
-  const id = await c.createDoc("document:class:Document", s._id, { title, parent: "document:ids:NoParent", rank: rank(n), content: new MarkupContent(markdown, "markdown") });
+  const id = generateId();
+  const content = await upload(c, "document:class:Document", id, "content", markdown);
+  await c.createDoc("document:class:Document", s._id, { title, parent: "document:ids:NoParent", rank: rank(n), content }, id);
   return { ok: true, id, title };
 }));
 

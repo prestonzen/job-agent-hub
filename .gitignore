@@ -23,3 +23,4 @@ desktop.ini
 __pycache__/
 .huly-token.local.txt
 huly-mcp/node_modules/
+huly-mcp/docs/

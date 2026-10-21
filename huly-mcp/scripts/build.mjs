@@ -1,7 +1,8 @@
 // Stage 1: Job Hunter project type (ClickUp-identical statuses), project, custom attributes, playbook teamspace + docs.
 import api from "@hcengineering/api-client";
 import core from "@hcengineering/core";
-const { connect, MarkupContent, NodeWebSocketFactory } = api;
+const { connect, NodeWebSocketFactory } = api;
+const upload = (c, cls, id, attr, md) => c.uploadMarkup(cls, id, attr, md, "markdown"); // api-client 0.7.423 never awaits a markup-content upload, so refs are uploaded by hand
 // client-resources touches window/document on connect; give Node a stub.
 globalThis.window ??= { addEventListener() {}, removeEventListener() {}, location: { href: "https://projects.kaizenapps.com" }, document: {} };
 globalThis.document ??= { addEventListener() {}, removeEventListener() {}, visibilityState: "visible" };
@@ -134,9 +135,9 @@ for (let i = 0; i < PAGES.length; i++) {
   const [file, title] = PAGES[i];
   if (await client.findOne("document:class:Document", { space: space._id, title })) { console.log("doc exists", title); continue; }
   const md = readFileSync(`${DOCS}/${file}`, "utf8");
-  const id = await client.createDoc("document:class:Document", space._id, {
-    title, parent: "document:ids:NoParent", rank: rank(i), content: new MarkupContent(md, "markdown"),
-  });
+  const id = generateId();
+  const content = await upload(client, "document:class:Document", id, "content", md);
+  await client.createDoc("document:class:Document", space._id, { title, parent: "document:ids:NoParent", rank: rank(i), content }, id);
   console.log("doc created", title, id, md.length, "chars");
 }
 await client.close();
