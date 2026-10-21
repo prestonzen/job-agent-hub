@@ -37,5 +37,8 @@ server as an MCP client and reads the schema, a few issues and the document list
 - The platform client expects a browser; `server.mjs` stubs `window`/`document` and routes its console output to stderr so
   stdout stays a clean MCP channel.
 - Fields live on the task-type mixin (`<taskType>:type:mixin`), so other projects in the workspace are untouched.
-- `scripts/` for the one-time ClickUp → Huly build/import live in the session scratchpad (`build.mjs`, `import.mjs`); the
-  importer keys on the `ClickUp ID` field, so re-running it only adds tasks that are missing.
+- `scripts/build.mjs` (project type, project, fields, teamspace + docs) and `scripts/import.mjs` (ClickUp mirror → issues, keyed on
+  the `ClickUp ID` field so re-runs only add what is missing) are the one-time migration; `scripts/repair-markup.mjs` re-uploads
+  descriptions/contents if a client ever stores them as `{}`.
+- `docs/` (the playbook markdown the build script reads) is **gitignored**: it holds personal data and this repo is public. Export it
+  from Huly with `huly_get_document` when you need a fresh copy.
