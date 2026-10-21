@@ -32,8 +32,13 @@ const AI_TERMS = /\b(ai|a\.i\.|ml|machine learning|llm|genai|generative|agents?|
 const GENERIC = /\b(full[- ]?stack|software engineer|backend|back-end|platform engineer|founding engineer)\b/i;
 /** Household names and >1,000-person companies: they don't convert and aren't the target (Preston, 2026-10-20). */
 const BIG_CO = /^(nvidia|google|alphabet|meta|facebook|amazon|aws|microsoft|apple|netflix|openai|anthropic|cohere|elevenlabs|eleven labs|stripe|coinbase|gitlab|github|datadog|cloudflare|salesforce|oracle|ibm|intel|adobe|uber|lyft|airbnb|doordash|shopify|atlassian|twilio|snowflake|databricks|palantir|betterhelp|toast|reddit|zscaler|samsara|servicenow|workday|vmware|cisco|dell|hp|sap|paypal|block|square|robinhood|instacart|pinterest|snap|tiktok|bytedance|linkedin|x|twitter|tesla|spacex|grafana labs|mongodb|elastic|hashicorp|okta|crowdstrike|zoominfo|typeform|launchdarkly|hubspot|zendesk|intercom|notion|figma|canva|dropbox|box|slack|zoom|docusign|affirm|chime|sofi|nerdwallet|upstart|brex|ramp|rippling|gusto|deel|remote|mercury|plaid|checkr|verkada|anduril|scale ai|turing|wellfound|spotify|canonical|doximity|glean|tether|customer\.io|postscript|dremio|supabase|g-p|globalization partners|kraken|kraken tech|singlestore|posthog)\b/i;
-const LOC_OK = /\b(united states|usa|u\.s\.|us only|us-only|us-based|north america|americas|worldwide|anywhere|global|remote)\b/i;
-const LOC_NO = /\b(europe|emea|eu only|uk only|united kingdom|germany|france|netherlands|spain|poland|india|latam|apac|australia|canada only|brazil|ukraine|portugal|japan|singapore)\b/i;
+/**
+ * Location (Preston, 2026-10-22: "any global role that is fine with hiring US citizens"): a remote role anywhere
+ * passes unless it is explicitly restricted to residents of a specific non-US country or region ("EU only",
+ * "must be based in Germany", "UK residents", "timezone CET only"); the agent then confirms on the posting.
+ */
+const LOC_OK = /\b(united states|usa|u\.s\.|us only|us-only|us-based|north america|americas|worldwide|anywhere|global|remote|international|distributed)\b/i;
+const LOC_RESTRICTED = /\b((?:eu|europe|emea|uk|united kingdom|germany|france|netherlands|spain|poland|india|latam|apac|australia|canada|brazil|ukraine|portugal|japan|singapore|ireland|sweden|switzerland|israel)\s*(?:only|-only|based only|residents?)|(?:must|need to|required to|should)\s+(?:be\s+)?(?:based|located|reside|live|living|residing)\s+in\s+(?!the\s+(?:us|usa|united states)\b)[a-z]|(?:only|exclusively)\s+(?:hiring|open to|available to|for)\s+(?:candidates|applicants|people|those)?\s*(?:in|from|based in|located in)\s+(?!the\s+(?:us|usa|united states)\b)[a-z]|(?:residents?|citizens?)\s+of\s+(?!the\s+(?:us|usa|united states)\b)[a-z]|within\s+(?:cet|cest|gmt|bst|ist|aest|eet)\b|(?:cet|cest|gmt|bst)\s*(?:only|time ?zone only)|work (?:permit|authori[sz]ation) (?:for|in) (?!the\s+(?:us|usa|united states)\b)[a-z])/i;
 const URL_NO = /ashbyhq\.com|workatastartup\.com|wellfound\.com|angel\.co|linkedin\.com/i;
 
 function keep(l: Lead): boolean {
@@ -45,10 +50,8 @@ function keep(l: Lead): boolean {
   if (BIG_CO.test(l.company.trim())) return false;
   if (URL_NO.test(apply)) return false;
   if (GENERIC.test(l.role) && !AI_TERMS.test(l.role) && !AI_TERMS.test(l.text.slice(0, 2500))) return false;
-  const loc = `${l.location} ${l.text.slice(0, 1500)}`;
-  // Pay quoted in pounds or euros with no US mention is a non-US role however "remote" it says it is.
-  if (/[£€]\s?\d/.test(`${l.role} ${l.text.slice(0, 600)}`) && !/(united states|usa|u\.s\.|us-based|north america)/i.test(loc)) return false;
-  if (LOC_NO.test(l.location) && !LOC_OK.test(l.location)) return false;
+  const loc = `${l.location} ${l.text.slice(0, 2500)}`;
+  if (LOC_RESTRICTED.test(loc) && !/(worldwide|anywhere|global|work from anywhere|us-based|united states|usa)/i.test(loc)) return false;
   if (!LOC_OK.test(loc)) return false;
   return true;
 }
@@ -91,7 +94,7 @@ const BOARDS: Record<string, () => Promise<Lead[]>> = {
     // posting (playbook, Platform Log → Jobicy). Tags under 3 chars are rejected, so filter by geo + industry.
     type R = { jobs?: { jobTitle: string; companyName: string; url: string; jobGeo?: string; jobDescription?: string }[] };
     const out: Lead[] = [];
-    for (const q of ["geo=usa&industry=engineering", "geo=usa&tag=machine-learning", "geo=anywhere&industry=engineering"]) {
+    for (const q of ["geo=usa&industry=engineering", "geo=anywhere&industry=engineering", "geo=anywhere&tag=machine-learning", "geo=europe&tag=machine-learning"]) {
       const j = await getJson<R>(`https://jobicy.com/api/v2/remote-jobs?count=50&${q}`);
       for (const r of j?.jobs ?? []) out.push({ company: r.companyName, role: r.jobTitle, url: r.url, location: r.jobGeo ?? "", text: strip(r.jobDescription), source: "Jobicy" });
     }
