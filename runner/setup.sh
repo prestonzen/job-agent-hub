@@ -27,6 +27,10 @@ install -d -o "$RUN_USER" -g "$RUN_USER" -m 700 "$RUN_HOME/resume" /var/lib/job-
 install -d -m 755 /opt/job-agent-runner
 install -m 644 "$HERE/runner.mjs" "$HERE/usage.mjs" "$HERE/configure-agents.mjs" /opt/job-agent-runner/
 install -m 755 "$HERE/update.sh" "$HERE/form-assist.mjs" "$HERE/inbox-assist.mjs" "$HERE/with-key.mjs" "$HERE/gpu-gate.mjs" /opt/job-agent-runner/
+# WebGL renderer normalization extension (one stable variant per agent profile).
+rm -rf /opt/job-agent-runner/webgl-spoof
+cp -r "$HERE/webgl-spoof" /opt/job-agent-runner/webgl-spoof
+chmod -R a+rX /opt/job-agent-runner/webgl-spoof
 install -m 755 "$HERE/set-key.sh" /usr/local/bin/jar-set-key
 chown "root:$RUN_USER" "$CONFIG" && chmod 640 "$CONFIG"
 

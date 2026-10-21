@@ -49,6 +49,18 @@ const pwConfigFor = (agent) => {
     isMobile: false,
     hasTouch: false,
   };
+  // WebGL renderer normalization: the container's SwiftShader string is an instant bot flag.
+  // Each agent gets one stable real-GPU variant (deterministic by name — a returning user
+  // keeps their machine; the fleet doesn't share a single renderer).
+  const variant = `v${1 + (hash % 4)}`;
+  const ext = `/opt/job-agent-runner/webgl-spoof/${variant}`;
+  const args = base.browser.launchOptions?.args ?? [];
+  if (!args.some((a) => a.includes("webgl-spoof"))) {
+    base.browser.launchOptions = {
+      ...(base.browser.launchOptions ?? {}),
+      args: [...args, `--load-extension=${ext}`, `--disable-extensions-except=${ext}`],
+    };
+  }
   const p = `${PROFILE_ROOT}/${agent}/pw-config.json`;
   writeFileSync(p, JSON.stringify(base, null, 2));
   return p;

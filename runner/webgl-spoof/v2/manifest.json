@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "GL Context Info v2",
+  "version": "1.0",
+  "description": "Reports the machine's GL context information.",
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "inject.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    }
+  ]
+}
