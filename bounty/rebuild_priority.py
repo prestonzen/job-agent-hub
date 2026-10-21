@@ -3,7 +3,7 @@
 
 Order: queue.json order (upstream-ranked). Excludes policy-blacklisted
 programs and anything the hub already has scan events for."""
-import json, re, urllib.request, pathlib
+import json, re, time, urllib.request, pathlib
 
 BASE = pathlib.Path("/opt/bounty")
 TOKEN = pathlib.Path("/etc/hub-admin-token").read_text().strip()
@@ -15,7 +15,10 @@ rows = bl.get("programs", bl) if isinstance(bl, dict) else bl
 blocked = {(r if isinstance(r, str) else str(r.get("program") or r.get("name") or "")).strip().lower()
            for r in rows}
 
-req = urllib.request.Request("https://jobhunter.prestonzen.com/api/admin/bounty",
+# Cache-buster: the hub sits behind Cloudflare and plain GETs can return a
+# stale programs list (this exact bug re-queued Priceline for a re-scan).
+req = urllib.request.Request(
+    "https://jobhunter.prestonzen.com/api/admin/bounty?ts=" + str(int(time.time())),
     headers={"Authorization": "Bearer " + TOKEN, "User-Agent": "curl/8.5.0"})
 with urllib.request.urlopen(req, timeout=30) as r:
     scanned = {p["program"].strip().lower() for p in json.load(r).get("programs", []) if p.get("scans")}

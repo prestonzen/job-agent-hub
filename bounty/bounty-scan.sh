@@ -109,6 +109,28 @@ if [ "$DRY_RUN" = "1" ]; then
   exit 0
 fi
 
+# Wayback endpoint harvest ON THE HOST via the CDX API. The scanner image has
+# no waybackurls, and CDX collapse= / matchType=domain are blocked from this
+# IP — but matchType=prefix works (SURT prefix catches subdomains). Dedupe
+# client-side. archive.org only — zero target traffic. Feeds nuclei real
+# paths and powers php2shell-watch .php discovery via urls.txt.
+WB_DOMAINS="$OUT/.wb-domains.txt"
+WB_BUDGET=${WB_BUDGET:-480}
+{ [ -s "$OUT/wildcards.txt" ] && sed 's/^\*\.//' "$OUT/wildcards.txt"
+  [ -s "$OUT/direct.txt" ] && cat "$OUT/direct.txt"; } 2>/dev/null \
+  | sed 's|^https\?://||; s|/.*$||' | grep -v '^\*' | sort -u | head -40 > "$WB_DOMAINS"
+if [ -s "$WB_DOMAINS" ]; then
+  : > "$OUT/urls.raw.txt"
+  wb_end=$(( $(date +%s) + WB_BUDGET ))
+  export wb_end OUT
+  cat "$WB_DOMAINS" | xargs -P3 -I{} sh -c '
+    [ "$(date +%s)" -gt "$wb_end" ] && exit 0
+    curl -s -m 25 "http://web.archive.org/cdx/search/cdx?url={}&matchType=prefix&fl=original&limit=2000" >> "$OUT/urls.raw.txt" 2>/dev/null || true
+  '
+  sort -u "$OUT/urls.raw.txt" -o "$OUT/urls.raw.txt"
+  echo "wayback harvest: $(wc -l < "$OUT/urls.raw.txt") urls from $(wc -l < "$WB_DOMAINS") domains"
+fi
+
 # Recon inside the scanner image.
 CNAME="bbs-$(echo "$PROGRAM" | tr -c "A-Za-z0-9" "-")-$$"
 docker rm -f "$CNAME" >/dev/null 2>&1 || true
@@ -141,8 +163,11 @@ with open("/out/live.raw.txt") as src, open("/out/live.txt","w") as dst:
 PY
   cut -d" " -f1 /out/live.txt > /out/live-hosts.txt 2>/dev/null || true
   # Endpoint harvesting: historical URLs give nuclei real paths, not just root pages.
-  if command -v waybackurls > /dev/null 2>&1; then
-    cat /out/live-hosts.txt | sed "s|https\?://||" | waybackurls 2>/dev/null | head -3000 > /out/urls.raw.txt || true
+  # Runs when waybackurls exists in-image OR the host pre-harvested urls.raw.txt.
+  if [ -s /out/urls.raw.txt ] || command -v waybackurls > /dev/null 2>&1; then
+    if command -v waybackurls > /dev/null 2>&1; then
+      cat /out/live-hosts.txt | sed "s|https\?://||" | waybackurls 2>/dev/null | head -3000 > /out/urls.raw.txt || true
+    fi
     PYTHONPATH=/ python3 - <<"PY"
 import json
 from scope import in_scope
