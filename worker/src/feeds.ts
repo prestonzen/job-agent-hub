@@ -46,6 +46,8 @@ function keep(l: Lead): boolean {
   if (URL_NO.test(apply)) return false;
   if (GENERIC.test(l.role) && !AI_TERMS.test(l.role) && !AI_TERMS.test(l.text.slice(0, 2500))) return false;
   const loc = `${l.location} ${l.text.slice(0, 1500)}`;
+  // Pay quoted in pounds or euros with no US mention is a non-US role however "remote" it says it is.
+  if (/[£€]\s?\d/.test(`${l.role} ${l.text.slice(0, 600)}`) && !/(united states|usa|u\.s\.|us-based|north america)/i.test(loc)) return false;
   if (LOC_NO.test(l.location) && !LOC_OK.test(l.location)) return false;
   if (!LOC_OK.test(loc)) return false;
   return true;
