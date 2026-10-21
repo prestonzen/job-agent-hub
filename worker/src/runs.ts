@@ -364,9 +364,30 @@ export async function finishRun(env: Env, id: number, runner: string, f: { exitC
     if (wins > 0 && !(result.task === "diagnostic" && status === "succeeded")) {
       // Cyber wins land in the Bug Bounty topic; job-hunting wins stay in the hub topic.
       const deliver = result.task === "cyber" ? notifyBounty : notify;
+      // What actually happened: the concrete items behind the counts (company, evidence, role),
+      // not just "1 evidence item triaged" (Preston, 2026-10-22).
+      const evRows = (
+        await (await eventDb(env))
+          .prepare(
+            `SELECT type, message, task_name, company FROM events
+             WHERE run_id = ? AND type IN ('applied','emailed','added','cyber_report','cyber_triage')
+             ORDER BY id DESC LIMIT 5`,
+          )
+          .bind(id)
+          .all<{ type: string; message: string | null; task_name: string | null; company: string | null }>()
+      ).results;
+      const bullets = evRows
+        .map((e) => {
+          const who = (e.company ?? e.task_name ?? "").trim();
+          const what = (e.message ?? "").replace(/\s+/g, " ").trim();
+          return `• ${who ? `${who} — ` : ""}${what}`.slice(0, 180);
+        })
+        .filter((l) => l.length > 2)
+        .slice(0, 4)
+        .map((l) => esc(l));
       await deliver(
         env,
-        `✅ Run #${id} <b>${esc(r.agent)}</b> (${esc(result.task)}) on ${esc(runner)} after ${mins} min\n${esc(result.summary ?? status)}`,
+        `✅ Run #${id} <b>${esc(r.agent)}</b> (${esc(result.task)}) on ${esc(runner)} after ${mins} min\n${esc(result.summary ?? status)}${bullets.length ? `\n${bullets.join("\n")}` : ""}`,
       );
     }
   }

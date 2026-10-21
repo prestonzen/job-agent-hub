@@ -78,7 +78,7 @@ export async function completeCyber(env: Env, id:number, agent:string, body:Reco
  const detail=complete?(verdict==='draft'?'Multi-model report draft awaiting human review':verdict==='needs-validation'?'Multi-model review recommends further validation':'Multi-model review rejected evidence'):`Pass ${pass.sequence}/${plan.length} complete; waiting for remaining models`;
  const saved=await d.prepare("UPDATE cyber_work SET status=?,run_id=NULL,agent=CASE WHEN ?='completed' THEN ? ELSE NULL END,verdict=?,result=?,detail=?,identity=? WHERE id=? AND status='running' AND run_id=?").bind(complete?'completed':'pending',complete?'completed':'pending',agent,complete?verdict:null,complete?result:null,detail,identity,id,row.run_id).run();
  if(saved.meta.changes!==1)throw new HttpError(409,'Work ownership changed');
- await logEvent(env,{agent,type:'cyber_triage',message:`Evidence #${id}: ${verdict}; ${detail.toLowerCase()}`,identity});
+ await logEvent(env,{agent,type:'cyber_triage',message:`Evidence #${id}: ${verdict}; ${detail.toLowerCase()}`,taskName:row.program,identity});
  if(complete&&verdict==='draft'){
   const error=await notifyBounty(env,`📝 <b>Bug bounty report draft ready for review</b>\n${esc(row.program)} · evidence #${id}\nReview the full report before any submission: https://jobhunter.prestonzen.com/admin#bounty`);
   if(error)console.error('cyber report draft notify:',error);

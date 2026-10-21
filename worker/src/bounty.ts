@@ -115,7 +115,7 @@ export async function addBountyEvent(env: Env, agent: string, body: BountyEventI
       kind === "payout" ? amount : null,
     )
     .run();
-  if (kind === "report" && body.platform?.toLowerCase() !== "benchmark") await logEvent(env, { agent, type: "cyber_report", message: s(body.title, 200) });
+  if (kind === "report" && body.platform?.toLowerCase() !== "benchmark") await logEvent(env, { agent, type: "cyber_report", message: s(body.title, 200), company: s(body.program, 120) });
   return { id: Number(res.meta.last_row_id) };
 }
 

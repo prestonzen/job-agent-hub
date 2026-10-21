@@ -1,5 +1,5 @@
 import * as cu from "./clickup";
-import { getSetting, setSetting } from "./db";
+import { db, getSetting, setSetting } from "./db";
 import * as h from "./huly";
 import { mirrorTasks } from "./mirror";
 import type { Env, Task } from "./types";
@@ -227,6 +227,115 @@ export async function appendDocPage(env: Env, ref: string, markdown: string): Pr
   await forgetPlaybook(env);
   const page = PAGE_MAP[d.title];
   if (page) await mirror(env, "playbook append", () => cu.appendDocPage(env, page, markdown));
+}
+
+// ---------- bug bounty / cyber mirror ----------
+
+export interface CyberSyncInput {
+  program: string;
+  platform?: string | null;
+  kind?: string;
+  status?: string | null;
+  severity?: string | null;
+  detail?: string | null;
+  title?: string | null;
+  amount?: number | null;
+}
+
+const BOUNTY_PROJECT = "BOUNTY";
+const SEVERITY_PRIORITY: Record<string, string> = { critical: "urgent", high: "high", medium: "medium", low: "low" };
+
+/**
+ * The Bug Bounty project, created on first use by cloning the JOB project's type and defaults
+ * (same issue statuses, same task type mixin), so no Huly admin setup is required.
+ */
+async function bountyProject(cfg: h.HulyCfg): Promise<h.Project> {
+  const existing = (await h.findAll<{ identifier: string }>(cfg, "tracker:class:Project", {}, { limit: 100 })).find((p) => p.identifier === BOUNTY_PROJECT);
+  if (existing) return h.project({ ...cfg, project: BOUNTY_PROJECT });
+  const job = await h.project(cfg);
+  const jobDoc = await h.findOne<Record<string, unknown>>(cfg, "tracker:class:Project", { _id: job.id });
+  if (!jobDoc) throw new cu.HttpError(503, "Huly JOB project doc not found");
+  await h.createDoc(cfg, "tracker:class:Project", "core:space:Space", {
+    identifier: BOUNTY_PROJECT,
+    name: "Bug Bounty — Cyber Operations",
+    description: "One issue per bounty program. Every event from the hub bounty pipeline is appended as a comment; the description carries the running state. Reports stay drafts until Preston approves submission.",
+    private: false,
+    archived: false,
+    autoJoin: true,
+    defaultIssueStatus: job.defaultStatus,
+    type: jobDoc.type,
+    defaultTimeReportDay: "PreviousWorkDay",
+    sequence: 0,
+    docUpdateMessages: 0,
+  });
+  return h.project({ ...cfg, project: BOUNTY_PROJECT });
+}
+
+interface BountyIssueMap { [program: string]: string }
+
+/**
+ * Mirror one bounty event into Huly (verbose, unlimited — the reason for the move off ClickUp):
+ * one issue per program in the BOUNTY project, every event as a comment, and the description kept
+ * fresh with totals + the latest events from the hub's own tables. ClickUp stays in sync on a
+ * best-effort basis while both boards are live. Never throws into the caller's request path.
+ */
+export async function syncCyber(env: Env, input: CyberSyncInput): Promise<void> {
+  const program = input.program.trim();
+  if (!program || program === "Pipeline Test") return;
+  if (!useHuly(env)) return cu.syncCyberTask(env, input).catch(() => {});
+  try {
+    const cfg = h.hulyCfg(env);
+    const p = await bountyProject(cfg);
+    const map = (await getSetting<BountyIssueMap>(env, "huly_bounty_issues").catch(() => null)) ?? {};
+    let issue: h.HulyIssue | null = null;
+    const mapped = map[program];
+    if (mapped) issue = await h.findOne<h.HulyIssue>(cfg, "tracker:class:Issue", { _id: mapped, space: p.id }).catch(() => null);
+    if (!issue) {
+      issue = await h.createIssue(cfg, p, {
+        title: program,
+        description: `Bug bounty program (${input.platform ?? "platform unknown"}). Pipeline events are appended as comments.`,
+        status: "not started",
+        fields: {},
+      });
+      map[program] = issue._id;
+      await setSetting(env, "huly_bounty_issues", map).catch(() => {});
+    }
+
+    const when = new Date().toISOString().slice(0, 16).replace("T", " ");
+    const summary = (input.detail ?? input.title ?? "").trim();
+    const head = `**${when} UTC** · ${input.kind ?? "event"}${input.status ? `/${input.status}` : ""}${input.severity ? ` · ${input.severity}` : ""}`;
+    await h.addIssueComment(cfg, p, issue, [head, summary].filter(Boolean).join("\n").slice(0, 2000)).catch((e) => console.error("huly bounty comment:", (e as Error).message));
+
+    // Running state in the description: totals + the newest few events from the hub's own table.
+    const d = await db(env);
+    const counts = (await d
+      .prepare(`SELECT COUNT(*) AS scans, SUM(kind='finding') AS findings, SUM(kind='report') AS reports, SUM(CASE WHEN kind='payout' THEN amount ELSE 0 END) AS payouts FROM bounty_events WHERE program = ?`)
+      .bind(program)
+      .first<{ scans: number; findings: number | null; reports: number | null; payouts: number | null }>()) ?? { scans: 0, findings: 0, reports: 0, payouts: 0 };
+    const recent = await d
+      .prepare(`SELECT at, kind, status, severity, title, detail FROM bounty_events WHERE program = ? ORDER BY at DESC LIMIT 5`)
+      .bind(program)
+      .all<{ at: number; kind: string; status: string | null; severity: string | null; title: string | null; detail: string | null }>();
+    const lines = [
+      `Bug bounty program (${input.platform ?? "platform unknown"}). Events from the hub bounty pipeline are appended as comments.`,
+      "",
+      `Scans: ${counts.scans} · Findings: ${counts.findings ?? 0} · Reports: ${counts.reports ?? 0} · Payouts: $${Math.round((counts.payouts ?? 0) * 100) / 100}`,
+      "",
+      "**Latest events**",
+      ...recent.results
+        .reverse()
+        .map((e) => `- ${new Date(e.at).toISOString().slice(0, 16).replace("T", " ")} UTC — ${e.kind}${e.status ? `/${e.status}` : ""}${e.severity ? ` [${e.severity}]` : ""}: ${(e.detail ?? e.title ?? "").trim().slice(0, 160)}`),
+    ];
+    const content = await h.createMarkup(cfg, "tracker:class:Issue", issue._id, "description", h.markdownToMarkup(lines.join("\n")));
+    await h.updateIssue(cfg, p, issue, { description: content });
+
+    // A serious finding bumps the issue priority so it surfaces in Huly views.
+    const pri = input.kind === "finding" ? SEVERITY_PRIORITY[input.severity ?? ""] : undefined;
+    if (pri) await h.updateIssue(cfg, p, issue, { priority: Math.max(0, h.PRIORITIES.indexOf(pri)) }).catch(() => {});
+  } catch (e) {
+    console.error("huly cyber sync:", (e as Error).message);
+  }
+  await cu.syncCyberTask(env, input).catch((e) => console.error("cyber clickup sync:", (e as Error).message));
 }
 
 // ---------- dual-run reconciliation ----------
