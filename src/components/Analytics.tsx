@@ -201,6 +201,48 @@ export default function Analytics() {
           </p>
         </Card>
       </div>
+
+      {data.platforms && data.platforms.length > 0 && (
+        <Card title="Platforms we track">
+          <p className="muted small">
+            Every application system, discovery source and signed-in account the fleet uses — and the ones it deliberately avoids.
+            Signed-in sessions were synced into every agent profile on 2026-10-22 via the noVNC manual login.
+          </p>
+          <div className="grid two">
+            {(
+              [
+                ["ats", "Application systems"],
+                ["source", "Discovery sources"],
+                ["account", "Signed-in accounts"],
+                ["excluded", "Deliberately avoided"],
+              ] as const
+            ).map(([kind, heading]) => (
+              <div key={kind}>
+                <h3>{heading}</h3>
+                <ul className="platform-list">
+                  {data.platforms!
+                    .filter((p) => p.kind === kind)
+                    .map((p) => {
+                      const stats = data.byAts.find((a) => a.ats.toLowerCase() === p.name.toLowerCase());
+                      return (
+                        <li key={p.name} title={p.note}>
+                          <span className={`pill ${p.status}`}>{p.status}</span>
+                          <span className="pname">{p.name}</span>
+                          {stats && (
+                            <span className="muted small">
+                              {stats.applied} applied · ✉{stats.confirmed}
+                            </span>
+                          )}
+                          <span className="muted small pnote">{p.note}</span>
+                        </li>
+                      );
+                    })}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
     </>
   );
 }

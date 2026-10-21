@@ -86,6 +86,7 @@ export interface Analytics {
   generatedAt: string; days: number; demo: boolean;
   totals: { applied: number; claimed: number; skipped: number; needsHuman: number; failed: number; successRate: number | null; confirmed: number; medianMinToApply: number | null; runs: number; runsOk: number; runMinutes: number; appsPerRunHour: number | null };
   byIdentity?:{identity:string;applied:number}[]; byAgent: AgentStats[]; byDay: DayStats[]; byHour: number[]; byAts: AtsStats[];
+  platforms?: { name: string; kind: "ats" | "source" | "account" | "excluded"; status: "active" | "session" | "gated" | "excluded"; note: string }[];
   parked: { reason: string; count: number }[];
   queue: { ready: number; claimed: number; parked: number; total: number };
   clickup: { day: string; calls: number }[];

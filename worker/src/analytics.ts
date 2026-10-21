@@ -61,6 +61,57 @@ export interface DayStats {
   runsFailed: number;
 }
 
+export interface PlatformInfo {
+  name: string;
+  /** ats = places applications are submitted; source = job discovery feeds; account = signed-in sessions; excluded = deliberately avoided. */
+  kind: "ats" | "source" | "account" | "excluded";
+  status: "active" | "session" | "gated" | "excluded";
+  note: string;
+}
+
+/**
+ * Every platform the Job Hunter touches or deliberately avoids, for the admin Platforms card.
+ * Status semantics: active = agents use it freely; session = works via Preston's signed-in
+ * browser session (synced 2026-10-22); gated = throttled by an experiment or anti-bot walls;
+ * excluded = agents never go there. Join byAts stats by name on the frontend.
+ */
+export const PLATFORM_REGISTRY: PlatformInfo[] = [
+  // --- Application platforms (where forms get submitted) ---
+  { name: "Greenhouse", kind: "ats", status: "active", note: "Email security-code step solved via inbox; paced submissions" },
+  { name: "Lever", kind: "ats", status: "active", note: "hCaptcha on some boards; pacing applies" },
+  { name: "Workable", kind: "ats", status: "active", note: "Preferred small-company ATS" },
+  { name: "SmartRecruiters", kind: "ats", status: "active", note: "Preferred small-company ATS" },
+  { name: "Breezy", kind: "ats", status: "active", note: "Preferred small-company ATS" },
+  { name: "Rippling", kind: "ats", status: "active", note: "Preferred small-company ATS" },
+  { name: "Dover", kind: "ats", status: "active", note: "Preferred small-company ATS" },
+  { name: "JazzHR", kind: "ats", status: "active", note: "Occasional" },
+  { name: "Workday", kind: "ats", status: "session", note: "Account on file; small companies only (<~200 people)" },
+  { name: "iCIMS", kind: "ats", status: "active", note: "Occasional" },
+  { name: "BambooHR", kind: "ats", status: "active", note: "Occasional" },
+  { name: "Company site", kind: "ats", status: "active", note: "Custom employer forms at small companies" },
+  { name: "Email to employer", kind: "ats", status: "active", note: "Direct recruiter/founder email — highest human reply rate (~7% same-day)" },
+  { name: "Indeed Easy Apply", kind: "ats", status: "session", note: "Signed-in session synced 2026-10-22" },
+  { name: "Work at a Startup", kind: "ats", status: "session", note: "YC jobs; signed-in session synced 2026-10-22, re-enabled in sourcing" },
+  { name: "Ashby", kind: "ats", status: "gated", note: "Spam-flag wall; receipt-verdict cohort experiment running before any re-opening" },
+  // --- Discovery sources (no login; feeds + boards) ---
+  { name: "RemoteOK", kind: "source", status: "active", note: "JSON feed" },
+  { name: "Remotive", kind: "source", status: "active", note: "JSON feed" },
+  { name: "Himalayas", kind: "source", status: "active", note: "JSON feed" },
+  { name: "We Work Remotely", kind: "source", status: "active", note: "RSS feed" },
+  { name: "Built In", kind: "source", status: "active", note: "Board scrape" },
+  { name: "HN Who's Hiring", kind: "source", status: "active", note: "Monthly thread" },
+  { name: "Jobicy", kind: "source", status: "session", note: "Feed + signed-in direct apply URLs" },
+  { name: "Tracked company boards", kind: "source", status: "active", note: "Greenhouse/Lever/Workable boards of companies already in the tracker" },
+  // --- Signed-in accounts beyond apply flows ---
+  { name: "Dice", kind: "account", status: "session", note: "Session synced 2026-10-22; agency-heavy, browsing value" },
+  { name: "Monster", kind: "account", status: "session", note: "Session synced 2026-10-22; agency-heavy" },
+  { name: "Welcome to the Jungle", kind: "account", status: "session", note: "Formerly Otta; session synced 2026-10-22" },
+  { name: "Handshake", kind: "account", status: "session", note: "Account on file" },
+  // --- Deliberately excluded ---
+  { name: "LinkedIn", kind: "excluded", status: "excluded", note: "Fleet automation banned — ban risk to Preston's account; Zenith-only, human-driven" },
+  { name: "Wellfound", kind: "excluded", status: "excluded", note: "Agents may self-create accounts (create_if_missing) but feeds skip it; low yield" },
+];
+
 export interface Analytics {
   generatedAt: string;
   days: number;
@@ -87,6 +138,7 @@ export interface Analytics {
   /** Applied events per UTC hour of day (24 slots). */
   byHour: number[];
   byAts: AtsStats[];
+  platforms: PlatformInfo[];
   parked: { reason: string; count: number }[];
   queue: { ready: number; claimed: number; parked: number; total: number };
   clickup: { day: string; calls: number }[];
@@ -311,6 +363,7 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
     byDay: dayList,
     byHour,
     byAts: ats,
+    platforms: PLATFORM_REGISTRY,
     parked: [...parkedMap.entries()].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count),
     queue: { ready, claimed: q.filter((j) => j.claimedBy).length, parked: q.filter((j) => j.needsHuman).length, total: q.length },
     clickup: usage.results,
