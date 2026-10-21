@@ -3,6 +3,7 @@
 // Report a common real-GPU string instead (constant per agent profile = stable machine).
 // Pixel output still comes from SwiftShader; no consumer anti-bot compares the two.
 (() => {
+  window.__glspoof = true;
   const VENDOR = "Google Inc. (NVIDIA)";
   const RENDERER = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060/PCIe/SSE2, OpenGL 4.5.0 NVIDIA 535.154.05)";
   const patch = (proto) => {

@@ -3,6 +3,7 @@
 // Report a common real-GPU string instead (constant per agent profile = stable machine).
 // Pixel output still comes from SwiftShader; no consumer anti-bot compares the two.
 (() => {
+  window.__glspoof = true;
   const VENDOR = "Google Inc. (Intel)";
   const RENDERER = "ANGLE (Intel, Mesa Intel(R) UHD Graphics 630 (CFL GT2), OpenGL 4.6 (Core Profile) Mesa 23.2.1-1ubuntu3.1~22.04.3)";
   const patch = (proto) => {
