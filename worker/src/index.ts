@@ -6,7 +6,7 @@ import { HttpError, ensureCyberList, replayWrite } from "./clickup";
 import { addComment, appendDocPage, getDocPage, getPlaybook, listDocPages, patchDocPage, reconcileFromClickUp, requeueTask, setStatus, syncCyber } from "./store";
 import { flushOutbox, mirrorAge, mirrorTasks, outboxSize, usageToday } from "./mirror";
 import { isApplication } from "./classify";
-import { activeClaims, db as dbHandle, exportEvents, heartbeat, lastEventAt, listEvents, listHeartbeats, loadSnapshot, saveSnapshot, setSetting } from "./db";
+import { activeClaims, completeRunnerCommand, db as dbHandle, enqueueRunnerCommand, exportEvents, heartbeat, lastEventAt, listEvents, listHeartbeats, loadSnapshot, pendingRunnerCommands, saveSnapshot, setSetting } from "./db";
 import { agentInstructions } from "./instructions";
 import {
   addJob,
@@ -185,6 +185,12 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
           .then((n) => (n ? flushOutbox(env, (m, p, body) => replayWrite(env, m, p, body)) : 0))
           .catch((e) => console.error("outbox flush:", e)),
       );
+      return json({ ok: true, commands: await pendingRunnerCommands(env, b.name).catch(() => []) });
+    }
+    if (sub === "/command-done" && method === "POST") {
+      const b = await readJson<{ id?: number }>(request);
+      if (!b.id) return json({ error: "id is required" }, 400);
+      await completeRunnerCommand(env, Number(b.id));
       return json({ ok: true });
     }
     if (sub === "/resumes" && method === "GET") return json({ resumes: await listResumes(env) });
@@ -484,6 +490,13 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     if (path === "/api/admin/telegram/test" && method === "POST") {
       const err = await notify(env, "👋 Job Agent Hub is connected. Alerts for runs, jobs that need you, and recruiter replies will land in this topic.");
       return json({ ok: !err, error: err, configured: telegramConfigured(env) }); // 200 either way: Cloudflare replaces 502 bodies
+    }
+    // Manual runner command (e.g. open a URL on the application device's browser from the admin UI).
+    if (path === "/api/admin/runner-command" && method === "POST") {
+      const b = await readJson<{ runner?: string; kind?: string; url?: string }>(request);
+      if (b.kind !== "open-url" || !b.url || !/^https?:\/\//i.test(b.url)) return json({ error: "kind=open-url and an http(s) url are required" }, 400);
+      const id = await enqueueRunnerCommand(env, { runner: b.runner ?? "kloud", kind: "open-url", payload: { url: b.url } });
+      return json({ ok: true, id }, 201);
     }
     if (path === "/api/admin/digest" && method === "POST") {
       const err = await sendDigest(env, url.origin);

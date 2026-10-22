@@ -8,7 +8,7 @@ import { hostname, homedir } from "node:os";
 import { basename, join } from "node:path";
 
 import { kimiUsage } from "./usage.mjs";
-const VERSION = "0.3.0";
+const VERSION = "0.3.1";
 const CONFIG_PATH = process.env.RUNNER_CONFIG ?? "/etc/job-agent-runner/config.json";
 let cfg = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
 /** Re-read the config file so edits (commands, models, notes, tokens) apply to the next run without a restart. */
@@ -127,10 +127,39 @@ function saveState() {
 async function heartbeat() {
   saveState();
   try {
-    await hub("/api/runner/heartbeat", { agents, slots: maxSlots(), busy: active.size, version: VERSION, host: hostname(), active: [...active.keys()] });
+    const r = await hub("/api/runner/heartbeat", { agents, slots: maxSlots(), busy: active.size, version: VERSION, host: hostname(), active: [...active.keys()] });
+    // Hub runner commands (Preston, 2026-10-22): e.g. open a verification URL in the visible
+    // browser so account-verification links run on the same device/IP as the applications.
+    if (Array.isArray(r?.commands)) for (const c of r.commands) void handleCommand(c).catch((e) => log("command failed:", e.message));
   } catch (e) {
     log("heartbeat failed:", e.message);
   }
+}
+
+async function handleCommand(cmd) {
+  if (!cmd || typeof cmd !== "object") return;
+  if (cmd.kind === "open-url") {
+    let payload = {};
+    try { payload = JSON.parse(cmd.payload || "{}"); } catch { /* keep empty */ }
+    const url = String(payload.url || "");
+    if (!/^https?:\/\//i.test(url)) return ackCommand(cmd.id, false);
+    log(`command: open-url ${url} (run #${payload.runId ?? "?"})`);
+    try {
+      const { status, stderr } = spawnSync("node", ["/opt/job-agent-runner/cdp-tool.mjs", "open", url], { timeout: 30_000, encoding: "utf8" });
+      if (status !== 0 && stderr) log("cdp-tool:", String(stderr).slice(0, 300));
+      await ackCommand(cmd.id, status === 0);
+    } catch (e) {
+      log("open-url failed:", e.message);
+      await ackCommand(cmd.id, false);
+    }
+    return;
+  }
+  log("unknown command kind:", cmd.kind);
+  await ackCommand(cmd.id, false);
+}
+
+async function ackCommand(id, ok) {
+  try { await hub("/api/runner/command-done", { id, ok }); } catch (e) { log("command ack failed:", e.message); }
 }
 
 // ---------- readable logs from JSON event streams ----------

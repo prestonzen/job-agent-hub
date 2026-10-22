@@ -3,7 +3,7 @@ import { agentInstructions } from "./instructions";
 import { esc, notify } from "./telegram";
 import { agentName } from "./names";
 import type { Env } from "./types";
-import { db as eventDb, getSetting, setSetting } from "./db";
+import { db as eventDb, enqueueRunnerCommand, getSetting, setSetting } from "./db";
 import { EMPTY_OUTCOME, TASKS, inferRunTask, outcomeSummary, taskSwitches, workSettings, type RunOutcome, type RunTask } from "./work";
 
 /**
@@ -357,6 +357,32 @@ export async function finishRun(env: Env, id: number, runner: string, f: { exitC
     const mins = Math.max(1, Math.round((r.finished_at - r.started_at) / 60_000));
     const result = await getRun(env, id);
     const o=result.outcome!;
+    // Account verification on the application device (Preston, 2026-10-22): when a run parks
+    // on a verification/sign-in wall that carries a URL, message Preston the link AND push an
+    // open-url command to the kloud runner so the link opens in CT218's visible browser
+    // (same device/IP as the applications). Without a same-device open these flows dead-end.
+    if (o.blocked > 0) {
+      const nh = (
+        await (await eventDb(env))
+          .prepare("SELECT message FROM events WHERE run_id = ? AND type = 'needs_human' ORDER BY id DESC LIMIT 5")
+          .bind(id)
+          .all<{ message: string | null }>()
+      ).results;
+      const urlRe = /https?:\/\/[^\s<>"')]+/i;
+      for (const row of nh) {
+        const text = (row.message ?? "").replace(/\s+/g, " ").trim();
+        const um = urlRe.exec(text);
+        if (!um) continue;
+        if (!/verif|confirm|sign.?in|log.?in|magic|approve|security check|device|account|unusual/i.test(text)) continue;
+        const url = um[0];
+        await enqueueRunnerCommand(env, { runner: "kloud", kind: "open-url", payload: { url, runId: id } }).catch(() => 0);
+        await notify(
+          env,
+          `🔐 <b>Account verification needed</b> — ${esc(agentName(r.agent))} on ${esc(runner)}\n${esc(text.slice(0, 220))}\nLink: ${esc(url)}\nOpening it on the application device (CT218) browser now — if it needs taps, VNC into CT218 port 6080.`,
+        );
+        break; // one verification ping per run
+      }
+    }
     // Wins are announced the moment they land — including cyber, which used to be silent here.
     // Everything else (empty "no work recorded" runs, blocked, failed, cancelled) sends NO ping:
     // it rolls into the daily digest in bulk with top reasons (Preston, 2026-10-21: fewer

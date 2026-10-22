@@ -214,6 +214,64 @@ export async function listHeartbeats(env: Env): Promise<{ agent: string; lastSee
   return results.map((r) => ({ agent: r.agent, lastSeen: new Date(r.last_seen).toISOString(), client: r.client }));
 }
 
+/**
+ * Runner command queue: tiny jobs a runner picks up on its next heartbeat
+ * (e.g. "open this verification URL in the visible browser on the application device").
+ */
+export interface RunnerCommand {
+  id: number;
+  runner: string | null; // null = any runner
+  kind: string;
+  payload: string; // JSON
+  created_at: number;
+  done_at: number | null;
+}
+
+export async function enqueueRunnerCommand(env: Env, cmd: { runner?: string | null; kind: string; payload: unknown }): Promise<number> {
+  const d = await db(env);
+  await d
+    .prepare("CREATE TABLE IF NOT EXISTS runner_commands (id INTEGER PRIMARY KEY AUTOINCREMENT, runner TEXT, kind TEXT NOT NULL, payload TEXT NOT NULL, created_at INTEGER NOT NULL, done_at INTEGER)")
+    .run();
+  const r = await d
+    .prepare("INSERT INTO runner_commands (runner, kind, payload, created_at) VALUES (?1, ?2, ?3, ?4)")
+    .bind(cmd.runner ?? null, cmd.kind, JSON.stringify(cmd.payload), Date.now())
+    .run();
+  return Number(r.meta.last_row_id);
+}
+
+/** Pending commands for a runner heartbeat; each row is returned once (claimed by id). */
+export async function pendingRunnerCommands(env: Env, runner: string, limit = 5): Promise<RunnerCommand[]> {
+  const d = await db(env);
+  await d
+    .prepare("CREATE TABLE IF NOT EXISTS runner_commands (id INTEGER PRIMARY KEY AUTOINCREMENT, runner TEXT, kind TEXT NOT NULL, payload TEXT NOT NULL, created_at INTEGER NOT NULL, done_at INTEGER)")
+    .run();
+  const cutoff = Date.now() - 3_600_000; // stale commands (>1 h) are dead
+  const { results } = await d
+    .prepare(
+      `UPDATE runner_commands SET done_at = -1
+       WHERE done_at IS NULL AND created_at < ? RETURNING id`,
+    )
+    .bind(cutoff)
+    .all().catch(() => ({ results: [] as { id: number }[] }));
+  void results;
+  const { results: rows } = await d
+    .prepare(
+      `SELECT * FROM runner_commands
+       WHERE done_at IS NULL AND (runner IS NULL OR runner = ?1)
+       ORDER BY id LIMIT ?2`,
+    )
+    .bind(runner, limit)
+    .all<RunnerCommand>();
+  return rows;
+}
+
+export async function completeRunnerCommand(env: Env, id: number): Promise<void> {
+  await (await db(env))
+    .prepare("UPDATE runner_commands SET done_at = ? WHERE id = ? AND done_at IS NULL")
+    .bind(Date.now(), id)
+    .run();
+}
+
 /** Last good copy of a computed response (e.g. the public summary), served when ClickUp is down. */
 export async function saveSnapshot(env: Env, key: string, body: string): Promise<void> {
   await (await db(env))
