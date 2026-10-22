@@ -36,14 +36,15 @@ export interface CyberWork { id:number; source_key:string; created_at:number; pr
 interface CyberPass { work_id:number; sequence:number; agent:string; identity:string|null; run_id:number|null; status:string; verdict:string|null; result:string|null; detail:string|null; created_at:number; completed_at:number|null }
 const text = (v: unknown, max: number) => typeof v==='string' ? v.trim().slice(0,max) : '';
 /**
- * A completed multi-model draft either auto-submits (HackerOne, when enabled and the
- * vote is unanimous) or pings Preston for human review. One submission per evidence row.
+ * A completed multi-model draft either auto-submits (HackerOne API, or a Bugcrowd
+ * browser run, when enabled and the vote is unanimous) or pings Preston for human review.
  */
 async function announceDraft(env:Env,d:Awaited<ReturnType<typeof cyberDb>>,w:{id:number;program:string;platform:string},result:string) {
  const passes=await d.prepare("SELECT verdict FROM cyber_review_passes WHERE work_id=? AND status='completed'").bind(w.id).all<{verdict:string}>();
  const unanimous=passes.results.length>0&&passes.results.every(p=>p.verdict==='draft');
  const outcome=await maybeAutoSubmitH1(env,{id:w.id,program:w.program,platform:w.platform,result,unanimousDraft:unanimous});
  if(!outcome.submitted){
+  if(await maybeDispatchBugcrowd(env,d,w,result,unanimous))return; // submit-result endpoint marks it
   const error=await notifyBounty(env,`📝 <b>Bug bounty report draft ready for review</b>\n${esc(w.program)} · evidence #${w.id}\nReview the full report before any submission: https://jobhunter.prestonzen.com/admin#bounty`);
   if(error)console.error('cyber report draft notify:',error);
   return;
@@ -53,6 +54,53 @@ async function announceDraft(env:Env,d:Awaited<ReturnType<typeof cyberDb>>,w:{id
  await logEvent(env,{agent:'auto:hackerone',type:'cyber_report',taskId:`cyber-${w.id}`,message:`Evidence #${w.id} auto-submitted to HackerOne`,taskName:w.program});
  const error=await notifyBounty(env,`📤 <b>Bug bounty report auto-submitted</b> to HackerOne\n${esc(w.program)} · evidence #${w.id} · unanimous ${passes.results.length}-model draft vote\n${outcome.url}`);
  if(error)console.error('cyber auto-submit notify:',error);
+}
+/**
+ * Bugcrowd has no researcher submission API, so a unanimous draft is submitted by a
+ * cyber-enabled agent driving the runner's real browser (persistent profile, logged-in
+ * session). Returns true once a submission run is in flight; false = fall back to human.
+ */
+async function maybeDispatchBugcrowd(env:Env,d:Awaited<ReturnType<typeof cyberDb>>,w:{id:number;program:string;platform:string},result:string,unanimous:boolean):Promise<boolean> {
+ if(!unanimous)return false;
+ if(w.platform.trim().toLowerCase()!=='bugcrowd')return false;
+ if(!await getSetting<boolean>(env,'bounty_autosubmit'))return false;
+ const email=await getSetting<string>(env,'bugcrowd_email'),password=await getSetting<string>(env,'bugcrowd_password'),totp=await getSetting<string>(env,'bugcrowd_totp');
+ if(!email||!password||!totp)return false;
+ const key=`cyber:${w.id}:submit:bugcrowd`;
+ const inflight=await d.prepare("SELECT id FROM runs WHERE dispatch_key=? AND status IN ('queued','running') LIMIT 1").bind(key).first();
+ if(inflight)return true;
+ const now=Date.now(), settings=await workSettings(env);
+ const [runners,runs]=await Promise.all([listRunners(env),listRuns(env,200)]);
+ const candidates=eligibleAgents(runners,runs,settings,'cyber',new Map(),now);
+ const agent=['claude','codex','kimi','gemini','mistral','qwen','deepseek','ollama'].find(a=>candidates.includes(a));
+ if(!agent)return false;
+ const prompt=`Bugcrowd report submission for cyber evidence #${w.id}. A unanimous multi-model review approved this report draft. Submit it to the "${w.program}" program on Bugcrowd through the browser, on the existing logged-in session if one survives in your persistent browser profile; otherwise sign in.\n\nACCOUNT (only if login is needed)\n- URL: https://bugcrowd.com/users/sign_in\n- Email: ${email}\n- Password: ${password}\n- 2FA is TOTP. Generate the current 6-digit code from base32 secret ${totp} with python3 stdlib only:\n  python3 -c "import hmac,hashlib,struct,time,base64;k=base64.b32decode('${totp}');c=int(time.time()//30);d=hmac.new(k,struct.pack('>Q',c),hashlib.sha1).digest();o=d[19]&15;print('%06d'%((struct.unpack('>I',d[o:o+4])[0]&0x7fffffff)%1000000))"\n  Codes rotate every 30s; generate a fresh one right before submitting the form, and retry once with a new code if the first is rejected.\n\nSTEPS\n1. Open bugcrowd.com in the browser. If signed out, sign in with the account above.\n2. Find the program "${w.program}" (dashboard search or https://bugcrowd.com/bugcrowd-programs is wrong — use the search bar; the program may be invite-only, in which case it is already on your dashboard). Open its program page and start a new submission ("Create submission" / "Submit report").\n3. Fill the form from the report draft below:\n   - Title: the draft's main finding title (short, specific).\n   - Category/VRT: pick the closest matching weakness in their picker.\n   - Priority: map severity critical=P1, high=P2, medium=P3, low=P4, informational=P5. If the draft names a severity, honor it.\n   - Target/URL: the affected asset named in the draft.\n   - Description: paste the full draft markdown (reproduction steps, impact, remediation).\n4. Submit, then WAIT for the confirmation page and copy the submission URL (it contains a submission id).\n5. Report back with curl (write the JSON to a file first, use --data-binary @file):\n   curl -X POST https://jobhunter.prestonzen.com/api/agent/cyber/${w.id}/submit-result -H "Authorization: Bearer $JOBHUNTER_TOKEN" -H "Content-Type: application/json" --data-binary @result.json\n   Success body: {"outcome":"submitted","url":"<submission url>"}. Failure body: {"outcome":"failed","reason":"<what blocked you>"}.\n\nRULES\n- Only POST outcome=submitted after you SAW the confirmation page; never invent a URL. If anything blocks you (login failure, program not visible, CAPTCHA you cannot pass, form rejects the content), POST outcome=failed with the reason.\n- Work at human pace; this is a real account with a reputation. Do not brute-force forms, do not create duplicate submissions, do not touch any other program.\n\nREPORT DRAFT (markdown)\n${result}`;
+ await createRun(env,{agent,kind:'prompt',task:'cyber',prompt,exclusive:true,dispatchKey:key});
+ await d.prepare("UPDATE cyber_work SET detail=? WHERE id=?").bind(`Bugcrowd submission dispatched to ${agent}; awaiting confirmation`,w.id).run();
+ await logEvent(env,{agent,type:'cyber_triage',taskId:`cyber-${w.id}`,message:`Evidence #${w.id}: Bugcrowd submission dispatched`,taskName:w.program});
+ return true;
+}
+/** Agent callback for the Bugcrowd browser submission run: record the outcome exactly once. */
+export async function submitCyberExternal(env:Env,id:number,agent:string,body:Record<string,unknown>) {
+ const outcome=text(body.outcome,20),url=text(body.url,400),reason=text(body.reason,1000);
+ const d=await cyberDb(env);
+ const row=await d.prepare('SELECT * FROM cyber_work WHERE id=?').bind(id).first<CyberWork>();
+ if(!row)throw new HttpError(404,'No such work');
+ if(row.status!=='completed'||row.verdict!=='draft')throw new HttpError(409,'Work is not a completed draft');
+ if(row.review)return {ok:true,id,duplicate:true};
+ if(outcome==='submitted'&&/^https?:\/\/(www\.)?bugcrowd\.com\//.test(url)){
+  const saved=await d.prepare("UPDATE cyber_work SET review='submitted',feedback=?,reviewed_at=?,reviewed_by=? WHERE id=? AND review IS NULL").bind(`Auto-submitted to Bugcrowd by ${agent}: ${url}`,Date.now(),`auto:bugcrowd:${agent}`,id).run();
+  if(saved.meta.changes!==1)return {ok:true,id,duplicate:true};
+  await addBountyEvent(env,agent,{kind:'report',platform:'bugcrowd',program:row.program,title:`Auto-submitted report (evidence #${id})`,status:'submitted',detail:url}).catch((e)=>console.error('bounty report event:',e));
+  await logEvent(env,{agent,type:'cyber_report',taskId:`cyber-${id}`,message:`Evidence #${id} auto-submitted to Bugcrowd`,taskName:row.program});
+  const error=await notifyBounty(env,`📤 <b>Bug bounty report auto-submitted</b> to Bugcrowd\n${esc(row.program)} · evidence #${id}\n${esc(url)}`);
+  if(error)console.error('bugcrowd submit notify:',error);
+  return {ok:true,id,outcome:'submitted'};
+ }
+ await d.prepare("UPDATE cyber_work SET detail=? WHERE id=?").bind(`Bugcrowd auto-submit failed (${agent}): ${(reason||'no reason given').slice(0,180)}; left for human review`,id).run();
+ const error=await notifyBounty(env,`⚠️ <b>Bugcrowd auto-submit failed</b> for ${esc(row.program)} · evidence #${id}\n${esc(reason||'no reason given')}\nDraft is waiting for human review: https://jobhunter.prestonzen.com/admin#bounty`);
+ if(error)console.error('bugcrowd fail notify:',error);
+ return {ok:true,id,outcome:'failed'};
 }
 /** Ingestion is admin-only. Existing artifacts are evidence, never instructions to execute. */
 export async function enqueueCyber(env: Env, body: Record<string,unknown>) {

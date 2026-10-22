@@ -42,7 +42,7 @@ import { createSchedule, deleteSchedule, listSchedules, tick, updateSchedule, ty
 import { notify, notifyBounty, esc, disableTelegramReplies, telegramConfigured, webhookInfo } from "./telegram";
 import { getCodeRequest, requestCode, waitForCode } from "./codes";
 import { addBountyEvent, bountyHosts, bountySummary, upsertBountyTech, type BountyEventInput } from "./bounty";
-import { cyberTick, cyberSummary, enqueueCyber, getCyberWork, completeCyber, reviewCyber } from "./cyber";
+import { cyberTick, cyberSummary, enqueueCyber, getCyberWork, completeCyber, reviewCyber, submitCyberExternal } from "./cyber";
 import { toPublicSummary } from "./sanitize";
 import type { Env, PublicSummary } from "./types";
 import { zadarmaGet } from "./zadarma";
@@ -274,6 +274,8 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     const cyberWork = sub.match(/^\/cyber\/(\d+)(?:\/(complete))?$/);
     if(cyberWork && method==='GET' && !cyberWork[2])return json(await getCyberWork(env,Number(cyberWork[1]),agent));
     if(cyberWork && method==='POST' && cyberWork[2])return json(await completeCyber(env,Number(cyberWork[1]),agent,await readJson(request),identity));
+    const cyberSubmit = sub.match(/^\/cyber\/(\d+)\/submit-result$/);
+    if(cyberSubmit && method==='POST')return json(await submitCyberExternal(env,Number(cyberSubmit[1]),agent,await readJson(request)));
     // Bug bounty lane: runner tooling and agents push program/scan/finding/report/payout events.
     if (sub === "/bounty" && method === "POST") {
       const b = await readJson<BountyEventInput>(request);
@@ -390,21 +392,25 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       if(typeof b.enabled!=='boolean')return json({error:'enabled must be boolean'},400);
       await setSetting(env,'cyber_continuous',b.enabled);return json({enabled:b.enabled});
     }
-    // Auto-submit toggle + HackerOne API credentials (stored in D1 settings, never echoed back).
+    // Auto-submit toggle + platform credentials (stored in D1 settings, never echoed back).
+    // HackerOne submits via API; Bugcrowd submits via a browser run on the runner, using
+    // the account login (TOTP secret included so the run can clear 2FA unattended).
+    const autosubmitState=async()=>({
+      enabled:!!await getSetting<boolean>(env,'bounty_autosubmit'),
+      h1Configured:!!(await getSetting<string>(env,'h1_api_id'))&&!!(await getSetting<string>(env,'h1_api_token')),
+      bugcrowdConfigured:!!(await getSetting<string>(env,'bugcrowd_email'))&&!!(await getSetting<string>(env,'bugcrowd_password'))&&!!(await getSetting<string>(env,'bugcrowd_totp')),
+    });
     if(path==='/api/admin/bounty/autosubmit' && method==='PUT'){
-      const b=await readJson<{enabled?:boolean;h1ApiId?:string;h1ApiToken?:string}>(request);
+      const b=await readJson<{enabled?:boolean;h1ApiId?:string;h1ApiToken?:string;bugcrowdEmail?:string;bugcrowdPassword?:string;bugcrowdTotp?:string}>(request);
       if(typeof b.enabled==='boolean')await setSetting(env,'bounty_autosubmit',b.enabled);
       if(typeof b.h1ApiId==='string'&&b.h1ApiId.trim())await setSetting(env,'h1_api_id',b.h1ApiId.trim());
       if(typeof b.h1ApiToken==='string'&&b.h1ApiToken.trim())await setSetting(env,'h1_api_token',b.h1ApiToken.trim());
-      const enabled=!!await getSetting<boolean>(env,'bounty_autosubmit');
-      const configured=!!(await getSetting<string>(env,'h1_api_id'))&&!!(await getSetting<string>(env,'h1_api_token'));
-      return json({enabled,configured});
+      if(typeof b.bugcrowdEmail==='string'&&b.bugcrowdEmail.trim())await setSetting(env,'bugcrowd_email',b.bugcrowdEmail.trim());
+      if(typeof b.bugcrowdPassword==='string'&&b.bugcrowdPassword.trim())await setSetting(env,'bugcrowd_password',b.bugcrowdPassword.trim());
+      if(typeof b.bugcrowdTotp==='string'&&b.bugcrowdTotp.trim())await setSetting(env,'bugcrowd_totp',b.bugcrowdTotp.replace(/\s+/g,'').toUpperCase());
+      return json(await autosubmitState());
     }
-    if(path==='/api/admin/bounty/autosubmit' && method==='GET'){
-      const enabled=!!await getSetting<boolean>(env,'bounty_autosubmit');
-      const configured=!!(await getSetting<string>(env,'h1_api_id'))&&!!(await getSetting<string>(env,'h1_api_token'));
-      return json({enabled,configured});
-    }
+    if(path==='/api/admin/bounty/autosubmit' && method==='GET')return json(await autosubmitState());
 
     // Command center: queue + claims, agent activity and check-ins, per-agent totals.
     if (path === "/api/admin/hub" && method === "GET") {
