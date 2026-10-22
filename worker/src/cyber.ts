@@ -4,6 +4,8 @@ import { cancelRun, createRun, getRun, listRunners, listRuns } from './runs';
 import { eligibleAgents, taskSwitches, workSettings } from './work';
 import { esc, notifyBounty } from './telegram';
 import { agentModels } from './auth';
+import { addBountyEvent } from './bounty';
+import { maybeAutoSubmitH1 } from './h1';
 import type { Env } from './types';
 
 const SCHEMA = `CREATE TABLE IF NOT EXISTS cyber_work (
@@ -33,6 +35,25 @@ export async function cyberDb(env: Env) {
 export interface CyberWork { id:number; source_key:string; created_at:number; program:string; platform:string; target:string; source:string; evidence:string; status:string; agent:string|null; run_id:number|null; attempts:number; next_try:number; lease_until:number; verdict:string|null; result:string|null; review:string|null; feedback:string|null; reviewed_at:number|null; reviewed_by:string|null; detail:string|null; pass_agents:string }
 interface CyberPass { work_id:number; sequence:number; agent:string; identity:string|null; run_id:number|null; status:string; verdict:string|null; result:string|null; detail:string|null; created_at:number; completed_at:number|null }
 const text = (v: unknown, max: number) => typeof v==='string' ? v.trim().slice(0,max) : '';
+/**
+ * A completed multi-model draft either auto-submits (HackerOne, when enabled and the
+ * vote is unanimous) or pings Preston for human review. One submission per evidence row.
+ */
+async function announceDraft(env:Env,d:Awaited<ReturnType<typeof cyberDb>>,w:{id:number;program:string;platform:string},result:string) {
+ const passes=await d.prepare("SELECT verdict FROM cyber_review_passes WHERE work_id=? AND status='completed'").bind(w.id).all<{verdict:string}>();
+ const unanimous=passes.results.length>0&&passes.results.every(p=>p.verdict==='draft');
+ const outcome=await maybeAutoSubmitH1(env,{id:w.id,program:w.program,platform:w.platform,result,unanimousDraft:unanimous});
+ if(!outcome.submitted){
+  const error=await notifyBounty(env,`📝 <b>Bug bounty report draft ready for review</b>\n${esc(w.program)} · evidence #${w.id}\nReview the full report before any submission: https://jobhunter.prestonzen.com/admin#bounty`);
+  if(error)console.error('cyber report draft notify:',error);
+  return;
+ }
+ await d.prepare("UPDATE cyber_work SET review='submitted',feedback=?,reviewed_at=?,reviewed_by='auto:hackerone' WHERE id=? AND review IS NULL").bind(`Auto-submitted to HackerOne after a unanimous ${passes.results.length}-model draft vote: ${outcome.url}`,Date.now(),w.id).run();
+ await addBountyEvent(env,'auto:hackerone',{kind:'report',platform:'hackerone',program:w.program,title:`Auto-submitted report (evidence #${w.id})`,status:'submitted',detail:outcome.url}).catch((e)=>console.error('bounty report event:',e));
+ await logEvent(env,{agent:'auto:hackerone',type:'cyber_report',taskId:`cyber-${w.id}`,message:`Evidence #${w.id} auto-submitted to HackerOne`,taskName:w.program});
+ const error=await notifyBounty(env,`📤 <b>Bug bounty report auto-submitted</b> to HackerOne\n${esc(w.program)} · evidence #${w.id} · unanimous ${passes.results.length}-model draft vote\n${outcome.url}`);
+ if(error)console.error('cyber auto-submit notify:',error);
+}
 /** Ingestion is admin-only. Existing artifacts are evidence, never instructions to execute. */
 export async function enqueueCyber(env: Env, body: Record<string,unknown>) {
  const key=text(body.sourceKey,180), program=text(body.program,120), platform=text(body.platform,40), target=text(body.target,300), source=text(body.source,300), evidence=text(body.evidence,24000);
@@ -79,10 +100,7 @@ export async function completeCyber(env: Env, id:number, agent:string, body:Reco
  const saved=await d.prepare("UPDATE cyber_work SET status=?,run_id=NULL,agent=CASE WHEN ?='completed' THEN ? ELSE NULL END,verdict=?,result=?,detail=?,identity=? WHERE id=? AND status='running' AND run_id=?").bind(complete?'completed':'pending',complete?'completed':'pending',agent,complete?verdict:null,complete?result:null,detail,identity,id,row.run_id).run();
  if(saved.meta.changes!==1)throw new HttpError(409,'Work ownership changed');
  await logEvent(env,{agent,type:'cyber_triage',message:`Evidence #${id}: ${verdict}; ${detail.toLowerCase()}`,taskName:row.program,identity});
- if(complete&&verdict==='draft'){
-  const error=await notifyBounty(env,`📝 <b>Bug bounty report draft ready for review</b>\n${esc(row.program)} · evidence #${id}\nReview the full report before any submission: https://jobhunter.prestonzen.com/admin#bounty`);
-  if(error)console.error('cyber report draft notify:',error);
- }
+ if(complete&&verdict==='draft')await announceDraft(env,d,row,result);
  return {ok:true,id,verdict,pass:pass.sequence,complete};
 }
 export async function reviewCyber(env: Env,id:number,body:Record<string,unknown>,by:string) {
@@ -143,7 +161,7 @@ export async function cyberTick(env:Env):Promise<number> {
     if(last){
      const verdict=last.verdict, detail=verdict==='draft'?'Multi-model report draft awaiting human review':verdict==='needs-validation'?'Multi-model review recommends further validation':'Multi-model review rejected evidence';
      await d.prepare("UPDATE cyber_work SET status='completed',agent=?,run_id=NULL,pass_agents=?,verdict=?,result=?,detail=? WHERE id=? AND status='pending'").bind(last.agent,JSON.stringify(plan),verdict,last.result,detail,w.id).run();
-     if(verdict==='draft')await notifyBounty(env,`📝 <b>Bug bounty report draft ready for review</b>\n${esc(w.program)} · evidence #${w.id}\nReview the full report before any submission: https://jobhunter.prestonzen.com/admin#bounty`);
+     if(verdict==='draft')await announceDraft(env,d,w,last.result);
     }else await d.prepare("UPDATE cyber_work SET status='blocked',detail='No cyber review agents are enabled' WHERE id=?").bind(w.id).run();
     continue;
    }

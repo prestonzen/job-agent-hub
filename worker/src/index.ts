@@ -6,7 +6,7 @@ import { HttpError, ensureCyberList, replayWrite } from "./clickup";
 import { addComment, appendDocPage, getDocPage, getPlaybook, listDocPages, patchDocPage, reconcileFromClickUp, requeueTask, setStatus, syncCyber } from "./store";
 import { flushOutbox, mirrorAge, mirrorTasks, outboxSize, usageToday } from "./mirror";
 import { isApplication } from "./classify";
-import { activeClaims, completeRunnerCommand, db as dbHandle, enqueueRunnerCommand, exportEvents, heartbeat, lastEventAt, listEvents, listHeartbeats, loadSnapshot, pendingRunnerCommands, saveSnapshot, setSetting } from "./db";
+import { activeClaims, completeRunnerCommand, db as dbHandle, enqueueRunnerCommand, exportEvents, getSetting, heartbeat, lastEventAt, listEvents, listHeartbeats, loadSnapshot, pendingRunnerCommands, saveSnapshot, setSetting } from "./db";
 import { agentInstructions } from "./instructions";
 import {
   addJob,
@@ -389,6 +389,21 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       const b=await readJson<{enabled:boolean}>(request);
       if(typeof b.enabled!=='boolean')return json({error:'enabled must be boolean'},400);
       await setSetting(env,'cyber_continuous',b.enabled);return json({enabled:b.enabled});
+    }
+    // Auto-submit toggle + HackerOne API credentials (stored in D1 settings, never echoed back).
+    if(path==='/api/admin/bounty/autosubmit' && method==='PUT'){
+      const b=await readJson<{enabled?:boolean;h1ApiId?:string;h1ApiToken?:string}>(request);
+      if(typeof b.enabled==='boolean')await setSetting(env,'bounty_autosubmit',b.enabled);
+      if(typeof b.h1ApiId==='string'&&b.h1ApiId.trim())await setSetting(env,'h1_api_id',b.h1ApiId.trim());
+      if(typeof b.h1ApiToken==='string'&&b.h1ApiToken.trim())await setSetting(env,'h1_api_token',b.h1ApiToken.trim());
+      const enabled=!!await getSetting<boolean>(env,'bounty_autosubmit');
+      const configured=!!(await getSetting<string>(env,'h1_api_id'))&&!!(await getSetting<string>(env,'h1_api_token'));
+      return json({enabled,configured});
+    }
+    if(path==='/api/admin/bounty/autosubmit' && method==='GET'){
+      const enabled=!!await getSetting<boolean>(env,'bounty_autosubmit');
+      const configured=!!(await getSetting<string>(env,'h1_api_id'))&&!!(await getSetting<string>(env,'h1_api_token'));
+      return json({enabled,configured});
     }
 
     // Command center: queue + claims, agent activity and check-ins, per-agent totals.
