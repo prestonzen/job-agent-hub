@@ -41,7 +41,7 @@ import { PHASES, runFeeds, type Phase } from "./feeds";
 import { createSchedule, deleteSchedule, listSchedules, tick, updateSchedule, type ScheduleKind } from "./schedules";
 import { notify, notifyBounty, esc, disableTelegramReplies, telegramConfigured, webhookInfo } from "./telegram";
 import { getCodeRequest, requestCode, waitForCode } from "./codes";
-import { addBountyEvent, bountyHosts, bountySummary, scanReportLines, upsertBountyTech, type BountyEventInput } from "./bounty";
+import { addBountyEvent, bountyHosts, bountySummary, upsertBountyTech, type BountyEventInput } from "./bounty";
 import { cyberTick, cyberSummary, enqueueCyber, getCyberWork, completeCyber, reviewCyber } from "./cyber";
 import { toPublicSummary } from "./sanitize";
 import type { Env, PublicSummary } from "./types";
@@ -358,18 +358,11 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       const created = await addBountyEvent(env, "bounty-pipeline", b);
       if (b.program) ctx.waitUntil(syncCyber(env, { ...b, program: b.program }).catch((e) => console.error("cyber store sync:", e)));
       // Wins are announced as they land (Preston, 2026-10-21): a completed scan is a small win,
-      // a CONFIRMED finding is a loud one. Refuted/unconfirmed validation is bookkeeping —
-      // it stays silent and rolls into the daily digest like other failures.
+      // Preston, 2026-10-22: only a CONFIRMED finding pings immediately. Completed scans are
+      // routine — they stay silent and roll into the daily digest's cyber summary instead
+      // of spamming a message per program.
       if (kind === "finding" && b.status === "confirmed") {
         await notifyBounty(env, `🚨 <b>Bounty finding</b> — ${esc(b.program ?? b.target ?? "?")} (${esc(b.platform ?? "?")})${b.severity ? ` [${esc(b.severity)}]` : ""}\n${esc(b.title ?? "")}${b.detail ? `\n${esc(b.detail.slice(0, 300))}` : ""}`);
-      } else if (b.status === "done") {
-        // Structured scan report (Preston, 2026-10-22): labeled lines instead of the scanner's run-on funnel.
-        const lines = scanReportLines(b.detail ?? b.title ?? "");
-        await notifyBounty(env, [
-          `✅ <b>Bounty scan completed</b> — ${esc(b.program ?? b.target ?? "?")} · ${esc(b.platform ?? "?")}`,
-          ...lines.map((l) => esc(l)),
-          `${url.origin}/admin#bounty`,
-        ].join("\n"));
       }
       return json({ ok: true, agent: "bounty-pipeline", ...created }, 201);
     }

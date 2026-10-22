@@ -24,10 +24,16 @@ function reasonBucket(msg: string): string {
 export async function sendDigest(env: Env, origin = "https://jobhunter.prestonzen.com"): Promise<string | null> {
   const since = Date.now() - 86_400_000;
   const d = await db(env);
-  const [{ results: applied }, { results: replies }, { results: cyberWins }, { results: confirmedRows }, { results: stalled }, { results: quiet }, q, runners] = await Promise.all([
+  const [{ results: applied }, { results: replies }, { results: scanPrograms }, { results: findingRows }, { results: triagedRows }, { results: reportRows }, { results: draftRows }, { results: confirmedRows }, { results: stalled }, { results: quiet }, q, runners] = await Promise.all([
     d.prepare("SELECT agent, COUNT(*) AS n FROM events WHERE type IN ('applied','emailed') AND at > ? GROUP BY agent ORDER BY n DESC").bind(since).all<{ agent: string; n: number }>(),
     d.prepare("SELECT category, COUNT(*) AS n FROM inbound WHERE at > ? GROUP BY category").bind(since).all<{ category: string; n: number }>().catch(() => ({ results: [] as { category: string; n: number }[] })),
-    d.prepare("SELECT kind, COUNT(*) AS n FROM bounty_events WHERE at > ? AND (kind = 'finding' OR (kind = 'scan' AND status = 'done')) GROUP BY kind").bind(since).all<{ kind: string; n: number }>().catch(() => ({ results: [] as { kind: string; n: number }[] })),
+    // Cyber summary (Preston, 2026-10-22): scans per program + findings by status, replacing the per-scan Telegram pings.
+    d.prepare("SELECT program, COUNT(*) AS n FROM bounty_events WHERE at > ? AND kind = 'scan' AND status = 'done' GROUP BY program ORDER BY n DESC").bind(since).all<{ program: string; n: number }>().catch(() => ({ results: [] as { program: string; n: number }[] })),
+    d.prepare("SELECT status, COUNT(*) AS n FROM bounty_events WHERE at > ? AND kind = 'finding' GROUP BY status").bind(since).all<{ status: string; n: number }>().catch(() => ({ results: [] as { status: string; n: number }[] })),
+    d.prepare("SELECT COUNT(*) AS n FROM events WHERE type = 'cyber_triage' AND at > ?").bind(since).all<{ n: number }>().catch(() => ({ results: [{ n: 0 }] })),
+    d.prepare("SELECT COUNT(*) AS n FROM events WHERE type = 'cyber_report' AND at > ?").bind(since).all<{ n: number }>().catch(() => ({ results: [{ n: 0 }] })),
+    // Draft reports still waiting for Preston's review (loud in the digest even when all else is quiet).
+    d.prepare("SELECT COUNT(*) AS n FROM cyber_work WHERE verdict = 'draft' AND reviewed_at IS NULL").all<{ n: number }>().catch(() => ({ results: [{ n: 0 }] })),
     d.prepare("SELECT COUNT(*) AS n FROM events WHERE type = 'reply:confirmation' AND at > ?").bind(since).all<{ n: number }>().catch(() => ({ results: [{ n: 0 }] })),
     // Everything that did NOT win and did NOT ping you: parked and failed outcomes, in bulk.
     d.prepare("SELECT type, message FROM events WHERE type IN ('needs_human','failed') AND at > ? ORDER BY at DESC LIMIT 800").bind(since).all<{ type: string; message: string | null }>(),
@@ -37,8 +43,12 @@ export async function sendDigest(env: Env, origin = "https://jobhunter.prestonze
     listRunners(env).catch(() => []),
   ]);
   const total = applied.reduce((s, r) => s + r.n, 0);
-  const findings = cyberWins.find((r) => r.kind === "finding")?.n ?? 0;
-  const scans = cyberWins.find((r) => r.kind === "scan")?.n ?? 0;
+  const scans = scanPrograms.reduce((s, r) => s + r.n, 0);
+  const findings = findingRows.reduce((s, r) => s + r.n, 0);
+  const confirmed = findingRows.filter((r) => r.status === "confirmed").reduce((s, r) => s + r.n, 0);
+  const triaged = triagedRows[0]?.n ?? 0;
+  const reports = reportRows[0]?.n ?? 0;
+  const pendingDrafts = draftRows[0]?.n ?? 0;
   const human = q.filter((j) => j.needsHuman);
   const actions = await actionItems(env, 7).catch(() => []);
 
@@ -50,15 +60,25 @@ export async function sendDigest(env: Env, origin = "https://jobhunter.prestonze
   }
   const ranked = [...buckets.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
 
+  const progList = scanPrograms
+    .slice(0, 8)
+    .map((r) => esc(r.program))
+    .join(", ") + (scanPrograms.length > 8 ? `, +${scanPrograms.length - 8} more` : "");
   const lines = [
     `📊 <b>Job Agent Hub — last 24 h</b>`,
     `Applied: <b>${total}</b>${applied.length ? " (" + applied.map((r) => `${esc(r.agent)} ${r.n}`).join(", ") + ")" : ""}`,
     `📨 Confirmed received: <b>${confirmedRows[0]?.n ?? 0}</b> (receipt emails — the landing rate)`,
-    `Cyber: ${findings} finding${findings === 1 ? "" : "s"} · ${scans} scan${scans === 1 ? "" : "s"} completed`,
+    // Cyber rolls up here instead of per-scan/per-run pings (Preston, 2026-10-22).
+    `🐞 <b>Cyber</b>: ${scans} scan${scans === 1 ? "" : "s"} completed${progList ? ` (${progList})` : ""} · ${findings} finding${findings === 1 ? "" : "s"}${confirmed ? ` (<b>${confirmed} confirmed</b> 🚨)` : ""}`,
+    `   ${triaged} evidence triaged · ${reports} draft report${reports === 1 ? "" : "s"} proposed`,
     replies.length ? `Replies: ${replies.map((r) => `${esc(r.category)} ${r.n}`).join(", ")}` : "Replies: none",
     `Queue: ${q.filter(isAvailable).length} ready · ${q.filter((j) => j.claimedBy).length} in progress`,
     `Runners: ${runners.length ? runners.map((r) => `${esc(r.name)} ${r.online ? "🟢" : "🔴"} (${r.agents.filter((a) => a.ready).length}/${r.agents.length} ready)`).join(", ") : "none"}`,
   ];
+  // Draft reports waiting on Preston break the silence even when nothing else needs him.
+  if (pendingDrafts > 0) {
+    lines.push("", `📝 <b>${pendingDrafts} draft report${pendingDrafts === 1 ? "" : "s"} awaiting your review</b> — <a href="${origin}/admin#bounty">open the Bug bounty tab</a>`);
+  }
   // Employers waiting on Preston come first: an unanswered assessment or interview request is the priority.
   if (actions.length) {
     lines.push("", `⚡ <b>Employers waiting on you (${actions.length})</b>`);
@@ -77,5 +97,5 @@ export async function sendDigest(env: Env, origin = "https://jobhunter.prestonze
     for (const j of human.slice(0, 10)) lines.push(`• <a href="${j.clickupUrl}">${esc(j.name)}</a>: ${esc(j.needsHuman ?? "")}`);
   }
   lines.push("", `<a href="${origin}/admin">Open the hub</a>`);
-  return notify(env, lines.join("\n"), { silent: human.length === 0 && actions.length === 0 });
+  return notify(env, lines.join("\n"), { silent: human.length === 0 && actions.length === 0 && pendingDrafts === 0 });
 }

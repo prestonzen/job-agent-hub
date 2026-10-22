@@ -1,6 +1,6 @@
 import { HttpError } from "./clickup";
 import { agentInstructions } from "./instructions";
-import { esc, notify, notifyBounty } from "./telegram";
+import { esc, notify } from "./telegram";
 import { agentName } from "./names";
 import type { Env } from "./types";
 import { db as eventDb, getSetting, setSetting } from "./db";
@@ -362,11 +362,10 @@ export async function finishRun(env: Env, id: number, runner: string, f: { exitC
     // it rolls into the daily digest in bulk with top reasons (Preston, 2026-10-21: fewer
     // notifications, small wins for morale, failures addressed in bulk).
     const wins = o.applied + o.emailed + o.added + o.cyber + o.triaged;
-    if (wins > 0 && !(result.task === "diagnostic" && status === "succeeded")) {
-      // Cyber wins land in the Bug Bounty topic; job-hunting wins stay in the hub topic.
-      const deliver = result.task === "cyber" ? notifyBounty : notify;
-      // What actually happened: the concrete items behind the counts (company, evidence, role),
-      // not just "1 evidence item triaged" (Preston, 2026-10-22).
+    if (wins > 0 && !(result.task === "diagnostic" && status === "succeeded") && result.task !== "cyber") {
+      // Cyber runs no longer ping per win (Preston, 2026-10-22): scans/triage roll into the
+      // daily digest's cyber summary. Draft reports still ping instantly from cyber.ts (📝).
+      // Job-hunting wins keep announcing here.
       const evRows = (
         await (await eventDb(env))
           .prepare(
@@ -386,7 +385,7 @@ export async function finishRun(env: Env, id: number, runner: string, f: { exitC
         .filter((l) => l.length > 2)
         .slice(0, 4)
         .map((l) => esc(l));
-      await deliver(
+      await notify(
         env,
         `✅ Run #${id} <b>${esc(agentName(r.agent))}</b> (${esc(result.task)}) on ${esc(runner)} after ${mins} min\n${esc(result.summary ?? status)}${bullets.length ? `\n${bullets.join("\n")}` : ""}`,
       );
