@@ -82,9 +82,14 @@ export const saveAutopilot = (p: Partial<AutopilotSettings>) =>
 export interface AgentStats { billingMonth?:string; monthlyPlanUsd?:number|null; monthlyApplicationCostUsd?:number|null; monthlyCostPerApplicationUsd?:number|null; monthlyApplications?:number; monthlyTokens?:number; monthlyTokenCoverage?:string; costBasis?:string; agent: string; claimed: number; applied: number; skipped: number; needsHuman: number; failed: number; released: number; successRate: number | null; medianMinToApply: number | null; runs: number; runsOk: number; runsFailed: number; avgRunMin: number | null; runMinutes: number; costUsd: number; tokens: number; estCostUsd: number }
 export interface AtsStats { ats: string; applied: number; needsHuman: number; skipped: number; failed: number; successRate: number | null; confirmed: number }
 export interface DayStats { date: string; applied: number; needsHuman: number; skipped: number; failed: number; runsOk: number; runsFailed: number }
+export interface FunnelRow { channel: string; submitted: number; confirmed: number; replied: number; positive: number; rejected: number; landingRate: number | null; medianDaysToReply: number | null }
+export interface HourBucket { bucket: string; submitted: number; confirmed: number; parked: number; failed: number }
+export interface ResumeUse { variant: string; submitted: number; replied: number; positive: number }
+export interface Insights { funnel: FunnelRow[]; byPtHour: HourBucket[]; resumes: ResumeUse[]; medianDaysToReply: number | null; medianDaysToRejection: number | null; caveats: string[] }
 export interface Analytics {
+  insights: Insights;
   generatedAt: string; days: number; demo: boolean;
-  totals: { applied: number; claimed: number; skipped: number; needsHuman: number; failed: number; successRate: number | null; confirmed: number; medianMinToApply: number | null; runs: number; runsOk: number; runMinutes: number; appsPerRunHour: number | null };
+  totals: { applied: number; claimed: number; skipped: number; needsHuman: number; failed: number; successRate: number | null; confirmed: number; landingRate: number | null; replied: number; positive: number; medianMinToApply: number | null; runs: number; runsOk: number; runMinutes: number; appsPerRunHour: number | null };
   byIdentity?:{identity:string;applied:number}[]; byAgent: AgentStats[]; byDay: DayStats[]; byHour: number[]; byAts: AtsStats[];
   platforms?: { name: string; kind: "ats" | "source" | "account" | "excluded"; status: "active" | "session" | "gated" | "excluded"; note: string }[];
   parked: { reason: string; count: number }[];

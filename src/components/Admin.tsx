@@ -24,7 +24,7 @@ const TABS = [
   { id: "connect", label: "Connect agents" },
 ] as const;
 const GROUPS=[
- {label:"Overview",ids:["hub"]}, {label:"Applications",ids:["pipeline","assisted","resumes","analytics"]},
+ {label:"Overview",ids:["hub"]}, {label:"Analytics",ids:["analytics"]}, {label:"Applications",ids:["pipeline","assisted","resumes"]},
  {label:"Replies",ids:["alerts"]}, {label:"Cyber",ids:["bounty"]}, {label:"Agents",ids:["agents","run","connect"]}
 ] as const;
 type Tab = (typeof TABS)[number]["id"];

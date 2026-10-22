@@ -148,6 +148,11 @@ export async function setStatus(env: Env, taskId: string, status: string): Promi
   });
 }
 
+/** ClickUp priority: 1 urgent, 2 high, 3 normal, 4 low. */
+export async function setPriority(env: Env, taskId: string, priority: 1 | 2 | 3 | 4): Promise<void> {
+  await cu(env, `/task/${encodeURIComponent(taskId)}`, { method: "PUT", body: JSON.stringify({ priority }) });
+}
+
 export async function addComment(env: Env, taskId: string, text: string): Promise<void> {
   await cu(env, `/task/${encodeURIComponent(taskId)}/comment`, {
     method: "POST",

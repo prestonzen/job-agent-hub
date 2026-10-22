@@ -1,5 +1,5 @@
 import { isApplication } from "./classify";
-import { addComment, setStatus } from "./store";
+import { addComment, flagForPreston, setStatus } from "./store";
 import { db, logEvent } from "./db";
 import { loadTasks } from "./jobs";
 import { companyKey } from "./pacing";
@@ -179,6 +179,8 @@ export async function handleInbound(env: Env, e: InboundEmail): Promise<{ duplic
       }
       await addComment(env, task.id, `[hub] ${ICON[category]} Email (${category}) from ${e.from}: "${e.subject}"\n${summary}`);
     }
+    // Interview / assessment / offer / onboarding: Urgent + assigned to Preston in Huly (its own notifications fire too).
+    if (env.MOCK !== "true" && ACTION_CATEGORIES.includes(category)) await flagForPreston(env, task.id, "urgent").catch((e) => console.error("flag for Preston failed:", (e as Error).message));
     action = forward ? `status → ${next}` : "comment";
     await logEvent(env, { agent: "inbox", taskId: task.id, taskName: task.name, type: `reply:${category}`, message: summary });
   }

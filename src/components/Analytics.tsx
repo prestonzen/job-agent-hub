@@ -79,9 +79,10 @@ export default function Analytics() {
       </div>
 
       <section className="kpis an-kpis">
-        <Stat label="Applications sent" value={t.applied} sub={`${t.claimed} jobs claimed`} />
-        <Stat label="Confirmed received" value={t.confirmed} tone={t.applied > 0 && t.confirmed === 0 ? "warn" : undefined} sub="receipt emails — the landing rate that matters" />
-        <Stat label="Success rate" value={pct(t.successRate)} sub="applied ÷ finished attempts" />
+        <Stat label="Submitted" value={t.applied} sub={`agents reported applied · ${t.claimed} claimed`} />
+        <Stat label="Confirmed received" value={t.confirmed} tone={t.applied > 0 && t.confirmed === 0 ? "warn" : "ok"} sub={`${pct(t.landingRate)} of submissions produced a receipt`} />
+        <Stat label="Replies" value={t.replied ?? 0} sub={`${t.positive ?? 0} positive (interview / assessment / offer)`} tone={(t.positive ?? 0) > 0 ? "ok" : undefined} />
+        <Stat label="Form completion" value={pct(t.successRate)} sub="reported applied ÷ finished attempts (not a landing rate)" />
         <Stat label="Median time to apply" value={mins(t.medianMinToApply)} sub="claim → submitted" />
         <Stat label="Agent run time" value={`${(t.runMinutes / 60).toFixed(1)} h`} sub={`${t.runsOk}/${t.runs} processes completed; diagnostics excluded`} />
         <Stat label="Applications per run-hour" value={t.appsPerRunHour === null ? "—" : t.appsPerRunHour.toFixed(1)} sub="throughput" />
@@ -96,6 +97,43 @@ export default function Analytics() {
           </>
         )}
       </section>
+
+      <Card title="Landing funnel by channel" className="wide" aside={<span className="muted small">submitted → confirmed → replied → positive</span>}>
+        <p className="muted small">
+          “Applied” only means an agent saw a thank-you page. A <b>receipt</b> proves the company's inbox took it; a <b>reply</b> proves a person or their ATS acted on it.
+          Median reply {data.insights.medianDaysToReply === null ? "—" : `${data.insights.medianDaysToReply} d`} · median rejection {data.insights.medianDaysToRejection === null ? "—" : `${data.insights.medianDaysToRejection} d`}.
+        </p>
+        <table className="score"><thead><tr><th>Channel</th><th>Submitted</th><th>Confirmed</th><th>Landing rate</th><th>Replied</th><th>Positive</th><th>Rejected</th><th>Median reply</th></tr></thead><tbody>
+          {data.insights.funnel.map((f) => (
+            <tr key={f.channel}>
+              <td className="who">{f.channel}</td><td>{f.submitted}</td><td>{f.confirmed}</td>
+              <td className={f.submitted >= 5 && (f.landingRate ?? 0) < 0.2 ? "warn" : ""}>{pct(f.landingRate)}</td>
+              <td>{f.replied}</td><td>{f.positive}</td><td>{f.rejected}</td><td>{f.medianDaysToReply === null ? "—" : `${f.medianDaysToReply} d`}</td>
+            </tr>
+          ))}
+          {!data.insights.funnel.length && <tr><td colSpan={8}>No submissions in this window.</td></tr>}
+        </tbody></table>
+      </Card>
+
+      <div className="grid two">
+        <Card title="Submission hour vs outcome" aside={<span className="muted small">Pacific time · ATS forms only</span>}>
+          <table className="score"><thead><tr><th>Window</th><th>Submitted</th><th>Confirmed</th><th>Parked</th><th>Failed</th><th>Submitted rate</th></tr></thead><tbody>
+            {data.insights.byPtHour.map((b) => { const tot = b.submitted + b.parked + b.failed; return (
+              <tr key={b.bucket}><td className="who">{b.bucket}</td><td>{b.submitted}</td><td>{b.confirmed}</td><td>{b.parked}</td><td>{b.failed}</td><td>{tot ? `${Math.round((b.submitted / tot) * 100)}%` : "—"}</td></tr>
+            ); })}
+          </tbody></table>
+        </Card>
+        <Card title="Resume variant → replies">
+          <table className="score"><thead><tr><th>Variant</th><th>Submitted</th><th>Replied</th><th>Positive</th></tr></thead><tbody>
+            {data.insights.resumes.map((r) => <tr key={r.variant}><td className="who">{r.variant}</td><td>{r.submitted}</td><td>{r.replied}</td><td>{r.positive}</td></tr>)}
+            {!data.insights.resumes.length && <tr><td colSpan={4}>No applied notes named a resume file.</td></tr>}
+          </tbody></table>
+        </Card>
+      </div>
+
+      <Card title="How to read these numbers">
+        <ul className="small">{data.insights.caveats.map((c, i) => <li key={i}>{c}</li>)}</ul>
+      </Card>
 
       <Card title="Outcomes per day" className="wide chart-card" aside={<Legend items={OUTCOMES} />}>
         <StackedColumns rows={rows} series={OUTCOMES} ariaLabel={`Outcomes per day over the last ${days} days`} />

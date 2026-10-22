@@ -349,3 +349,13 @@ export async function setDocMarkdown(cfg: HulyCfg, d: HulyDoc, markdown: string)
   const content = await createMarkup(cfg, "document:class:Document", d._id, "content", markdownToMarkup(markdown));
   await updateDoc(cfg, "document:class:Document", d.space, d._id, { content });
 }
+
+/** The owner's Person record (assignee ref) — the account the token belongs to. */
+let ownerCache: { ws: string; person: string | null } | null = null;
+export async function ownerPerson(cfg: HulyCfg): Promise<string | null> {
+  if (ownerCache?.ws === cfg.ws) return ownerCache.person;
+  const { uuid } = await account(cfg);
+  const p = await findOne<{ _id: string }>(cfg, "contact:class:Person", { personUuid: uuid });
+  ownerCache = { ws: cfg.ws, person: p?._id ?? null };
+  return ownerCache.person;
+}

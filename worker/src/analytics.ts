@@ -112,8 +112,34 @@ export const PLATFORM_REGISTRY: PlatformInfo[] = [
   { name: "Wellfound", kind: "excluded", status: "excluded", note: "Agents may self-create accounts (create_if_missing) but feeds skip it; low yield" },
 ];
 
+/** The landing funnel per channel: submitted ≠ landed. A receipt proves the submission arrived; a reply proves a person saw it. */
+export interface FunnelRow {
+  channel: string;
+  submitted: number;
+  confirmed: number;
+  replied: number;
+  positive: number;
+  rejected: number;
+  /** confirmed / submitted — the honest "applied" rate for this channel. */
+  landingRate: number | null;
+  medianDaysToReply: number | null;
+}
+export interface HourBucket { bucket: string; submitted: number; confirmed: number; parked: number; failed: number }
+export interface ResumeUse { variant: string; submitted: number; replied: number; positive: number }
+export interface Insights {
+  funnel: FunnelRow[];
+  /** Submission hour (America/Los_Angeles) vs outcome, ATS forms only. */
+  byPtHour: HourBucket[];
+  resumes: ResumeUse[];
+  medianDaysToReply: number | null;
+  medianDaysToRejection: number | null;
+  /** Plain-language notes on what each number can and cannot prove. */
+  caveats: string[];
+}
+
 export interface Analytics {
   generatedAt: string;
+  insights: Insights;
   days: number;
   demo: boolean;
   totals: {
@@ -125,6 +151,11 @@ export interface Analytics {
     successRate: number | null;
     /** Submissions with a confirmation receipt — "confirmed received", the real landing rate. */
     confirmed: number;
+    /** confirmed / applied. */
+    landingRate: number | null;
+    /** Replies from a person or an ATS decision (anything but a receipt), and the positive ones (interview / assessment / offer). */
+    replied: number;
+    positive: number;
     medianMinToApply: number | null;
     runs: number;
     runsOk: number;
@@ -180,7 +211,7 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
   const d = await db(env);
   const since = Date.now() - days * DAY;
 
-  const [{ results: evs }, { results: runs }, q, runners, usage] = await Promise.all([
+  const [{ results: evs }, { results: runs }, q, runners, { results: replies }, { results: appliedNotes }, usage] = await Promise.all([
     d
       .prepare("SELECT at, agent, task_id, type, ats, identity FROM events WHERE at >= ? AND type IN ('claimed','applied','skipped','needs_human','failed','released','reply:confirmation') ORDER BY at")
       .bind(since)
@@ -192,6 +223,8 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
       .catch(() => ({ results: [] as { agent: string; status: string; created_at: number; started_at: number | null; finished_at: number | null; cost_usd: number | null; tokens: number | null }[] })),
     queue(env).catch(() => []),
     listRunners(env).catch(() => []),
+    d.prepare("SELECT task_id, at, category FROM inbound WHERE task_id IS NOT NULL AND at >= ?").bind(since - 30 * DAY).all<{ task_id: string; at: number; category: string }>().catch(() => ({ results: [] as { task_id: string; at: number; category: string }[] })),
+    d.prepare("SELECT task_id, message FROM events WHERE type = 'applied' AND at >= ? AND message LIKE '%Resume%'").bind(since).all<{ task_id: string | null; message: string | null }>().catch(() => ({ results: [] as { task_id: string | null; message: string | null }[] })),
     (await mdb(env))
       .prepare("SELECT day, calls FROM api_usage WHERE api = 'clickup' AND day >= ? ORDER BY day")
       .bind(new Date(since).toISOString().slice(0, 10))
@@ -336,12 +369,15 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
   for (const j of q) if (j.needsHuman) parkedMap.set(parkedCategory(j.needsHuman), (parkedMap.get(parkedCategory(j.needsHuman)) ?? 0) + 1);
   const ready = q.filter((j) => !j.claimedBy && !j.needsHuman && j.applyUrl).length;
 
+  const insights = buildInsights(evs, replies, appliedNotes, q);
+
   const online = runners.filter((r) => r.online);
   const bounty = await bountyTotals(env).catch(() => ({
     programs: 0, scans: 0, hostsScanned: 0, findings: 0, bySeverity: {} as Record<string, number>, reports: 0, payouts: 0, payoutsUsd: 0,
   }));
   return {
     generatedAt: new Date().toISOString(),
+    insights,
     days,
     demo: env.MOCK === "true",
     totals: {
@@ -352,6 +388,9 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
       failed,
       successRate: rate(applied, skipped + needsHuman + failed),
       confirmed,
+      landingRate: applied ? Math.round((confirmed / applied) * 1000) / 1000 : null,
+      replied: insights.funnel.reduce((n, f) => n + f.replied, 0),
+      positive: insights.funnel.reduce((n, f) => n + f.positive, 0),
       medianMinToApply: round1(median(allToApply)),
       runs: sum((a) => a.runs),
       runsOk: sum((a) => a.runsOk),
@@ -374,5 +413,80 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
       busy: online.reduce((s, r) => s + r.busy, 0),
     },
     bounty,
+  };
+}
+
+const POSITIVE = new Set(["interview", "assessment", "offer", "screening", "onboarding"]);
+const channelOf = (ats: string | null) => (ats || "unknown").toLowerCase().split(/[\s(]/)[0] || "unknown";
+const ptHour = (ms: number) => Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: "America/Los_Angeles" }).format(new Date(ms))) % 24;
+const bucketOf = (h: number) => (h >= 22 || h < 6 ? "night 22–06" : h < 9 ? "morning 06–09" : h < 17 ? "business 09–17" : "evening 17–22");
+
+/** Funnel, hour-of-day and resume-variant views, all keyed on the same applied events and the inbound reply feed. */
+function buildInsights(evs: Ev[], replies: { task_id: string; at: number; category: string }[], appliedNotes: { task_id: string | null; message: string | null }[], q: { id: string; status: string }[]): Insights {
+  const applied = evs.filter((e) => e.type === "applied" && e.task_id);
+  const firstApplied = new Map<string, Ev>();
+  for (const e of applied) if (!firstApplied.has(e.task_id!)) firstApplied.set(e.task_id!, e);
+  const byTask = new Map<string, { confirmed: boolean; replied: number | null; positive: boolean; rejected: boolean }>();
+  for (const [id] of firstApplied) byTask.set(id, { confirmed: false, replied: null, positive: false, rejected: false });
+  for (const r of replies) {
+    const t = byTask.get(r.task_id);
+    const a = firstApplied.get(r.task_id);
+    if (!t || !a || r.at < a.at) continue;
+    if (r.category === "confirmation") { t.confirmed = true; continue; }
+    if (t.replied === null || r.at < t.replied) t.replied = r.at;
+    if (POSITIVE.has(r.category)) t.positive = true;
+    if (r.category === "rejection") t.rejected = true;
+  }
+  // A status moved to screening/accepted/earning by anyone counts as positive even without a tracked email.
+  const status = new Map(q.map((j) => [j.id, j.status]));
+  for (const [id, t] of byTask) if (POSITIVE.has(status.get(id) ?? "")) t.positive = true;
+
+  const rows = new Map<string, FunnelRow & { _days: number[] }>();
+  const R = (ch: string) => { let r = rows.get(ch); if (!r) { r = { channel: ch, submitted: 0, confirmed: 0, replied: 0, positive: 0, rejected: 0, landingRate: null, medianDaysToReply: null, _days: [] }; rows.set(ch, r); } return r; };
+  const allReply: number[] = [], allReject: number[] = [];
+  for (const [id, a] of firstApplied) {
+    const t = byTask.get(id)!;
+    const r = R(channelOf(a.ats));
+    r.submitted++;
+    if (t.confirmed) r.confirmed++;
+    if (t.replied !== null) { r.replied++; const days = (t.replied - a.at) / DAY; r._days.push(days); allReply.push(days); if (t.rejected) allReject.push(days); }
+    if (t.positive) r.positive++;
+    if (t.rejected) r.rejected++;
+  }
+  const funnel = [...rows.values()].map(({ _days, ...r }) => ({ ...r, landingRate: r.submitted ? Math.round((r.confirmed / r.submitted) * 1000) / 1000 : null, medianDaysToReply: round1(median(_days)) })).sort((a, b) => b.submitted - a.submitted);
+
+  const hb = new Map<string, HourBucket>();
+  const H = (b: string) => { let x = hb.get(b); if (!x) { x = { bucket: b, submitted: 0, confirmed: 0, parked: 0, failed: 0 }; hb.set(b, x); } return x; };
+  for (const e of evs) {
+    if (channelOf(e.ats) === "email") continue;
+    if (e.type === "applied" && e.task_id) { const x = H(bucketOf(ptHour(e.at))); x.submitted++; if (byTask.get(e.task_id)?.confirmed) x.confirmed++; }
+    else if (e.type === "needs_human") H(bucketOf(ptHour(e.at))).parked++;
+    else if (e.type === "failed") H(bucketOf(ptHour(e.at))).failed++;
+  }
+  const order = ["night 22–06", "morning 06–09", "business 09–17", "evening 17–22"];
+  const byPtHour = order.map((b) => hb.get(b) ?? { bucket: b, submitted: 0, confirmed: 0, parked: 0, failed: 0 });
+
+  const rv = new Map<string, ResumeUse>();
+  for (const n of appliedNotes) {
+    const m = n.message?.match(/Resume_([a-z-]+?)_20/i);
+    const variant = m ? m[1].toLowerCase() : "(not recorded)";
+    let x = rv.get(variant); if (!x) { x = { variant, submitted: 0, replied: 0, positive: 0 }; rv.set(variant, x); }
+    x.submitted++;
+    const t = n.task_id ? byTask.get(n.task_id) : undefined;
+    if (t && t.replied !== null) x.replied++;
+    if (t?.positive) x.positive++;
+  }
+  const resumes = [...rv.values()].sort((a, b) => b.submitted - a.submitted);
+
+  return {
+    funnel, byPtHour, resumes,
+    medianDaysToReply: round1(median(allReply)), medianDaysToRejection: round1(median(allReject)),
+    caveats: [
+      "Submitted = an agent reported applied (it saw a thank-you page). Confirmed = a receipt email reached the tracked inbox afterwards; Ashby and Greenhouse send one for every real application, so a submitted-but-unconfirmed Ashby row almost certainly never landed.",
+      "Replies come from the Gmail → hub feed; a reply that lands elsewhere (another inbox, a phone call) is not counted until the issue's status is changed by hand.",
+      "Positive = interview / assessment / offer / onboarding email, or the issue moved to screening or beyond.",
+      "Hour buckets use Pacific time and exclude email applications (no bot wall to measure).",
+      "Resume variant is read from the agent's applied note; (not recorded) means the agent did not name the file.",
+    ],
   };
 }

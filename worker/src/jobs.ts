@@ -158,7 +158,7 @@ function parkedReason(t: Task): string | null {
   const nh = t.nextAction?.match(NEEDS_HUMAN)?.[1];
   if (nh !== undefined) return nh || "needs a person";
   if (t.nextAction && PARKED_NOTE.test(t.nextAction)) return t.nextAction;
-  if (PARKED_NAME.test(t.name)) return t.name.match(/\(([^)]*)\)\s*$/)?.[1] ?? "marked in the task name";
+  if (PARKED_NAME.test(t.name)) return t.name.match(/\(([^)]*)\)\s*$/)?.[1] ?? t.name.match(/\b(?:NEEDS HUMAN|BLOCKED|PARKED)\s*:\s*(.+)$/)?.[1]?.trim() ?? "marked in the task name";
   // Someone already worked this job (Applied By set) without finishing the status: never hand it out again.
   if (t.appliedBy) return `already worked by ${t.appliedBy}; status not updated`;
   return null;
@@ -393,6 +393,13 @@ export async function reportResult(
     throw new HttpError(409, `${task.name} is already "${task.status}"${task.appliedBy ? ` (by ${task.appliedBy})` : ""}; not overwriting`);
   }
 
+  // Preston, 2026-10-22: no more parks for written answers or for a missing employer email. Agents write essays
+  // (ESSAYS rule); when the posting's address is in the description the hub already exposes it as applyEmail.
+  if (r.outcome === "needs_human" && !admin) {
+    const cat = parkedCategory(note ?? "");
+    if (cat === "Essay or written answers") throw new HttpError(422, "Not a reason to park: write the answer yourself from the playbook and Answer Bank (ESSAYS rule), then submit. Park only for a CAPTCHA, an emailed code that never arrived, an account you cannot sign in to, a human/AI attestation, or facts only Preston has (say which).");
+    if (cat === "Email address not on record" && job.applyEmail) throw new HttpError(422, `This job has an application address (${job.applyEmail}): apply with send_application_email instead of parking it.`);
+  }
   const who = displayAgent(agent);
   // The real submitting platform: what the agent said, else the job's ATS / apply link, else "Company site". Never "Other".
   const platform = inferPlatform({ platform: r.platform, ats: job.ats, url: job.applyUrl, text: note });

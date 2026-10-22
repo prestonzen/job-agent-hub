@@ -145,6 +145,20 @@ export async function requeueTask(env: Env, id: string): Promise<{ name: string 
   return { name };
 }
 
+/**
+ * An employer is waiting on Preston (interview, assessment, offer, onboarding): make the issue Urgent and assign it to
+ * him so Huly's own notifications (Telegram integration, inbox) fire, and mirror the priority to ClickUp.
+ */
+export async function flagForPreston(env: Env, id: string, priority: "urgent" | "high" = "urgent"): Promise<void> {
+  if (!useHuly(env)) { const cid = id; await mirror(env, "priority", () => cu.setPriority(env, cid, priority === "urgent" ? 1 : 2)); return; }
+  const cfg = h.hulyCfg(env), p = await h.project(cfg);
+  const i = await h.getIssue(cfg, p, id);
+  const assignee = await h.ownerPerson(cfg).catch(() => null);
+  await h.updateIssue(cfg, p, i, { priority: h.PRIORITIES.indexOf(priority), ...(assignee ? { assignee } : {}) });
+  const cid = await clickupIdOf(env, id);
+  if (cid) await mirror(env, "priority", () => cu.setPriority(env, cid, priority === "urgent" ? 1 : 2));
+}
+
 // ---------- playbook ----------
 
 /** Huly document title ↔ the ClickUp page it mirrors (the seven playbook pages). */
