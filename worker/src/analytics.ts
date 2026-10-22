@@ -387,8 +387,8 @@ export async function buildAnalytics(env: Env, days = 30): Promise<Analytics> {
       needsHuman,
       failed,
       successRate: rate(applied, skipped + needsHuman + failed),
-      confirmed,
-      landingRate: applied ? Math.round((confirmed / applied) * 1000) / 1000 : null,
+      confirmed: insights.funnel.reduce((n, f) => n + f.confirmed, 0),
+      landingRate: applied ? Math.round((insights.funnel.reduce((n, f) => n + f.confirmed, 0) / applied) * 1000) / 1000 : null,
       replied: insights.funnel.reduce((n, f) => n + f.replied, 0),
       positive: insights.funnel.reduce((n, f) => n + f.positive, 0),
       medianMinToApply: round1(median(allToApply)),
@@ -432,7 +432,10 @@ function buildInsights(evs: Ev[], replies: { task_id: string; at: number; catego
     const t = byTask.get(r.task_id);
     const a = firstApplied.get(r.task_id);
     if (!t || !a || r.at < a.at) continue;
-    if (r.category === "confirmation") { t.confirmed = true; continue; }
+    // Any email from the company after we applied proves the application landed (Preston, 2026-10-22):
+    // a rejection is an acknowledgement too. Only receipts stop here; everything else is also a reply.
+    t.confirmed = true;
+    if (r.category === "confirmation") continue;
     if (t.replied === null || r.at < t.replied) t.replied = r.at;
     if (POSITIVE.has(r.category)) t.positive = true;
     if (r.category === "rejection") t.rejected = true;
@@ -482,7 +485,7 @@ function buildInsights(evs: Ev[], replies: { task_id: string; at: number; catego
     funnel, byPtHour, resumes,
     medianDaysToReply: round1(median(allReply)), medianDaysToRejection: round1(median(allReject)),
     caveats: [
-      "Submitted = an agent reported applied (it saw a thank-you page). Confirmed = a receipt email reached the tracked inbox afterwards; Ashby and Greenhouse send one for every real application, so a submitted-but-unconfirmed Ashby row almost certainly never landed.",
+      "Submitted = an agent reported applied (it saw a thank-you page). Confirmed = any email from that company reached the tracked inbox afterwards — a receipt, a rejection, an interview request all prove the application landed; Ashby and Greenhouse send a receipt for every real application, so a submitted-but-unconfirmed Ashby row almost certainly never landed.",
       "Replies come from the Gmail → hub feed; a reply that lands elsewhere (another inbox, a phone call) is not counted until the issue's status is changed by hand.",
       "Positive = interview / assessment / offer / onboarding email, or the issue moved to screening or beyond.",
       "Hour buckets use Pacific time and exclude email applications (no bot wall to measure).",
