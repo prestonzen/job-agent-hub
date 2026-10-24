@@ -21,6 +21,34 @@ async function api(env: Env, method: string, body: Record<string, unknown>): Pro
   return (await res.json()) as { ok: boolean; result?: unknown; description?: string };
 }
 
+/** Inbound (getUpdates) access for the approval-inbox poller. */
+export const telegramApi = api;
+
+/** Attach a file (e.g. a full report as .md) to a topic. Never throws. */
+export async function sendDocument(
+  env: Env,
+  filename: string,
+  content: string,
+  caption: string,
+  topic: "hub" | "bounty" = "bounty",
+): Promise<{ messageId: number | null; error: string | null }> {
+  if (!telegramConfigured(env)) return { messageId: null, error: "Telegram is not configured" };
+  try {
+    const thread = topic === "bounty" ? await bountyThreadId(env) : await threadId(env);
+    const form = new FormData();
+    form.append("chat_id", String(env.TELEGRAM_CHAT_ID));
+    if (thread) form.append("message_thread_id", String(thread));
+    form.append("caption", caption.slice(0, 1000));
+    form.append("document", new Blob([content], { type: "text/markdown" }), filename);
+    const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendDocument`, { method: "POST", body: form });
+    const r = (await res.json()) as { ok: boolean; result?: { message_id?: number }; description?: string };
+    const id = r.result?.message_id ?? null;
+    return r.ok ? { messageId: id, error: null } : { messageId: null, error: `Telegram: ${r.description ?? "sendDocument failed"}` };
+  } catch (e) {
+    return { messageId: null, error: `Telegram: ${(e as Error).message}` };
+  }
+}
+
 export async function threadId(env: Env): Promise<number | undefined> {
   if (env.TELEGRAM_THREAD_ID) return Number(env.TELEGRAM_THREAD_ID) || undefined;
   const saved = await getSetting<number>(env, "telegram_thread").catch(() => null);

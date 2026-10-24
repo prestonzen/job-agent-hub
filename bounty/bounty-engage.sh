@@ -18,6 +18,18 @@ LOG="$OUT/engage-$(date +%Y%m%d-%H%M%S).log"
 mkdir -p "$OUT"
 
 echo "[engage] $PROGRAM / $HOST / $TITLE"
+
+# Announce the hypothesis up front: "found, verifying" — the confirmed/refuted verdict
+# (and, for confirmed, the report draft for Telegram approval) follows when Dark-Moon exits.
+python3 - "$PLATFORM" "$PROGRAM" "$HOST" "$TITLE" <<'PYEOF' | curl -fsS -X POST "$HUB/api/admin/bounty-events" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d @- || echo "[engage] verifying ping failed (non-fatal)"
+import json, sys
+platform, program, host, title = sys.argv[1:5]
+print(json.dumps({
+    "kind": "finding", "platform": platform, "program": program, "target": host,
+    "status": "verifying", "title": f"Verifying: {title}"[:200],
+}))
+PYEOF
+
 cd /opt/Dark-Moon || exit 1
 timeout 2400 ./darkmoon.sh " TARGET: $HOST  PROGRAM=\"$PROGRAM\" FOCUS=confirm-or-refute: $TITLE  NOISE=low FORMAT=h1  SCOPE: authorized $PLATFORM bug bounty program asset. Validate ONLY this suspected finding; do not widen scope. If confirmed, draft the report. " > "$LOG" 2>&1
 RC=$?
@@ -30,13 +42,24 @@ if [ "$CONFIRMED" -gt 0 ]; then
   STATUS=confirmed
   KIND=finding
 else
-  STATUS=needs-validation
+  STATUS=refuted
   KIND=finding
 fi
 
-curl -fsS -X POST "$HUB/api/admin/bounty-events" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d @- <<EOF
-{"kind":"$KIND","platform":"$PLATFORM","program":"$PROGRAM","target":"$HOST","severity":"medium","status":"$STATUS","title":"Dark-Moon validation: $TITLE","detail":"Autonomous validation of a scanner-flagged observation. rc=$RC, confirmed_findings=$CONFIRMED, campaign_finalized=$FINALIZED. Full log on CT 134: $LOG"}
-EOF
+# Build the event JSON with python so quotes/backslashes in $TITLE can't corrupt it
+# (jury markdown contains literal quotes — a raw heredoc 400s the POST and loses the record).
+PAYLOAD=$(python3 - "$KIND" "$PLATFORM" "$PROGRAM" "$HOST" "$STATUS" "$TITLE" "$LOG" "$RC" "$CONFIRMED" "$FINALIZED" <<'PYEOF'
+import json, sys
+kind, platform, program, host, status, title, log, rc, confirmed, finalized = sys.argv[1:11]
+print(json.dumps({
+    "kind": kind, "platform": platform, "program": program, "target": host,
+    "severity": "medium", "status": status,
+    "title": f"Dark-Moon validation: {title}"[:200],
+    "detail": f"Autonomous validation of a scanner-flagged observation. rc={rc}, confirmed_findings={confirmed}, campaign_finalized={finalized}. Full log on CT 134: {log}",
+}))
+PYEOF
+)
+curl -fsS -X POST "$HUB/api/admin/bounty-events" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d "$PAYLOAD"
 echo
 
 # Every validation log enters durable offline review; no log marker is treated as proof.

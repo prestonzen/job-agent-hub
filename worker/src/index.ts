@@ -40,6 +40,7 @@ import { prepNow, saveKit } from "./kits";
 import { PHASES, runFeeds, type Phase } from "./feeds";
 import { createSchedule, deleteSchedule, listSchedules, tick, updateSchedule, type ScheduleKind } from "./schedules";
 import { notify, notifyBounty, esc, disableTelegramReplies, telegramConfigured, webhookInfo } from "./telegram";
+import { telegramInboxTick } from "./telegram-inbox";
 import { getCodeRequest, requestCode, waitForCode } from "./codes";
 import { addBountyEvent, bountyHosts, bountySummary, upsertBountyTech, type BountyEventInput } from "./bounty";
 import { cyberTick, cyberSummary, enqueueCyber, getCyberWork, completeCyber, reviewCyber, submitCyberExternal } from "./cyber";
@@ -179,6 +180,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
         await cyberTick(env).then((n) => n && console.log("cyber tick:", n)).catch((e) => console.error("cyber tick:", e));
       })());
       ctx.waitUntil(flushReplyNotifications(env).catch((e)=>console.error("reply delivery:",e)));
+      ctx.waitUntil(telegramInboxTick(env).catch((e)=>console.error("tg inbox:",e)));
       // Replay ClickUp writes that were deferred by a rate limit or outage.
       ctx.waitUntil(
         outboxSize(env)
@@ -369,8 +371,13 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
       // Preston, 2026-10-22: only a CONFIRMED finding pings immediately. Completed scans are
       // routine — they stay silent and roll into the daily digest's cyber summary instead
       // of spamming a message per program.
+      // Preston, 2026-10-24: wording says what is actually happening — a fresh hypothesis is
+      // "found, verifying", a confirmed one is "verified, writing report".
+      if (kind === "finding" && b.status === "verifying") {
+        await notifyBounty(env, `🔎 <b>Possible bounty found — verifying</b> — ${esc(b.program ?? b.target ?? "?")} (${esc(b.platform ?? "?")})\n${esc(b.title ?? "")}`, { silent: true });
+      }
       if (kind === "finding" && b.status === "confirmed") {
-        await notifyBounty(env, `🚨 <b>Bounty finding</b> — ${esc(b.program ?? b.target ?? "?")} (${esc(b.platform ?? "?")})${b.severity ? ` [${esc(b.severity)}]` : ""}\n${esc(b.title ?? "")}${b.detail ? `\n${esc(b.detail.slice(0, 300))}` : ""}`);
+        await notifyBounty(env, `✅ <b>Bounty verified</b> — ${esc(b.program ?? b.target ?? "?")} (${esc(b.platform ?? "?")})${b.severity ? ` [${esc(b.severity)}]` : ""}\n${esc(b.title ?? "")}\nWriting the report now; it will be posted here for your yes/no.${b.detail ? `\n${esc(b.detail.slice(0, 300))}` : ""}`);
       }
       return json({ ok: true, agent: "bounty-pipeline", ...created }, 201);
     }
