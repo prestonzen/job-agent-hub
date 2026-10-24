@@ -91,16 +91,20 @@ ssh root@kloud "pct exec 134 -- sh /opt/darkmoon-smoke-test.sh"
    cannot detect every policy nuance or every program-specific requirement; blacklist additions
    should be reviewed when policy pages change.
 3. **Validation + report** — anything above info level goes to Dark-Moon for exploitation-proof
-   and report drafting. Dark-Moon's original evidence stays the same for each independent model
-   interpretation. The hub records a per-evidence pass log: enabled Ollama, Kimi, and Claude cyber
-   agents review sequentially, with each later pass reading earlier notes and recording agreement,
-   disagreement, and next direction. An agent only participates when its existing global and Cyber
-   switches permit it; this workflow does not turn Claude on. The final pass becomes the report
-   draft or rejection, while all pass results remain visible in the Cyber evidence history. One master
+   and report drafting; the engage script posts a `verifying` event up front ("Possible bounty
+   found — verifying", silent ping) and the confirmed/refuted verdict when it exits. Confirmed
+   evidence enters the cyber review queue. Revised 2026-10-24: the multi-model jury is replaced
+   by **one authoritative pass** — the strongest enabled cyber agent (Claude first, then
+   Codex/Kimi/…) is the sole decider; its verdict stands without cross-checks. A `draft` verdict
+   posts the full report into the Telegram Bug Bounty topic (header + .md attachment) and waits
+   for Preston's reply: **yes** publishes it (HackerOne via API; Bugcrowd via a browser
+   submission run on the runner's logged-in session; other platforms stay manual), **no** rejects
+   it. Replies work two ways: reply `yes`/`no` to the report's header message, or `#<id> yes/no`
+   anywhere in the topic. Inbound is polled from runner heartbeats, admins only. One master
    report template internally (severity, summary, repro steps,
    exact commands + raw output, impact, remediation); rendered per platform on submit
-   (HackerOne markdown via FORMAT=h1, Bugcrowd/Intigriti/YesWeHack variants). Reports are always
-   reviewed by Preston before submission — nothing auto-submits.
+   (HackerOne markdown via FORMAT=h1, Bugcrowd/Intigriti/YesWeHack variants). Nothing
+   self-submits: publication requires Preston's explicit Telegram yes.
 4. Payouts logged as `payout` events → hub analytics. Only a complete report draft triggers
    an Ava review alert; routine evidence saves, scanner finding labels and completed cyber runs
    are silent. Preston reviews the entire draft before any external submission.
@@ -123,9 +127,9 @@ ssh root@kloud "pct exec 134 -- sh /opt/darkmoon-smoke-test.sh"
   highest-coverage default-allow technology not researched in the last 7 days (attack-surface
   map, 5–10 vulnerability hypotheses, UNTESTED exploit sketches, evidence bars, ranking —
   protocol/header entries like HSTS are skipped as having no exploit surface). When the run
-  finishes, its output is fed into the multi-model cyber review queue
-  (`sourceKey research:<tech>:<week>`, platform `research`) where codex/claude/kimi critique
-  it; only concrete, validated hypotheses can become report drafts. Nothing contacts a target:
+  finishes, its output is fed into the cyber review queue
+  (`sourceKey research:<tech>:<week>`, platform `research`) for the single-authoritative-pass
+  review; only concrete, validated hypotheses can become report drafts. Nothing contacts a target:
   validation stays behind the scope-gated bounty-engage/Dark-Moon pipeline and human review.
 
 On 2026-10-13 the existing queue contained 60 programs with automation marked `unspecified`,
