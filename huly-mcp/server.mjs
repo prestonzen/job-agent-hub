@@ -38,7 +38,16 @@ const PRIORITY = ["none", "urgent", "high", "medium", "low"];
 const rank = (n) => `0|${(0x3b9ac9ff + n * 4096).toString(36).padStart(6, "0")}:`;
 
 let clientP = null;
-const client = () => (clientP ??= connect(URL, { token, workspace: WORKSPACE, socketFactory: NodeWebSocketFactory, connectionTimeout: 30000 }));
+const client = () => {
+  if (clientP === null) {
+    clientP = connect(URL, { token, workspace: WORKSPACE, socketFactory: NodeWebSocketFactory, connectionTimeout: 30000 })
+      .catch((error) => {
+        clientP = null;
+        throw error;
+      });
+  }
+  return clientP;
+};
 
 /** Project + its type, task type, status map and custom-field definitions (cached per process). */
 const ctxCache = new Map();
