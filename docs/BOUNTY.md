@@ -105,7 +105,14 @@ ssh root@kloud "pct exec 134 -- sh /opt/darkmoon-smoke-test.sh"
    exact commands + raw output, impact, remediation); rendered per platform on submit
    (HackerOne markdown via FORMAT=h1, Bugcrowd/Intigriti/YesWeHack variants). Nothing
    self-submits: publication requires Preston's explicit Telegram yes.
-4. Payouts logged as `payout` events → hub analytics. Only a complete report draft triggers
+4. **Idle deep-dive fallback** (2026-10-26) — when no evidence is waiting and a cyber agent is
+   free, the hub dispatches a passive deep-dive on one scanned program: the agent reads only
+   archive.org (CDX URL harvest + archived JS snapshots) and the hub's host list for that
+   program, writes up to 3 concrete UNTESTED hypotheses, and posts them into the review queue
+   (`deepdive:<program>:<week>:*` keys via the agent enqueue endpoint). Zero live target
+   contact; validation of any hypothesis still goes through scope-gated Dark-Moon. One program
+   per 2-hour cooldown, each program at most once per ISO week, rotating by least-recent scan.
+5. Payouts logged as `payout` events → hub analytics. Only a complete report draft triggers
    an Ava review alert; routine evidence saves, scanner finding labels and completed cyber runs
    are silent. Preston reviews the entire draft before any external submission.
 

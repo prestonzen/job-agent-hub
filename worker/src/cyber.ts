@@ -1,4 +1,4 @@
-import { db, getSetting, logEvent } from './db';
+import { db, getSetting, setSetting, logEvent } from './db';
 import { HttpError } from './clickup';
 import { cancelRun, createRun, getRun, listRunners, listRuns } from './runs';
 import { eligibleAgents, taskSwitches, workSettings } from './work';
@@ -225,6 +225,11 @@ export async function cyberSummary(env:Env) {
 }
 /** Runs are finite but dispatch continues each heartbeat. Empty evidence never launches busywork. */
 export async function cyberTick(env:Env):Promise<number> {
+ const reviewed=await cyberReviewTick(env);
+ if(reviewed)return reviewed;
+ return deepDiveTick(env);
+}
+async function cyberReviewTick(env:Env):Promise<number> {
  if(!(await getSetting<boolean>(env,'cyber_continuous')))return 0;
  const settings=await workSettings(env);
  if(settings.enabled===false)return 0;
@@ -297,4 +302,76 @@ export async function cyberTick(env:Env):Promise<number> {
   finally{await d.prepare('UPDATE cyber_work SET lease_until=0 WHERE id=?').bind(w.id).run();}
  }
  return 0;
+}
+
+/**
+ * Idle fallback (Preston, 2026-10-26): when no evidence is waiting and a cyber agent is
+ * free, deep-dive one scanned program's existing data. Hard rule: zero live target
+ * contact — the run only reads archive.org and the hub; hypotheses it produces enter
+ * the normal single-pass review queue and validation stays with scope-gated Dark-Moon.
+ * Rotation walks the scanned-program list (bounty_hosts), one program per cooldown
+ * window, at most one deep-dive per program per ISO week.
+ */
+const DEEPDIVE_COOLDOWN_MS = 2 * 3600_000;
+function isoWeek(now: number): string {
+ const d = new Date(now);
+ const day = (d.getUTCDay() + 6) % 7;
+ d.setUTCDate(d.getUTCDate() - day + 3);
+ const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+ const week = 1 + Math.round((d.getTime() - firstThursday.getTime()) / 604800_000);
+ return `${d.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+async function deepDiveTick(env: Env): Promise<number> {
+ if (!(await getSetting<boolean>(env, 'cyber_continuous'))) return 0;
+ const settings = await workSettings(env);
+ if (settings.enabled === false) return 0;
+ const now = Date.now();
+ const nextAt = await getSetting<number>(env, 'cyber_deepdive_next').catch(() => null);
+ if (nextAt && now < nextAt) return 0;
+ const d = await cyberDb(env);
+ const busy = await d.prepare("SELECT 1 FROM cyber_work WHERE status IN ('pending','running') LIMIT 1").first();
+ if (busy) return 0;
+ const [runners, runs] = await Promise.all([listRunners(env), listRuns(env, 200)]);
+ const candidates = eligibleAgents(runners, runs, settings, 'cyber', new Map(), now);
+ const agent = ['claude', 'codex', 'kimi', 'gemini', 'mistral', 'qwen', 'deepseek', 'ollama'].find((a) => candidates.includes(a));
+ if (!agent) return 0;
+ const { results: programs } = await d
+  .prepare("SELECT program, MIN(platform) AS platform FROM bounty_hosts GROUP BY program ORDER BY MAX(last_seen) DESC LIMIT 400")
+  .all<{ program: string; platform: string | null }>();
+ if (!programs.length) return 0;
+ const cursor = await getSetting<string>(env, 'cyber_deepdive_cursor').catch(() => null);
+ const start = Math.max(0, programs.findIndex((p) => p.program === cursor));
+ const week = isoWeek(now);
+ let chosen: { program: string; platform: string | null } | null = null;
+ for (let i = 1; i <= programs.length; i++) {
+  const p = programs[(start + i) % programs.length];
+  const dup = await d.prepare('SELECT 1 FROM runs WHERE dispatch_key=? LIMIT 1').bind(`cyber:deepdive:${p.program}:${week}`).first();
+  if (!dup) { chosen = p; break; }
+ }
+ if (!chosen) return 0; // every scanned program already deep-dived this week
+ const prompt = `Passive bug bounty deep-dive: ${chosen.program} (${chosen.platform ?? 'unknown platform'}). HARD RULE — zero live target contact: every HTTP request you make goes to archive.org or jobhunter.prestonzen.com only, never to a program domain. Use terminal curl, not the browser.
+
+1. Fetch the in-scope host list: GET https://jobhunter.prestonzen.com/api/agent/bounty-hosts?program=${encodeURIComponent(chosen.program)} with header Authorization: Bearer $JOBHUNTER_TOKEN. These hosts were found by earlier low-noise recon; treat the list as the scope.
+2. Pick up to 5 interesting hosts (api/portal/app/admin-style subdomains, rich tech stacks).
+3. For each, harvest historical URLs from the Wayback CDX API (archive.org only). Two passes per host:
+   - JS: https://web.archive.org/cdx/search/cdx?url=<host>/*&output=json&filter=statuscode:200&filter=mimetype:application/javascript&collapse=urlkey&limit=200
+   - Interesting paths: url=<host>/* with filter=urlkey:.*(api|auth|oauth|upload|admin|graphql|config|swagger|debug|backup|\\.json|\\.env).* and limit=200
+4. Fetch 3-5 of the most promising archived snapshots via https://web.archive.org/web/<timestamp>id_/<original-url> and analyze them: hidden endpoints and parameters, API route patterns, hardcoded keys/tokens/secrets, dangerous DOM sinks, auth/OAuth flow oddities, version disclosures with known CVEs.
+5. Write up to 3 concrete vulnerability hypotheses. Each MUST name a specific in-scope host/URL from step 1, the weakness class, the archived evidence that suggests it (quote it), and the smallest safe validation step for the scope-gated Dark-Moon lane. Mark every hypothesis UNTESTED — you verified nothing against the live target.
+6. Post each hypothesis as evidence (one POST per hypothesis):
+   curl -X POST https://jobhunter.prestonzen.com/api/agent/cyber/enqueue -H "Authorization: Bearer $JOBHUNTER_TOKEN" -H "Content-Type: application/json" --data-binary @hypothesis.json
+   Body: {"sourceKey":"deepdive:${chosen.program.replace(/[^A-Za-z0-9]+/g, '-').toLowerCase()}:${week}:<short-slug>","program":"${chosen.program}","platform":"${chosen.platform ?? 'hackerone'}","target":"<the specific host URL>","source":"passive deep-dive (archive.org only)","evidence":"<the markdown hypothesis>","offlineOnly":true}
+   Use a unique short-slug per hypothesis; write the JSON to a file first to preserve quoting. Duplicate sourceKeys are ignored — never retry a 409.
+If the hosts or archives hold nothing promising after an honest look, say so and stop — invented leads waste the reviewer's time and yours.`;
+ await createRun(env, { agent, kind: 'prompt', task: 'cyber', prompt, exclusive: true, dispatchKey: `cyber:deepdive:${chosen.program}:${week}` });
+ await logEvent(env, { agent, type: 'cyber_triage', message: `Idle deep-dive dispatched: ${chosen.program}`, taskName: chosen.program });
+ await setSetting(env, 'cyber_deepdive_cursor', chosen.program).catch(() => {});
+ await setSetting(env, 'cyber_deepdive_next', now + DEEPDIVE_COOLDOWN_MS).catch(() => {});
+ return 1;
+}
+/** Agent-posted hypotheses (deep-dive runs). Forced offline review; deepdive keys only. */
+export async function agentEnqueueCyber(env: Env, agent: string, body: Record<string, unknown>) {
+ const key = text(body.sourceKey, 180);
+ if (!key.startsWith('deepdive:')) throw new HttpError(400, 'agent-posted evidence must use a sourceKey starting with deepdive:');
+ return enqueueCyber(env, { ...body, sourceKey: key, source: `deep-dive by ${agent}: ${text(body.source, 200)}`.slice(0, 300), offlineOnly: true });
 }

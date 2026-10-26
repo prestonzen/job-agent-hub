@@ -43,7 +43,7 @@ import { notify, notifyBounty, esc, disableTelegramReplies, telegramConfigured, 
 import { telegramInboxTick } from "./telegram-inbox";
 import { getCodeRequest, requestCode, waitForCode } from "./codes";
 import { addBountyEvent, bountyHosts, bountySummary, upsertBountyTech, type BountyEventInput } from "./bounty";
-import { cyberTick, cyberSummary, enqueueCyber, getCyberWork, completeCyber, reviewCyber, submitCyberExternal } from "./cyber";
+import { cyberTick, cyberSummary, enqueueCyber, getCyberWork, completeCyber, reviewCyber, submitCyberExternal, agentEnqueueCyber } from "./cyber";
 import { toPublicSummary } from "./sanitize";
 import type { Env, PublicSummary } from "./types";
 import { zadarmaGet } from "./zadarma";
@@ -278,6 +278,10 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     if(cyberWork && method==='POST' && cyberWork[2])return json(await completeCyber(env,Number(cyberWork[1]),agent,await readJson(request),identity));
     const cyberSubmit = sub.match(/^\/cyber\/(\d+)\/submit-result$/);
     if(cyberSubmit && method==='POST')return json(await submitCyberExternal(env,Number(cyberSubmit[1]),agent,await readJson(request)));
+    // Deep-dive lane: agents post passive-analysis hypotheses (deepdive:* keys only) and
+    // read the in-scope host list for the program they were assigned.
+    if(sub==='/cyber/enqueue' && method==='POST')return json(await agentEnqueueCyber(env,agent,await readJson(request)),201);
+    if(sub==='/bounty-hosts' && method==='GET')return json({hosts:await bountyHosts(env,{program:url.searchParams.get('program'),limit:Number(url.searchParams.get('limit')??100)})});
     // Bug bounty lane: runner tooling and agents push program/scan/finding/report/payout events.
     if (sub === "/bounty" && method === "POST") {
       const b = await readJson<BountyEventInput>(request);
