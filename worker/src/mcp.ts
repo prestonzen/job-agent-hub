@@ -110,7 +110,7 @@ const TOOLS = [
   },
   {
     name: "wait_for_code",
-    description: "Wait up to ~25 s for Preston's reply to request_code. Call again while status is 'pending' (codes expire after 20 min). When status is 'answered', type the code exactly and submit; if 'expired', report needs_human.",
+    description: "Wait up to ~25 s for the code behind request_code. Keep calling while status is 'pending' — the hub's inbox sync answers most requests within 2–10 minutes, so do NOT give up before status becomes 'answered' or 'expired' (30 min). When 'answered', type the code exactly and submit; if 'expired', report needs_human with 'code never arrived'.",
     inputSchema: { type: "object", properties: { request_id: str }, required: ["request_id"] },
   },
   {

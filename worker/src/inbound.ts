@@ -1,6 +1,7 @@
 import { isApplication } from "./classify";
 import { addComment, flagForPreston, setStatus } from "./store";
 import { db, logEvent } from "./db";
+import { answerFromEmail } from "./codes";
 import { loadTasks } from "./jobs";
 import { companyKey } from "./pacing";
 import { patchMirror } from "./mirror";
@@ -157,6 +158,16 @@ export async function handleInbound(env: Env, e: InboundEmail): Promise<{ duplic
   if (!e.id) throw new Error("id is required");
   const seen = await d.prepare("SELECT category, task_id, action FROM inbound WHERE message_id = ?").bind(e.id).first<{ category: Category; task_id: string | null; action: string }>();
   if (seen) { await flushReplyNotifications(env); return { duplicate: true, category: seen.category, taskId: seen.task_id, action: seen.action }; }
+
+  // An agent is waiting for an emailed verification code: hand it over and keep the mail out of the reply feed.
+  const codeReq = await answerFromEmail(env, e).catch((err) => { console.error("code auto-answer failed:", (err as Error).message); return null; });
+  if (codeReq) {
+    const summary = `Verification code relayed to ${codeReq.agent} (request ${codeReq.id}${codeReq.jobName ? `, ${codeReq.jobName}` : ""})`;
+    await d.prepare("INSERT OR IGNORE INTO inbound (message_id, at, from_addr, subject, category, company, task_id, action, summary, links) VALUES (?, ?, ?, ?, 'other', NULL, ?, 'code relayed', ?, NULL)")
+      .bind(e.id, Date.now(), e.from.slice(0, 200), e.subject.slice(0, 300), codeReq.jobId, summary).run();
+    await logEvent(env, { agent: "inbox", taskId: codeReq.jobId ?? undefined, taskName: codeReq.jobName ?? undefined, type: "code:relayed", message: summary }).catch(() => {});
+    return { category: "other", taskId: codeReq.jobId, action: "code relayed" };
+  }
 
   const ai = await aiClassify(env, e);
   const rule = ruleClassify(e);

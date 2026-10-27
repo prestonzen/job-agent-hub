@@ -15,7 +15,7 @@ export function agentInstructions(agent: string, origin: string, mode: "mcp" | "
           release: "`release_job`",
           get: "`get_job`",
           resume: "`get_resume` with the job title and the posting text (description)",
-          code: "`request_code` (with the job id), then `wait_for_code` repeatedly",
+          code: "`request_code` (with the job id), then `wait_for_code` repeatedly until answered or expired (the hub relays the code from the inbox itself, usually within 2–10 min; never park before it expires)",
           handoff: "`handoff_job` (id, reason)",
           email: "`send_application_email` (id, body)",
           cover: "`make_cover_letter` (id, text)",

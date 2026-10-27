@@ -1,7 +1,7 @@
 /**
  * Job Agent Hub: Gmail reply tracker (Google Apps Script).
  *
- * Every 10 minutes, sends new mail addressed to the application inbox to the hub, which classifies it
+ * Every 2 minutes (re-run `install` after changing), sends new mail addressed to the application inbox to the hub, which classifies it
  * (rejection / interview / assessment / offer / ...), updates the ClickUp task and alerts Telegram.
  * Runs inside your own Google account: no OAuth app, no passwords leave Google.
  *
@@ -19,7 +19,7 @@ const MAX_PER_RUN = 40;
 
 function install() {
   ScriptApp.getProjectTriggers().forEach((t) => ScriptApp.deleteTrigger(t));
-  ScriptApp.newTrigger("syncReplies").timeBased().everyMinutes(10).create();
+  ScriptApp.newTrigger("syncReplies").timeBased().everyMinutes(2).create(); // 2 min: emailed verification codes are relayed to waiting agents from this feed
   syncReplies();
 }
 
