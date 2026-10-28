@@ -138,7 +138,7 @@ const BOARDS: Record<string, () => Promise<Lead[]>> = {
 };
 
 // ---------- phase "hn": Ask HN: Who is hiring? (current + previous month) ----------
-const EMAIL_RE = /([a-z0-9._%+-]+)\s*(?:@|\[at\]|\(at\)|\sat\s)\s*([a-z0-9.-]+)\s*(?:\.|\[dot\]|\(dot\)|\sdot\s)\s*([a-z]{2,})/i;
+const EMAIL_RE = /([a-z0-9._%+-]+)\s*(?:@|\[at\]|\(at\)|\{at\}|<at>|\sat\s|\s_at_\s|＠)\s*([a-z0-9.-]+)\s*(?:\.|\[dot\]|\(dot\)|\{dot\}|<dot>|\sdot\s)\s*([a-z]{2,})/i;
 async function hnLeads(): Promise<Lead[]> {
   type Hit = { objectID: string; title: string };
   const s = await getJson<{ hits: Hit[] }>("https://hn.algolia.com/api/v1/search_by_date?tags=story,author_whoishiring&hitsPerPage=6");
@@ -224,8 +224,10 @@ export async function runFeeds(env: Env, force = false, phase?: Phase): Promise<
   await setSetting(env, "feeds_last_run", { at: now, next: (phase ? state.next : state.next + 1) % PHASES.length });
   const seenUrls = new Set((await getSetting<string[]>(env, "feeds_seen")) ?? []);
   const added: string[] = []; const errors: string[] = []; let seen = 0; let kept = 0;
+  // HN "Who is hiring" is the channel that converts (email to a founder), so it is scanned on every tick,
+  // not just on its own turn in the rotation: new comments land all month long.
   const sources: [string, () => Promise<Lead[]>][] =
-    ph === "boards" ? Object.entries(BOARDS) : ph === "hn" ? [["hn", hnLeads]] : [["companies", () => companyLeads(env)]];
+    ph === "boards" ? [...Object.entries(BOARDS), ["hn", hnLeads]] : ph === "hn" ? [["hn", hnLeads]] : [["companies", () => companyLeads(env)], ["hn", hnLeads]];
   for (const [name, fn] of sources) {
     let leads: Lead[] = [];
     try { leads = await fn(); } catch (e) { errors.push(`${name}: ${(e as Error).message}`); continue; }
