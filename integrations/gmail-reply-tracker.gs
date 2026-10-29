@@ -31,7 +31,10 @@ function syncReplies() {
   if (!hub || !token || !inboxes.length) throw new Error("Set HUB_URL, INBOUND_TOKEN and INBOX_ADDRESS in Script properties");
   const inbox = inboxes[0];
   // Mail to any of the applicant addresses (an interview invite sent to the older address must not be missed).
-  const toAny = inboxes.length > 1 ? `{${inboxes.map((a) => `to:${a}`).join(" ")}}` : `to:${inbox}`;
+  // The first address is the application inbox: everything. Extra addresses are personal inboxes, so only
+  // job-shaped mail from them is forwarded (subject or sender says interview / application / hiring ...).
+  const JOBLIKE = "(subject:(interview OR application OR applying OR applied OR candidate OR position OR role OR offer OR assessment OR \"next step\" OR recruiter OR hiring OR engineer OR \"appointment booked\") OR from:(hiring OR recruit OR careers OR talent OR jobs OR greenhouse OR ashby OR lever OR workable OR breezy OR calendar-notification))";
+  const toAny = inboxes.length > 1 ? `{to:${inbox} (to:(${inboxes.slice(1).join(" OR ")}) ${JOBLIKE})}` : `to:${inbox}`;
   const notFromUs = inboxes.map((a) => `-from:${a}`).join(" ");
 
   const label = GmailApp.getUserLabelByName(LABEL) || GmailApp.createLabel(LABEL);
