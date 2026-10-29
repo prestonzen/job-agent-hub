@@ -1,6 +1,6 @@
 # Huly MCP (Job Hunter)
 
-A stdio MCP server for the self-hosted Huly workspace that mirrors the ClickUp job list: project **JOB** with the
+A stdio MCP server for the self-hosted Huly workspace that mirrors the ClickUp job list: project **JHUNT** with the
 ClickUp statuses (not started → applied → screening → accepted → earning / rejected · paused), the ClickUp custom
 fields as typed fields on the *Application* task type, comments, and the **Job Hunter Playbook** teamspace.
 

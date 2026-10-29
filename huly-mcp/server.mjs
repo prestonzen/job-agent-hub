@@ -3,7 +3,7 @@
 // statuses and fields), comments, and the playbook teamspace documents. stdio transport.
 //
 // Env: HULY_URL (https://projects.kaizenapps.com), HULY_WORKSPACE (kaizengroup), and HULY_TOKEN or
-// HULY_TOKEN_FILE (path to a file holding the workspace token). Optional HULY_PROJECT (default JOB).
+// HULY_TOKEN_FILE (path to a file holding the workspace token). Optional HULY_PROJECT (default JHUNT; the project was renamed from JOB on 2026-10-29).
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -29,7 +29,7 @@ const { jsonToMarkup, markupToJSON } = text;
 
 const URL = process.env.HULY_URL ?? "https://projects.kaizenapps.com";
 const WORKSPACE = process.env.HULY_WORKSPACE ?? "kaizengroup";
-const PROJECT = process.env.HULY_PROJECT ?? "JOB";
+const PROJECT = process.env.HULY_PROJECT ?? "JHUNT";
 const token = (process.env.HULY_TOKEN ?? (process.env.HULY_TOKEN_FILE ? readFileSync(process.env.HULY_TOKEN_FILE, "utf8") : "")).trim();
 if (!token) { console.error("huly-mcp: set HULY_TOKEN or HULY_TOKEN_FILE"); process.exit(2); }
 
