@@ -99,7 +99,7 @@ done < /tmp/bounty-batch-safe.tsv
 # picks the unscanned tail instead of re-scanning the same front of the list.
 if [ -s /tmp/bounty-batch.txt ]; then
   # shellcheck disable=SC2046
-  python3 /opt/bounty/bounty-rotate.py $(grep . /tmp/bounty-batch.txt) >> "$LOG" 2>&1 || true
+  python3 /opt/bounty/bounty-rotate.py --file /tmp/bounty-batch.txt >> "$LOG" 2>&1 || true
 fi
 
 echo "=== done $(date -u) ===" >> "$LOG"

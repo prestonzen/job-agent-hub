@@ -23,6 +23,10 @@ IMAGE=chvancooten/bugbountyscanner:latest
 SCANNED=/opt/bounty/scanned.log
 touch "$SCANNED"
 
+# Record a cooloff for programs that can never scan (policy gate, no scope) so the
+# daily picker stops re-picking them; the 7-day rescan window applies like normal.
+cooloff() { echo "$(echo "$1" | tr -cs 'A-Za-z0-9' '-' | sed 's/^-//;s/-$//')|$(date +%s)" >> "$SCANNED"; }
+
 DRY_RUN=0
 if [ "${1:-}" = "--dry-run" ]; then
   DRY_RUN=1
@@ -44,7 +48,7 @@ for item in programs:
         break
 EOF
   )
-  [ -z "$BLOCKED" ] || { echo "program is explicitly policy-blacklisted: $BLOCKED"; exit 3; }
+  [ -z "$BLOCKED" ] || { echo "program is explicitly policy-blacklisted: $BLOCKED"; cooloff "$NAME"; exit 3; }
 fi
 ROW=$(python3 - "$QUEUE" "$NAME" "$SCANNED" <<'EOF'
 import json, re, sys, time
@@ -68,8 +72,8 @@ else:
 print(json.dumps(row) if row else "NOTFOUND")
 EOF
 )
-[ "$ROW" = "NOTFOUND" ] && { echo "program not found in queue"; exit 1; }
-echo "$ROW" | python3 -c "import json,sys; sys.exit(0 if json.load(sys.stdin).get('automation') == 'default-allow' else 1)" || { echo "program is explicitly policy-blacklisted; refusing scan"; exit 3; }
+[ "$ROW" = "NOTFOUND" ] && { echo "program not found in queue"; cooloff "$NAME"; exit 1; }
+echo "$ROW" | python3 -c "import json,sys; sys.exit(0 if json.load(sys.stdin).get('automation') == 'default-allow' else 1)" || { echo "program is explicitly policy-blacklisted; refusing scan"; cooloff "$NAME"; exit 3; }
 SCAN_RPS=1
 
 PROGRAM=$(echo "$ROW" | python3 -c "import json,sys; print(json.load(sys.stdin)['program'])")
@@ -98,12 +102,12 @@ wild=sorted({host for kind,host,path in rules["in"] if kind=="wildcard-host"})
 direct=sorted({host if kind=="host" else "https://"+host+path for kind,host,path in rules["in"] if kind in ("host","url")})
 open(out+"/wildcards.txt","w").write("\n".join(wild)+("\n" if wild else ""))
 open(out+"/direct.txt","w").write("\n".join(direct)+("\n" if direct else ""))
-' || { echo "could not parse program scope"; exit 3; }
+' || { echo "could not parse program scope"; cooloff "$PROGRAM"; exit 3; }
 DOMAINS=$(wc -l < "$OUT/wildcards.txt")
 DIRECT=$(wc -l < "$OUT/direct.txt")
 echo "program: $PROGRAM ($PLATFORM) — $DOMAINS wildcard domains, $DIRECT exact targets"
 cat "$OUT/wildcards.txt" "$OUT/direct.txt" | sed 's/^/  /'
-[ "$DOMAINS" = "0" ] && [ "$DIRECT" = "0" ] && { echo "no scannable explicit in-scope targets"; exit 1; }
+[ "$DOMAINS" = "0" ] && [ "$DIRECT" = "0" ] && { echo "no scannable explicit in-scope targets"; cooloff "$PROGRAM"; exit 1; }
 if [ "$DRY_RUN" = "1" ]; then
   echo "dry run: policy gate and target scope parsed; no active requests sent"
   exit 0

@@ -4,7 +4,10 @@ to the end so the next batch picks the unscanned tail first."""
 import pathlib, sys
 
 PRI = pathlib.Path("/opt/bounty/priority.txt")
-scanned = [l.strip() for l in sys.argv[1:] if l.strip()]
+if len(sys.argv) >= 3 and sys.argv[1] == "--file":
+    scanned = [l.strip() for l in pathlib.Path(sys.argv[2]).read_text().splitlines() if l.strip()]
+else:
+    scanned = [l.strip() for l in sys.argv[1:] if l.strip()]
 lines = [l.strip() for l in PRI.read_text().splitlines() if l.strip()]
 if not scanned or not lines:
     sys.exit(0)
