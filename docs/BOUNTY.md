@@ -116,6 +116,16 @@ ssh root@kloud "pct exec 134 -- sh /opt/darkmoon-smoke-test.sh"
    an Ava review alert; routine evidence saves, scanner finding labels and completed cyber runs
    are silent. Preston reviews the entire draft before any external submission.
 
+Methodology standards (2026-10-30) are adapted from the public
+[mdpsec/bug-bounty-hunting-prompts](https://github.com/mdpsec/bug-bounty-hunting-prompts)
+pack (credit: @mdp_sec): the reviewer prompt carries its phase-06/07 triage gates (So-What
+test, IDOR two-precondition rule, hardening-miss bar, credential-liveness exception,
+prerequisite-first handling, external-only SSRF rejection), the idle deep-dive carries a
+phase-02-derived class checklist, and the Dark-Moon engage carries its bounded-proof and
+negative-control validation standards. Its live-contact phases (recon browser fleets,
+auto-submission) are deliberately not adopted: agents never touch targets outside the
+scope-gated Dark-Moon lane, and submission stays human-gated.
+
 ## Technology matrix & research lab
 
 - **Matrix build** — `bounty/tech-matrix.py` (CT 134, cron every 6 h) parses every scanned
