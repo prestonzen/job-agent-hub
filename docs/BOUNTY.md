@@ -126,6 +126,17 @@ negative-control validation standards. Its live-contact phases (recon browser fl
 auto-submission) are deliberately not adopted: agents never touch targets outside the
 scope-gated Dark-Moon lane, and submission stays human-gated.
 
+**Bounded self-registration** (2026-10-30, human-authorized): authenticated validation needs
+researcher-owned test accounts, so the Dark-Moon engage lane may self-register up to 2 accounts
+per program (`bounty/registration-policy.json`; `deny` list opts a program out). Registration
+uses plus-addressed applicant inboxes (`contact+bb-<program>-a@prestonzen.com`), the runner
+helpers deployed to CT 134 (`form-assist.mjs` for signup captchas via 2Captcha,
+`inbox-assist.mjs` for emailed verification codes/links against the read-only Gmail OAuth), and
+accounts are stored per-program at `/opt/bounty/sensitive/accounts/<program>.json` (mode 700,
+never embedded in prompts or reports). Phone/payment/KYC walls or an unsolvable captcha mean
+blocked, not refuted. Requires a valid Gmail refresh token in CT 134's
+`/etc/job-agent-runner/config.json` (gmail + captcha sections only).
+
 ## Technology matrix & research lab
 
 - **Matrix build** — `bounty/tech-matrix.py` (CT 134, cron every 6 h) parses every scanned
