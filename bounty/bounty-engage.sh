@@ -31,7 +31,8 @@ print(json.dumps({
 PYEOF
 
 cd /opt/Dark-Moon || exit 1
-timeout 2400 ./darkmoon.sh " TARGET: $HOST  PROGRAM=\"$PROGRAM\" FOCUS=confirm-or-refute: $TITLE  NOISE=low FORMAT=h1  SCOPE: authorized $PLATFORM bug bounty program asset. Validate ONLY this suspected finding; do not widen scope. If confirmed, draft the report. " > "$LOG" 2>&1
+# Validation standards distilled from github.com/mdpsec/bug-bounty-hunting-prompts (phase-07/08) (Preston, 2026-10-30).
+timeout 2400 ./darkmoon.sh " TARGET: $HOST  PROGRAM=\"$PROGRAM\" FOCUS=confirm-or-refute: $TITLE  NOISE=low FORMAT=h1  SCOPE: authorized $PLATFORM bug bounty program asset. Validate ONLY this suspected finding; do not widen scope. Validation standard: prove the mechanism end-to-end on researcher-owned objects first, then at most one bounded confirmation on a non-owned object with the smallest request that proves the boundary; no bulk reads, no privileged actions on objects you do not own. Credential findings require minimal liveness proof with a negative control (a deliberately wrong secret must fail where the real one succeeds). Never assume a prerequisite: a chain step needing a victim identifier, token, or state you cannot show an attacker obtaining means refuted, not confirmed. Before confirming, run one negative control showing the boundary exists for unauthorized requests. If confirmed, draft the report. " > "$LOG" 2>&1
 RC=$?
 
 CONFIRMED=$(grep -c -a '"status":"confirmed"' "$LOG" || true)
