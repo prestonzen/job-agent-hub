@@ -15,6 +15,14 @@ import { cyberDb, completeCyber, enqueueCyber } from "../worker/src/cyber";
 import { logApplication, addJob } from "../worker/src/jobs";
 import { buildAnalytics } from "../worker/src/analytics";
 import { identityLabel } from "../src/agents";
+import { compensationExclusion, interviewCompensationHold } from "../worker/src/compensation";
+import { keep } from "../worker/src/feeds";
+import { queue, isAvailable, claimJobs } from "../worker/src/jobs";
+import { replaceMirror } from "../worker/src/mirror";
+import type { Task } from "../worker/src/types";
+import { sendApplicationEmail } from "../worker/src/emailer";
+import { tryClaim } from "../worker/src/db";
+import { handleInbound } from "../worker/src/inbound";
 
 const sqlite = new DatabaseSync(":memory:");
 const D1 = {
@@ -38,6 +46,68 @@ async function source(preferred:string|null="codex") {
   await queueSourceCheck(env,s,Date.now()-1000);return s;
 }
 function check(){return sqlite.prepare("SELECT * FROM source_checks ORDER BY id DESC LIMIT 1").get() as Record<string,unknown>;}
+
+test("cash eligibility excludes explicit equity-only and deferred cash, not salary plus equity or unknown", () => {
+  for (const text of ["Equity-only (0.5%-2%)", "Equity only until revenue milestones, then salary", "Salary starts after funding", "Cash compensation begins once revenue reaches $1M", "Equity until funding", "No salary initially", "Unpaid role", "Sweat-equity", "Equity-only pre-seed; $190,000-$280,000 + equity post-seed"]) {
+    assert.ok(compensationExclusion(text), text);
+  }
+  for (const text of ["$120,000 salary plus 1% equity", "Contractor cash pay: EUR 50/hour", "Not disclosed", "", "Competitive salary and equity", "Not equity-only; salary plus equity", "This is not an equity-only role", "No salary cap", "Salary: $0.5 million"]) {
+    assert.equal(compensationExclusion(text), null, text);
+  }
+  assert.ok(interviewCompensationHold("Pay: Not disclosed"));
+  assert.ok(interviewCompensationHold("Equity-first; no stated cash salary"));
+  assert.equal(interviewCompensationHold("Cash compensation confirmed: employer posting checked 2026-11-06, EUR 50/hour; starts with work"), null);
+  assert.ok(interviewCompensationHold("Cash compensation confirmed: starts with work\nEquity-only until funding"));
+});
+
+test("feed sourcing and agent add_job reject explicit deferred cash without adding records", async () => {
+  const lead = {company:"Tiny AI",role:"AI Engineer",url:"https://example.invalid/job",location:"Remote worldwide",text:"Build AI agents",source:"test"};
+  assert.equal(keep({...lead,pay:"Equity-only"}),false);
+  assert.equal(keep({...lead,text:lead.text+". Salary begins after funding"}),false);
+  // Compensation must not change the existing unrelated location/title filter result.
+  assert.equal(keep({...lead,pay:"$90K + equity"}),keep(lead));
+  assert.equal(keep({...lead,pay:"Not disclosed"}),keep(lead));
+  await assert.rejects(addJob({...env,MOCK:"true"},"codex",{company:"Tiny AI",role:"AI Engineer",pay:"Equity-only"}),/cash pay must start with work/);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM events WHERE type='added'").get()!.n,0);
+});
+
+test("existing equity-only queue records are unclaimable, including an existing agent lease", async () => {
+  const base: Task = {id:"cash-policy-test",name:"Tiny AI - AI Engineer",status:"not started",parentId:null,appliedBy:null,platform:null,appliedOn:null,nextAction:null,priority:null,tags:[],url:"https://example.invalid/task",description:"Apply: https://example.invalid/job\nPay: Equity-only\nApply by email: jobs@example.invalid",createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+  await replaceMirror(env,[base]);
+  const jobs=await queue(env); assert.equal(jobs.length,1);assert.equal(isAvailable(jobs[0]),false);assert.ok(jobs[0].compensationExclusion);
+  await tryClaim(env,base.id,"codex",60000);
+  const claimed=await claimJobs(env,"codex");assert.equal(claimed.jobs.length,0);
+  const originalFetch=globalThis.fetch;const urls:string[]=[];
+  globalThis.fetch=async(input)=>{urls.push(String(input));return new Response("unavailable",{status:503});};
+  try {
+    await assert.rejects(sendApplicationEmail({...env,MAILER_URL:"https://mailer.invalid",MAILER_TOKEN:"test"},"codex",base.id,{body:"A cover letter that must never be sent for this role."}),/cash pay must start with work/);
+    assert.ok(urls.every(url=>!url.includes("mailer.invalid")));
+  } finally {globalThis.fetch=originalFetch;}
+  await replaceMirror(env,[{...base,description:"Apply: https://example.invalid/job\nPay: Not disclosed"}]);
+  sqlite.exec("DELETE FROM claims");
+  assert.equal(isAvailable((await queue(env))[0]),true);
+});
+
+test("interview emails are recorded without advancing unknown, equity-only or paused roles", async () => {
+  const originalFetch=globalThis.fetch;
+  globalThis.fetch=async()=>new Response("{}",{status:200,headers:{"Content-Type":"application/json"}});
+  try {
+    for (const [suffix,status,description,held] of [
+      ["unknown","applied","Pay: Not disclosed",true],
+      ["equity","applied","Pay: Equity-only until revenue",true],
+      ["cash","applied","Cash compensation confirmed: employer posting 2026-11-06, $90K salary + equity; starts with work",false],
+      ["paused","rejected / paused","Pay: Equity-only",true],
+    ] as const) {
+      const task: Task={id:`interview-${suffix}`,name:"Compensation Test Labs - AI Engineer",status,parentId:null,appliedBy:"Codex",platform:"Email",appliedOn:"2026-11-01",nextAction:null,priority:null,tags:[],url:"https://example.invalid/task",description,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+      await replaceMirror(env,[task]);
+      const result=await handleInbound({...env,CLICKUP_TOKEN:"test-token"},{id:`mail-${suffix}`,from:"recruiter@example.invalid",subject:"Compensation Test Labs interview",text:"Please schedule an interview for the AI Engineer role."});
+      assert.equal(result.taskId,task.id);
+      assert.equal(result.action.includes("compensation review"),held);
+      assert.equal(result.action.includes("screening"),!held);
+      assert.ok(sqlite.prepare("SELECT 1 FROM inbound WHERE message_id=?").get(`mail-${suffix}`));
+    }
+  } finally {globalThis.fetch=originalFetch;}
+});
 
 test("twice daily is 08:00 and 20:00 in the saved timezone",()=>{
   assert.equal(new Date(nextRun("0 8,20 * * *","Asia/Tokyo",Date.parse("2026-10-12T00:00:00Z"))!).toISOString(),"2026-10-12T11:00:00.000Z");

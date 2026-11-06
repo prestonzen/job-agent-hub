@@ -64,6 +64,7 @@ export async function sendApplicationEmail(
   if (!taskSwitches(await workSettings(env), agent).email) throw new HttpError(403, "Email applications are switched off for this agent");
   if (!emailEnabled(env)) throw new HttpError(503, "email sending is not enabled on the hub; release_job and stop");
   const job = await getJob(env, jobId);
+  if (job.compensationExclusion) throw new HttpError(422, job.compensationExclusion);
   if (job.claimedBy !== agent) throw new HttpError(409, `you don't hold ${job.name}; claim it first`);
   if (job.status !== "not started") throw new HttpError(409, `${job.name} is already "${job.status}"`);
   if (!job.applyEmail) throw new HttpError(400, `${job.name} has no employer email address (Apply by email: …); apply on the posting instead`);

@@ -61,6 +61,7 @@ export async function processFollowUps(env: Env): Promise<string | null> {
     if (budget <= 0) break;
     try {
       const job = await getJob(env, s.taskId);
+      if (job.interviewHold) { skipped.push(`${job.company}: ${job.interviewHold}`); continue; }
       if (job.status !== "applied" || !job.applyEmail) { skipped.push(`${job.company}: ${job.status}`); continue; }
       // Any tracked reply from this company since we wrote means a human is already in the loop.
       const replied = await d

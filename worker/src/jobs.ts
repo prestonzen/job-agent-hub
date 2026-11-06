@@ -1,4 +1,5 @@
 import { HttpError } from "./clickup";
+import { compensationExclusion, interviewCompensationHold } from "./compensation";
 import { addComment, createApplication, getPlaybook, getTask, listTasks, setNextAction, setStatus, stampApplied } from "./store";
 import { isApplication } from "./classify";
 import { inferPlatform } from "./platform";
@@ -155,6 +156,8 @@ const PARKED_NAME = /\b(NEEDS HUMAN|BLOCKED|PARKED)\b/;
 const PARKED_NOTE = /^(NOT submitted|Retry manually|Blocked|Parked)\b/i;
 
 function parkedReason(t: Task): string | null {
+  const excluded = compensationExclusion(t.name, t.description);
+  if (excluded) return excluded;
   const nh = t.nextAction?.match(NEEDS_HUMAN)?.[1];
   if (nh !== undefined) return nh || "needs a person";
   if (t.nextAction && PARKED_NOTE.test(t.nextAction)) return t.nextAction;
@@ -197,6 +200,8 @@ function toJob(t: Task, claim: Claim | undefined | null, assigned?: Assignment |
     claimedBy: holder?.agent ?? null,
     claimExpiresAt: holder ? new Date(holder.expiresAt).toISOString() : null,
     needsHuman: parkedReason(t),
+    compensationExclusion: compensationExclusion(t.name, t.description),
+    interviewHold: interviewCompensationHold(`${t.name}\n${t.description}`),
     assignedTo: assigned?.agent ?? null,
     applyEmail: d.applyEmail,
   };
@@ -239,7 +244,7 @@ export async function claimJobs(
   const paced = new Map<string, { ats: string; reason: string; retryAt: string | null }>();
 
   // Re-hand an agent the jobs it already holds (e.g. after a crash) before giving it new ones.
-  const mine = all.filter((j) => j.claimedBy === agent && inLane(j,lane) && (!ats.length || ats.some(a=>(j.ats??"").toLowerCase().includes(a))));
+  const mine = all.filter((j) => !j.compensationExclusion && j.claimedBy === agent && inLane(j,lane) && (!ats.length || ats.some(a=>(j.ats??"").toLowerCase().includes(a))));
   const out: Job[] = mine.slice(0, count);
 
   // Jobs handed to this agent come first.
@@ -506,6 +511,8 @@ export interface NewJob {
 
 /** Add a posting to the queue (status "not started"). Returns the existing task if it's already tracked. */
 export async function addJob(env: Env, agent: string, j: NewJob, identity: string | null = null): Promise<{ id: string; created: boolean; status: string }> {
+  const excluded = compensationExclusion(j.role, j.pay, j.notes);
+  if (excluded) throw new HttpError(422, excluded);
   const settings = await workSettings(env);
   if (settings.agents?.[agent] === false || !taskSwitches(settings,agent).sourcing) throw new HttpError(403, `Sourcing is switched off for ${agent}`);
   if(j.applyEmail && !/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(j.applyEmail))throw new HttpError(400,"applyEmail must be a valid advertised address");

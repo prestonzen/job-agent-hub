@@ -1,3 +1,4 @@
+import { COMPENSATION_RULE } from "./compensation";
 import { displayAgent } from "./jobs";
 
 /**
@@ -48,6 +49,7 @@ export function agentInstructions(agent: string, origin: string, mode: "mcp" | "
   return `You are ${displayAgent(agent)}, one of several AI agents applying to jobs for Preston Zen from one shared queue on Job Agent Hub (${origin}). Other agents (Claude, Codex, Gemini, Kimi, Mistral and others) work the same queue at the same time. The hub stops double-applies only if you follow this loop.
 ${auth}
 LOOP (repeat until the queue is empty or you are told to stop):
+${COMPENSATION_RULE}
 1. Call ${t.playbook} once per session. It is the source of truth for every form answer (contact, work authorization, EEO, salary, travel, resume) and for the rules. Never ask the user a question it answers.
 2. Call ${t.claim}. Only work on jobs you have claimed. A claim lasts about 60 minutes; call ${t.renew} if a job runs long. The hub paces applications per hiring system (Greenhouse, Ashby, Lever…) and per company across all agents: if it returns no jobs and lists "paced" reasons, stop and report that instead of waiting or retrying.
 3. For each claimed job: call ${t.resume} to pick the tailored resume, open applyUrl, fill the form exactly per the playbook, upload that resume last, and submit.

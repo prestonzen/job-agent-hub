@@ -1,4 +1,5 @@
 import { getSetting, setSetting } from "./db";
+import { compensationExclusion } from "./compensation";
 import { addJob, loadTasks } from "./jobs";
 import { inferPlatform } from "./platform";
 import { esc, notify } from "./telegram";
@@ -44,7 +45,8 @@ const ONSITE_ONLY = /(on[- ]?site only|onsite only|in[- ]office only|hybrid onl
 const NON_ENGLISH = /(ingenieur|ingénieur|entwickler|desarrollador|sviluppatore|programista|développeur|разработчик|инженер|ontwikkelaar|utvecklare|kehittäjä|yazılım|開発|工程师|エンジニア)/i;
 const URL_NO = /ashbyhq\.com|wellfound\.com|angel\.co|linkedin\.com/i;
 
-function keep(l: Lead): boolean {
+export function keep(l: Lead): boolean {
+  if (compensationExclusion(l.role, l.pay, l.text)) return false;
   const apply = l.applyUrl ?? l.url;
   if (!l.company || !l.role) return false;
   if (!l.applyEmail && !/^https?:\/\//.test(apply)) return false;

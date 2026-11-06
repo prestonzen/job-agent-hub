@@ -1,3 +1,4 @@
+import { compensationExclusion, interviewCompensationHold } from "./compensation";
 import { isApplication } from "./classify";
 import { addComment, flagForPreston, setStatus } from "./store";
 import { db, logEvent } from "./db";
@@ -172,17 +173,21 @@ export async function handleInbound(env: Env, e: InboundEmail): Promise<{ duplic
   const ai = await aiClassify(env, e);
   const rule = ruleClassify(e);
   const category = rule === "onboarding" ? rule : ai?.category ?? rule;
-  const summary = ai?.summary || e.subject;
+  let summary = ai?.summary || e.subject;
   const tasks = (await loadTasks(env)).filter((t) => isApplication(t, env));
   const task = category === "recruiter" || category === "other" || category === "onboarding" ? null : matchTask(tasks, ai?.company ?? null, e, category === "confirmation");
 
+  const compensationText = `${task?.name ?? ""}\n${task?.description ?? ""}\n${e.subject}\n${e.text}`;
+  const excluded = compensationExclusion(compensationText);
+  const compensationHold = excluded ?? (ACTION_CATEGORIES.includes(category) ? interviewCompensationHold(task?.description ?? "") : null);
+  if (compensationHold) summary = `${compensationHold}\n${summary}`;
   let action = "none";
   if (task) {
     const next = NEXT_STATUS[category];
     // Never move an application backwards (e.g. a late confirmation after an interview invite).
     // A confirmation for a queued job means someone applied outside the hub: mark it applied so no agent re-applies.
     const order = ["not started", "applied", "screening", "accepted", "earning"];
-    const forward = next && (next === "rejected / paused" ? task.status !== "rejected / paused" : order.indexOf(next) > order.indexOf(task.status));
+    const forward = next && task.status !== "rejected / paused" && (next === "rejected / paused" || (!compensationHold && order.indexOf(next) > order.indexOf(task.status)));
     if (env.MOCK !== "true") {
       if (forward) {
         await setStatus(env, task.id, next!);
@@ -191,8 +196,8 @@ export async function handleInbound(env: Env, e: InboundEmail): Promise<{ duplic
       await addComment(env, task.id, `[hub] ${ICON[category]} Email (${category}) from ${e.from}: "${e.subject}"\n${summary}`);
     }
     // Interview / assessment / offer / onboarding: Urgent + assigned to Preston in Huly (its own notifications fire too).
-    if (env.MOCK !== "true" && ACTION_CATEGORIES.includes(category)) await flagForPreston(env, task.id, "urgent").catch((e) => console.error("flag for Preston failed:", (e as Error).message));
-    action = forward ? `status → ${next}` : "comment";
+    if (env.MOCK !== "true" && ACTION_CATEGORIES.includes(category) && !compensationHold) await flagForPreston(env, task.id, "urgent").catch((e) => console.error("flag for Preston failed:", (e as Error).message));
+    action = compensationHold ? "compensation review; no interview progression" : forward ? `status → ${next}` : "comment";
     await logEvent(env, { agent: "inbox", taskId: task.id, taskName: task.name, type: `reply:${category}`, message: summary });
   }
 
@@ -201,7 +206,7 @@ export async function handleInbound(env: Env, e: InboundEmail): Promise<{ duplic
     .bind(e.id, Date.now(), e.from.slice(0, 200), e.subject.slice(0, 300), category, ai?.company ?? null, task?.id ?? null, action, summary, links.length ? links.join("\n") : null);
   if(category!=="confirmation"&&category!=="other"){
     const marketing=/job matches|job alerts|recommended jobs|unlock your|newsletter/i.test(e.subject);
-    const loud=ACTION_CATEGORIES.includes(category)||(category==="recruiter"&&!marketing&&/invited|schedule|availability|assessment|onboarding|interested|reply|respond|next step/i.test(`${e.subject} ${e.text.slice(0,3000)}`));
+    const loud=!compensationHold && (ACTION_CATEGORIES.includes(category)||(category==="recruiter"&&!marketing&&/invited|schedule|availability|assessment|onboarding|interested|reply|respond|next step/i.test(`${e.subject} ${e.text.slice(0,3000)}`)));
     const where=task?`<a href="${task.url}">${esc(task.name)}</a> · ${esc(action)}`:"Unmatched opportunity · review the email";
     // Something Preston must do gets the full picture in one message: who, what they want, the email itself and
     // the links in it (assessment portal, booking page), so nothing has to be hunted for in the inbox.

@@ -1,3 +1,4 @@
+import { compensationExclusion } from "./compensation";
 import * as cu from "./clickup";
 import { db, getSetting, setSetting } from "./db";
 import * as h from "./huly";
@@ -377,8 +378,13 @@ export async function reconcileFromClickUp(env: Env, dry = true): Promise<{ chec
     const ops: Record<string, unknown> = {};
     const fields: Record<string, unknown> = {};
     const status = p.statusByName[t.status.toLowerCase()];
-    if (status && status !== i.status) ops.status = status;
-    if (t.nextAction && t.nextAction !== ((f.nextAction as string | undefined) ?? null)) fields.nextAction = t.nextAction;
+    const policyPaused = typeof f.nextAction === "string" && f.nextAction.startsWith("Excluded: cash-compensation policy");
+    if (status && status !== i.status && !policyPaused) {
+      const description = await h.issueDescription(cfg, i);
+      const excluded = compensationExclusion(i.title, description, typeof f.pay === "string" ? f.pay : null);
+      if (!excluded) ops.status = status;
+    }
+    if (!policyPaused && t.nextAction && t.nextAction !== ((f.nextAction as string | undefined) ?? null)) fields.nextAction = t.nextAction;
     const by = h.enumValue(p, "appliedBy", t.appliedBy);
     if (by && by !== ((f.appliedBy as string | undefined) ?? null)) fields.appliedBy = by;
     const plat = h.enumValue(p, "platformApplied", t.platform);
