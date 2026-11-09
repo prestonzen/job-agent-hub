@@ -26,6 +26,7 @@ const upload = (c, cls, id, attr, md) => c.uploadMarkup(cls, id, attr, md, "mark
 const { generateId } = core;
 const { markdownToMarkup, markupToMarkdown } = textMd;
 const { jsonToMarkup, markupToJSON } = text;
+const updateLive = (c, cls, id, attr, md) => c.markup.collaborator.updateMarkup(core.makeCollabId(cls, id, attr), jsonToMarkup(markdownToMarkup(md, { refUrl: c.markup.refUrl, imageUrl: c.markup.imageUrl })));
 
 const URL = process.env.HULY_URL ?? "https://projects.kaizenapps.com";
 const WORKSPACE = process.env.HULY_WORKSPACE ?? "kaizengroup";
@@ -222,7 +223,7 @@ server.tool("huly_append_document", "Append markdown to the end of a document (b
   if (!d) throw new Error(`no document matching "${ref}"`);
   const current = d.content ? await c.fetchMarkup("document:class:Document", d._id, "content", d.content, "markdown") : "";
   const next = `${current.replace(/\s+$/, "")}\n\n${markdown.trim()}\n`;
-  await c.updateDoc("document:class:Document", d.space, d._id, { content: await upload(c, "document:class:Document", d._id, "content", next) });
+  await updateLive(c, "document:class:Document", d._id, "content", next);
   return { ok: true, id: d._id, title: d.title, chars: next.length };
 }));
 
@@ -236,7 +237,7 @@ server.tool("huly_replace_in_document", "Exact in-place edit of a document: each
   const report = edits.map((e) => ({ find: e.find.slice(0, 70), matches: content.split(e.find).length - 1 }));
   if (dry || report.some((r) => r.matches !== 1)) return { applied: false, report };
   for (const e of edits) content = content.replace(e.find, () => e.replace);
-  await c.updateDoc("document:class:Document", d.space, d._id, { content: await upload(c, "document:class:Document", d._id, "content", content) });
+  await updateLive(c, "document:class:Document", d._id, "content", content);
   return { applied: true, report, chars: content.length };
 }));
 
