@@ -33,6 +33,12 @@ const PROJECT = process.env.HULY_PROJECT ?? "JHUNT";
 const token = (process.env.HULY_TOKEN ?? (process.env.HULY_TOKEN_FILE ? readFileSync(process.env.HULY_TOKEN_FILE, "utf8") : "")).trim();
 if (!token) { console.error("huly-mcp: set HULY_TOKEN or HULY_TOKEN_FILE"); process.exit(2); }
 
+// Optional machine tag, e.g. HULY_DEVICE=prime. Huly stamps the author from the token and offers no
+// way to override it, so the machine is recorded in the comment body instead. Unset = nothing added,
+// which keeps every existing caller byte-identical.
+const DEVICE = (process.env.HULY_DEVICE ?? "").trim().slice(0, 32);
+const sign = (md) => (DEVICE ? `${md.replace(/\s+$/, "")}\n\n*— via ${DEVICE}*` : md);
+
 const SPACE = "core:space:Space";
 const PRIORITY = ["none", "urgent", "high", "medium", "low"];
 const rank = (n) => `0|${(0x3b9ac9ff + n * 4096).toString(36).padStart(6, "0")}:`;
@@ -193,8 +199,8 @@ server.tool("huly_update_issue", "Update title, status, priority, description (m
 server.tool("huly_add_comment", "Add a comment (markdown) to an issue — use for application history, attempt logs, replies.", { identifier: z.string(), markdown: z.string(), project: z.string().optional() }, wrap(async ({ identifier, markdown, project }) => {
   const k = await ctx(project);
   const i = await findIssue(k, identifier);
-  const id = await k.c.addCollection("chunter:class:ChatMessage", k.project._id, i._id, "tracker:class:Issue", "comments", { message: toMarkup(markdown), attachments: 0 });
-  return { ok: true, id, identifier: i.identifier };
+  const id = await k.c.addCollection("chunter:class:ChatMessage", k.project._id, i._id, "tracker:class:Issue", "comments", { message: toMarkup(sign(markdown)), attachments: 0 });
+  return { ok: true, id, identifier: i.identifier, device: DEVICE || undefined };
 }));
 
 server.tool("huly_list_documents", "List playbook documents (teamspace name optional; default: all teamspaces).", { teamspace: z.string().optional() }, wrap(async ({ teamspace }) => {
