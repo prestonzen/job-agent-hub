@@ -113,6 +113,10 @@ export async function createMarkup(cfg: HulyCfg, objectClass: string, objectId: 
   if (!ref) throw new HttpError(502, "Huly collaborator returned no content ref");
   return ref;
 }
+/** Change the live copy of an existing collaborative attribute. createContent only saves a snapshot, which readers ignore once a live copy exists. Huly points the record at the result itself. */
+export async function updateMarkup(cfg: HulyCfg, objectClass: string, objectId: string, attr: string, markup: string): Promise<void> {
+  await collabRpc(cfg, objectClass, objectId, attr, "updateContent", { content: { [attr]: markup } });
+}
 
 // ---------- markup ⇄ markdown ----------
 
@@ -346,8 +350,7 @@ export async function docMarkdown(cfg: HulyCfg, d: HulyDoc): Promise<string> {
   return markupToMarkdown(await getMarkup(cfg, "document:class:Document", d._id, "content", d.content));
 }
 export async function setDocMarkdown(cfg: HulyCfg, d: HulyDoc, markdown: string): Promise<void> {
-  const content = await createMarkup(cfg, "document:class:Document", d._id, "content", markdownToMarkup(markdown));
-  await updateDoc(cfg, "document:class:Document", d.space, d._id, { content });
+  await updateMarkup(cfg, "document:class:Document", d._id, "content", markdownToMarkup(markdown));
 }
 
 /** The owner's Person record (assignee ref) — the account the token belongs to. */
