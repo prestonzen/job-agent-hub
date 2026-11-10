@@ -340,8 +340,7 @@ export async function syncCyber(env: Env, input: CyberSyncInput): Promise<void> 
         .reverse()
         .map((e) => `- ${new Date(e.at).toISOString().slice(0, 16).replace("T", " ")} UTC — ${e.kind}${e.status ? `/${e.status}` : ""}${e.severity ? ` [${e.severity}]` : ""}: ${(e.detail ?? e.title ?? "").trim().slice(0, 160)}`),
     ];
-    const content = await h.createMarkup(cfg, "tracker:class:Issue", issue._id, "description", h.markdownToMarkup(lines.join("\n")));
-    await h.updateIssue(cfg, p, issue, { description: content });
+    await h.updateMarkup(cfg, "tracker:class:Issue", issue._id, "description", h.markdownToMarkup(lines.join("\n")));
 
     // A serious finding bumps the issue priority so it surfaces in Huly views.
     const pri = input.kind === "finding" ? SEVERITY_PRIORITY[input.severity ?? ""] : undefined;

@@ -26,6 +26,7 @@ const upload = (c, cls, id, attr, md) => c.uploadMarkup(cls, id, attr, md, "mark
 const { generateId } = core;
 const { markdownToMarkup, markupToMarkdown } = textMd;
 const { jsonToMarkup, markupToJSON } = text;
+const updateLive = (c, cls, id, attr, md) => c.markup.collaborator.updateMarkup(core.makeCollabId(cls, id, attr), jsonToMarkup(markdownToMarkup(md, { refUrl: c.markup.refUrl, imageUrl: c.markup.imageUrl })));
 
 const URL = process.env.HULY_URL ?? "https://projects.kaizenapps.com";
 const WORKSPACE = process.env.HULY_WORKSPACE ?? "kaizengroup";
@@ -186,7 +187,7 @@ server.tool("huly_update_issue", "Update title, status, priority, description (m
   if (title) ops.title = title.slice(0, 300);
   if (status) { const s = k.statusByName[status.toLowerCase()]; if (!s) throw new Error(`unknown status "${status}"; known: ${Object.values(k.statusById).join(", ")}`); ops.status = s; }
   if (priority) ops.priority = PRIORITY.indexOf(priority);
-  if (description !== undefined) ops.description = await upload(k.c, "tracker:class:Issue", i._id, "description", description);
+  if (description !== undefined) await updateLive(k.c, "tracker:class:Issue", i._id, "description", description);
   if (Object.keys(ops).length) await k.c.updateCollection("tracker:class:Issue", k.project._id, i._id, i.attachedTo, i.attachedToClass, i.collection, ops);
   const fx = coerceFields(k, fields);
   if (Object.keys(fx).length) {
