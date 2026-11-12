@@ -105,6 +105,10 @@ export interface Job {
   claimExpiresAt: string | null;
   /** "Needs human: …" notes park a job until a person handles it. */
   needsHuman: string | null;
+  /** Explicit unpaid/deferred-cash evidence; missing salary alone never sets this. */
+  compensationExclusion?: string | null;
+  /** Cash pay starting with work must be confirmed before interview progression. */
+  interviewHold?: string | null;
   /** Handed to a specific agent (e.g. kimi): only that agent can claim it, ahead of the queue. */
   assignedTo: string | null;
   /** The employer's address when the posting is applied to by email ("Apply by email: jobs@company.com"). */

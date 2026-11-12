@@ -1,5 +1,13 @@
 # Job Hunter work routing
 
+## Cash compensation eligibility (2026-11-06)
+
+Salary or contractor cash pay must start with work. Equity may supplement cash pay. Explicit equity-only, unpaid work and cash deferred until funding, revenue or other milestones are excluded at feed ingestion, agent queue additions, claims and application email sending. Existing records remain visible with the exclusion reason. Reporting an already-submitted application remains truthful; it does not authorize further work.
+
+Undisclosed salary remains eligible for research and applications under the other existing rules. Before recommending, arranging or progressing an interview, confirm cash pay starts with work and record `Cash compensation confirmed: <source/date and terms>; starts with work` in the job description. The hub does not infer confirmation from a salary target or a future funding promise. Incoming interview/assessment/offer messages remain recorded, but do not advance or urgently promote an unverified or excluded role. Automatic follow-ups that invite a call wait for this confirmation. Paused records are not revived by incoming mail; compensation exclusions are also preserved during ClickUp reconciliation.
+
+The Huly Applicant Profile and Answer Bank remain the source of truth. Edit their pay sections in place; preserve salary-amount flexibility, currencies, location, authorization and other criteria. Use a dated user-policy reason when pausing existing records, never an invented employer rejection. An ambiguous “equity-first” advertisement needs cash verification; it is not proof of an exact salary arrangement.
+
 ## Twice-daily sourcing and backups
 
 The production sourcing check runs at **08:00 and 20:00 Asia/Tokyo**. It is a `sourcing` schedule with no fixed agent. Keep this as one schedule; do not create separate copies for each provider.
